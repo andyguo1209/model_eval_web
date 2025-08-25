@@ -59,9 +59,34 @@ results/*
 .env.local
 .env.production
 
-# API Keys (security)
+# API Keys (security) - 严格防止密钥泄露
 *.key
 *.pem
+*.secret
+*secret*
+*apikey*
+*api_key*
+*api-key*
+.secrets/
+secrets/
+keys/
+credentials/
+.credentials/
+
+# 环境变量文件（可能包含密钥）
+.env*
+!.env.example
+config.secret.*
+*.config.secret
+
+# 可能包含密钥的配置文件
+*config*.local
+*config*.prod*
+*config*.dev*
+
+# API响应缓存（可能包含敏感数据）
+api_cache/
+.api_cache/
 
 # Temporary files
 *.tmp
