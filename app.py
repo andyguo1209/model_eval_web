@@ -11,6 +11,7 @@ from datetime import datetime
 from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
+from google.generativeai import types
 from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
@@ -60,9 +61,14 @@ SUPPORTED_MODELS = {
 }
 
 # Google API配置
+# 配置Google Gemini API
+MODEL_NAME = "gemini-2.5-flash"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
     genai.configure(api_key=GOOGLE_API_KEY)
+    print(f"✅ Gemini配置成功: {MODEL_NAME}")
+else:
+    print("⚠️ 未配置GOOGLE_API_KEY")
 
 # 全局任务状态管理
 task_status = {}
@@ -188,8 +194,18 @@ def parse_json_str(s: str) -> Dict[str, Any]:
     if not s:
         return {}
     try:
-        return json.loads(s)
-    except json.JSONDecodeError:
+        # 去掉可能的markdown格式
+        if '```json' in s:
+            s = s.split('```json')[1].split('```')[0]
+        elif '```' in s:
+            s = s.split('```')[1].split('```')[0]
+        
+        result = json.loads(s.strip())
+        print(f"✅ JSON解析成功: {len(result)} 个模型结果")
+        return result
+    except json.JSONDecodeError as e:
+        print(f"❌ JSON解析失败: {e}")
+        print(f"📝 原始响应内容: {s[:500]}...")
         return {}
 
 
@@ -200,9 +216,16 @@ async def query_gemini_model(prompt: str, api_key: str = None) -> str:
         # 使用传入的API密钥或默认密钥
         if api_key:
             genai.configure(api_key=api_key)
-        model = genai.GenerativeModel('gemini-pro')
-        resp = model.generate_content(prompt)
-        return resp.text if resp and resp.text else ""
+        
+        try:
+            model = genai.GenerativeModel(MODEL_NAME)
+            resp = model.generate_content(prompt)
+            result = resp.text if resp and resp.text else ""
+            print(f"✅ Gemini评测成功，返回长度: {len(result)}")
+            return result
+        except Exception as e:
+            print(f"❌ Gemini评测失败: {e}")
+            return f"Gemini模型调用失败: {str(e)}"
     
     return await asyncio.to_thread(call_model)
 
@@ -332,10 +355,15 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
                 prompt = build_subjective_eval_prompt(query, current_answers, question_type)
             
             try:
+                print(f"🔄 开始评测第{i+1}题...")
                 gem_raw = await query_gemini_model(prompt, google_api_key)
+                print(f"📥 Gemini原始响应长度: {len(gem_raw)}")
+                print(f"📝 Gemini响应内容预览: {gem_raw[:200]}...")
+                
                 result_json = parse_json_str(gem_raw)
+                print(f"📊 解析结果: {len(result_json)} 个模型评分")
             except Exception as e:
-                print(f"评测第{i+1}题时出错: {e}")
+                print(f"❌ 评测第{i+1}题时出错: {e}")
                 result_json = {}
             
             # 构造CSV行数据
@@ -942,6 +970,53 @@ def get_annotation_statistics(result_id):
     try:
         stats = annotation_system.get_annotation_statistics(result_id)
         return jsonify(stats)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/view_history/<result_id>')
+def view_history(result_id):
+    """查看历史评测结果详情"""
+    try:
+        # 获取历史记录详情
+        result_detail = history_manager.get_result_detail(result_id)
+        if not result_detail:
+            return jsonify({'error': '结果不存在'}), 404
+        
+        result = result_detail.get('result', {})
+        result_file = result.get('result_file')
+        
+        if not result_file:
+            return jsonify({'error': '结果文件路径为空'}), 404
+            
+        # 简单直接的路径处理
+        if os.path.exists(result_file):
+            filepath = result_file
+        else:
+            return jsonify({
+                'error': '结果文件不存在',
+                'result_file': result_file,
+                'working_dir': os.getcwd(),
+                'file_exists_check': os.path.exists(result_file)
+            }), 404
+            
+        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        return render_template('results.html', 
+                             filename=result_file,
+                             columns=df.columns.tolist(),
+                             data=df.to_dict('records'),
+                             result_detail=result_detail)
+    except Exception as e:
+        return jsonify({'error': f'处理异常: {str(e)}'}), 500
+
+@app.route('/api/history/delete/<result_id>', methods=['DELETE'])
+def delete_history_result(result_id):
+    """删除历史评测结果"""
+    try:
+        success = history_manager.delete_result(result_id)
+        if success:
+            return jsonify({'success': True, 'message': '删除成功'})
+        else:
+            return jsonify({'success': False, 'error': '删除失败'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 

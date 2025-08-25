@@ -208,7 +208,7 @@ class EvaluationDatabase:
                        result_summary, evaluation_mode, status, tags, 
                        created_at, completed_at
                 FROM evaluation_results
-                WHERE 1=1
+                WHERE status != 'deleted'
             '''
             params = []
             

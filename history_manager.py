@@ -151,9 +151,23 @@ class EvaluationHistoryManager:
             
             result = detail['result']
             
-            # 删除文件
-            if os.path.exists(result['result_file']):
-                os.remove(result['result_file'])
+            # 删除文件 - 修复文件路径
+            file_path = result['result_file']
+            # 如果是相对路径，添加完整路径
+            if not os.path.isabs(file_path):
+                # 尝试results目录
+                full_path = os.path.join('results', os.path.basename(file_path))
+                if os.path.exists(full_path):
+                    os.remove(full_path)
+                    print(f"✅ 删除文件: {full_path}")
+                # 尝试results_history目录
+                hist_path = os.path.join('results_history', os.path.basename(file_path))
+                if os.path.exists(hist_path):
+                    os.remove(hist_path)
+                    print(f"✅ 删除历史文件: {hist_path}")
+            elif os.path.exists(file_path):
+                os.remove(file_path)
+                print(f"✅ 删除文件: {file_path}")
             
             # 从数据库删除（实际上标记为删除）
             with db._get_connection() as conn:
