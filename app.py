@@ -15,6 +15,17 @@ from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
 
+# 导入新的历史管理和标注模块
+try:
+    from database import db
+    from history_manager import history_manager
+    from annotation_system import annotation_system
+except ImportError as e:
+    print(f"警告: 无法导入高级功能模块: {e}")
+    db = None
+    history_manager = None
+    annotation_system = None
+
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'model-evaluation-web-2024'
 app.config['UPLOAD_FOLDER'] = 'uploads'
@@ -37,7 +48,7 @@ SUPPORTED_MODELS = {
         }
     },
     "HKGAI-V2": {
-        "url": "https://chat.hkchat.app/goapi/v1/chat/stream",
+        "url": "https://test.hkchat.app/goapi/v1/chat/stream",
         "model": "HKGAI-V2", 
         "token_env": "ARK_API_KEY_HKGAI_V2",
         "headers_template": {
@@ -636,6 +647,17 @@ def start_evaluation():
                 task_status[task_id].result_file = os.path.basename(output_file)
                 task_status[task_id].current_step = f"评测完成，结果已保存到 {os.path.basename(output_file)}"
                 
+                # 保存到历史记录
+                try:
+                    evaluation_data = {
+                        'dataset_file': filename,
+                        'models': selected_models,
+                        'evaluation_mode': mode
+                    }
+                    history_manager.save_evaluation_result(evaluation_data, output_file)
+                except Exception as e:
+                    print(f"保存历史记录失败: {e}")
+                
             except Exception as e:
                 task_status[task_id].status = "失败"
                 task_status[task_id].error_message = str(e)
@@ -774,6 +796,154 @@ def get_env_status():
         return jsonify({
             'error': f'获取环境状态失败: {str(e)}'
         })
+
+
+# ===== 历史管理相关路由 =====
+
+@app.route('/history')
+def history_page():
+    """历史管理页面"""
+    if not history_manager:
+        return "历史管理功能未启用", 503
+    return render_template('history.html')
+
+@app.route('/api/history/statistics')
+def get_history_statistics():
+    """获取历史统计信息"""
+    if not history_manager:
+        return jsonify({'error': '历史管理功能未启用'}), 503
+    try:
+        stats = history_manager.get_statistics()
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+@app.route('/api/history/list')
+def get_history_list():
+    """获取历史记录列表"""
+    if not history_manager:
+        return jsonify({'success': False, 'error': '历史管理功能未启用'}), 503
+    try:
+        # 获取查询参数
+        page = int(request.args.get('page', 1))
+        limit = int(request.args.get('limit', 20))
+        search = request.args.get('search', '')
+        mode = request.args.get('mode', '')
+        tags = request.args.get('tags', '')
+        
+        # 解析标签
+        tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()] if tags else None
+        
+        # 计算偏移量
+        offset = (page - 1) * limit
+        
+        # 获取历史记录
+        history = history_manager.get_history_list(
+            tags=tag_list,
+            limit=limit,
+            offset=offset
+        )
+        
+        # 简单的搜索过滤（在返回的结果中过滤）
+        if search and history['success']:
+            filtered_results = []
+            search_lower = search.lower()
+            for result in history['results']:
+                if (search_lower in result['name'].lower() or 
+                    any(search_lower in model.lower() for model in result['models'])):
+                    filtered_results.append(result)
+            history['results'] = filtered_results
+        
+        # 模式过滤
+        if mode and history['success']:
+            history['results'] = [r for r in history['results'] if r['evaluation_mode'] == mode]
+        
+        return jsonify(history)
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/history/detail/<result_id>')
+def get_history_detail(result_id):
+    """获取历史记录详情"""
+    if not history_manager:
+        return jsonify({'success': False, 'error': '历史管理功能未启用'}), 503
+    try:
+        detail = history_manager.get_result_detail(result_id)
+        return jsonify(detail)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/history/tags')
+def get_available_tags():
+    """获取可用标签列表"""
+    if not history_manager:
+        return jsonify([]), 503
+    try:
+        tags = history_manager.get_available_tags()
+        return jsonify(tags)
+    except Exception as e:
+        return jsonify([]), 500
+
+# ===== 标注系统相关路由 =====
+
+@app.route('/annotate/<result_id>')
+def annotate_page(result_id):
+    """标注页面"""
+    if not annotation_system:
+        return "标注功能未启用", 503
+    return render_template('annotate.html', result_id=result_id)
+
+@app.route('/api/annotation/data/<result_id>')
+def get_annotation_data(result_id):
+    """获取标注数据"""
+    if not annotation_system:
+        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
+    try:
+        data = annotation_system.get_annotation_data(result_id)
+        return jsonify(data)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/annotation/save', methods=['POST'])
+def save_annotation():
+    """保存标注"""
+    if not annotation_system:
+        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
+    try:
+        data = request.get_json()
+        result = annotation_system.save_annotation(
+            result_id=data['result_id'],
+            question_index=data['question_index'],
+            model_name=data['model_name'],
+            annotation_data=data['annotation_data'],
+            annotator=data.get('annotator', 'default')
+        )
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/annotation/progress/<result_id>')
+def get_annotation_progress(result_id):
+    """获取标注进度"""
+    if not annotation_system:
+        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
+    try:
+        progress = annotation_system.get_annotation_progress(result_id)
+        return jsonify(progress)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/annotation/statistics/<result_id>')
+def get_annotation_statistics(result_id):
+    """获取标注统计"""
+    if not annotation_system:
+        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
+    try:
+        stats = annotation_system.get_annotation_statistics(result_id)
+        return jsonify(stats)
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
 
 
 if __name__ == '__main__':

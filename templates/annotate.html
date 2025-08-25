@@ -1,0 +1,1124 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>人工标注 - AI模型评测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .annotate-container {
+            max-width: 1600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        
+        .annotate-header {
+            background: white;
+            padding: 25px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .progress-panel {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            margin-bottom: 20px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        }
+        
+        .progress-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        
+        .progress-item {
+            text-align: center;
+            padding: 15px;
+            background: #f8f9fa;
+            border-radius: 8px;
+        }
+        
+        .progress-number {
+            font-size: 2em;
+            font-weight: bold;
+            color: #4CAF50;
+        }
+        
+        .progress-label {
+            font-size: 14px;
+            color: #666;
+            margin-top: 5px;
+        }
+        
+        .progress-bar {
+            width: 100%;
+            height: 20px;
+            background: #e0e0e0;
+            border-radius: 10px;
+            overflow: hidden;
+            margin-bottom: 10px;
+        }
+        
+        .progress-fill {
+            height: 100%;
+            background: linear-gradient(90deg, #4CAF50, #45a049);
+            transition: width 0.3s ease;
+        }
+        
+        .annotation-workspace {
+            display: grid;
+            grid-template-columns: 300px 1fr;
+            gap: 20px;
+            height: calc(100vh - 300px);
+        }
+        
+        .question-list {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+        }
+        
+        .question-list-header {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+            font-weight: 600;
+        }
+        
+        .question-items {
+            max-height: calc(100vh - 400px);
+            overflow-y: auto;
+        }
+        
+        .question-item {
+            padding: 12px 15px;
+            border-bottom: 1px solid #eee;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+        
+        .question-item:hover {
+            background: #f8f9fa;
+        }
+        
+        .question-item.active {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+        }
+        
+        .question-number {
+            font-weight: 600;
+            color: #666;
+            font-size: 14px;
+        }
+        
+        .question-preview {
+            font-size: 13px;
+            color: #888;
+            margin-top: 5px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        
+        .question-status {
+            position: absolute;
+            right: 10px;
+            top: 50%;
+            transform: translateY(-50%);
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ddd;
+        }
+        
+        .question-status.completed {
+            background: #4CAF50;
+        }
+        
+        .question-status.partial {
+            background: #FF9800;
+        }
+        
+        .annotation-panel {
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            overflow: hidden;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .annotation-header {
+            padding: 20px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #dee2e6;
+        }
+        
+        .annotation-content {
+            flex: 1;
+            padding: 20px;
+            overflow-y: auto;
+        }
+        
+        .question-display {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .question-text {
+            font-size: 16px;
+            font-weight: 500;
+            color: #333;
+            margin-bottom: 10px;
+        }
+        
+        .question-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 14px;
+            color: #666;
+        }
+        
+        .models-grid {
+            display: grid;
+            gap: 20px;
+        }
+        
+        .model-response {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        
+        .model-header {
+            padding: 15px;
+            background: #f8f9fa;
+            border-bottom: 1px solid #ddd;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .model-name {
+            font-weight: 600;
+            color: #333;
+        }
+        
+        .annotation-status {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .annotation-status.completed {
+            background: #d4edda;
+            color: #155724;
+        }
+        
+        .annotation-status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        
+        .model-answer {
+            padding: 15px;
+            background: white;
+            margin-bottom: 15px;
+            line-height: 1.6;
+            max-height: 150px;
+            overflow-y: auto;
+        }
+        
+        .annotation-form {
+            padding: 15px;
+            background: #fafafa;
+        }
+        
+        .annotation-dimensions {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .dimension-group {
+            background: white;
+            padding: 15px;
+            border-radius: 6px;
+            border: 1px solid #ddd;
+        }
+        
+        .dimension-label {
+            font-weight: 600;
+            margin-bottom: 10px;
+            color: #333;
+        }
+        
+        .score-options {
+            display: flex;
+            gap: 8px;
+            justify-content: space-between;
+        }
+        
+        .score-btn {
+            flex: 1;
+            padding: 8px 4px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .score-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        .score-btn.selected {
+            background: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        
+        .boolean-options {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .boolean-btn {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #ddd;
+            background: white;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .boolean-btn:hover {
+            background: #f0f0f0;
+        }
+        
+        .boolean-btn.selected {
+            background: #4CAF50;
+            color: white;
+            border-color: #4CAF50;
+        }
+        
+        .annotation-notes {
+            margin-top: 15px;
+        }
+        
+        .annotation-notes textarea {
+            width: 100%;
+            min-height: 60px;
+            padding: 10px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            resize: vertical;
+        }
+        
+        .confidence-slider {
+            margin-top: 15px;
+        }
+        
+        .confidence-slider label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            border-radius: 3px;
+            background: #ddd;
+            outline: none;
+            -webkit-appearance: none;
+        }
+        
+        .slider::-webkit-slider-thumb {
+            appearance: none;
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            background: #4CAF50;
+            cursor: pointer;
+        }
+        
+        .confidence-value {
+            font-weight: 600;
+            color: #4CAF50;
+            min-width: 30px;
+        }
+        
+        .form-actions {
+            display: flex;
+            gap: 10px;
+            justify-content: flex-end;
+            margin-top: 20px;
+        }
+        
+        .keyboard-shortcuts {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+            font-size: 12px;
+            max-width: 200px;
+        }
+        
+        .shortcuts-title {
+            font-weight: 600;
+            margin-bottom: 8px;
+        }
+        
+        .shortcut-item {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        .shortcut-key {
+            background: #f0f0f0;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: monospace;
+        }
+        
+        .batch-actions {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #666;
+        }
+        
+        .empty-state i {
+            font-size: 3em;
+            color: #ddd;
+            margin-bottom: 20px;
+        }
+        
+        /* 响应式设计 */
+        @media (max-width: 1200px) {
+            .annotation-workspace {
+                grid-template-columns: 250px 1fr;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            .annotation-workspace {
+                grid-template-columns: 1fr;
+                height: auto;
+            }
+            
+            .question-list {
+                order: 2;
+                height: 300px;
+            }
+            
+            .annotation-dimensions {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="annotate-container">
+        <a href="/history" class="back-link">
+            <i class="fas fa-arrow-left"></i>
+            返回历史
+        </a>
+        
+        <!-- 页面头部 -->
+        <div class="annotate-header">
+            <div>
+                <h1><i class="fas fa-tags"></i> 人工标注系统</h1>
+                <p id="result-info">专业的多维度评测结果标注平台</p>
+            </div>
+            
+            <div class="batch-actions">
+                <button class="btn btn-secondary" onclick="exportAnnotations()">
+                    <i class="fas fa-download"></i> 导出标注
+                </button>
+                <button class="btn btn-info" onclick="showStatistics()">
+                    <i class="fas fa-chart-bar"></i> 标注统计
+                </button>
+                <button class="btn btn-warning" onclick="validateQuality()">
+                    <i class="fas fa-check-circle"></i> 质量检查
+                </button>
+            </div>
+        </div>
+        
+        <!-- 进度面板 -->
+        <div class="progress-panel">
+            <div class="progress-grid" id="progress-grid">
+                <!-- 进度信息将通过JavaScript加载 -->
+            </div>
+            
+            <div class="progress-bar">
+                <div class="progress-fill" id="progress-fill" style="width: 0%"></div>
+            </div>
+            <div style="text-align: center; margin-top: 8px; font-size: 14px; color: #666;">
+                标注进度：<span id="progress-text">0%</span>
+            </div>
+        </div>
+        
+        <!-- 标注工作区 -->
+        <div class="annotation-workspace">
+            <!-- 问题列表 -->
+            <div class="question-list">
+                <div class="question-list-header">
+                    <i class="fas fa-list"></i> 问题列表
+                </div>
+                <div class="question-items" id="question-items">
+                    <!-- 问题列表将通过JavaScript生成 -->
+                </div>
+            </div>
+            
+            <!-- 标注面板 -->
+            <div class="annotation-panel">
+                <div class="annotation-header">
+                    <h3 id="annotation-title">选择问题开始标注</h3>
+                </div>
+                
+                <div class="annotation-content" id="annotation-content">
+                    <div class="empty-state">
+                        <i class="fas fa-hand-pointer"></i>
+                        <h3>开始标注</h3>
+                        <p>请从左侧选择一个问题开始标注</p>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 快捷键提示 -->
+    <div class="keyboard-shortcuts">
+        <div class="shortcuts-title">快捷键</div>
+        <div class="shortcut-item">
+            <span>下一题</span>
+            <span class="shortcut-key">→</span>
+        </div>
+        <div class="shortcut-item">
+            <span>上一题</span>
+            <span class="shortcut-key">←</span>
+        </div>
+        <div class="shortcut-item">
+            <span>评分1-5</span>
+            <span class="shortcut-key">1-5</span>
+        </div>
+        <div class="shortcut-item">
+            <span>保存</span>
+            <span class="shortcut-key">Ctrl+S</span>
+        </div>
+    </div>
+
+    <script>
+        // 全局变量
+        let resultId = '{{ result_id }}';
+        let annotationData = null;
+        let currentQuestionIndex = 0;
+        let currentModelName = '';
+        let existingAnnotations = {};
+        let annotationDimensions = {};
+        let progress = null;
+        
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            loadAnnotationData();
+            setupKeyboardShortcuts();
+        });
+        
+        // 加载标注数据
+        async function loadAnnotationData() {
+            try {
+                showLoading();
+                
+                const response = await fetch(`/api/annotation/data/${resultId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    annotationData = data.annotation_data;
+                    existingAnnotations = data.existing_annotations;
+                    annotationDimensions = data.annotation_dimensions;
+                    
+                    // 更新页面信息
+                    document.getElementById('result-info').textContent = 
+                        `${data.result_info.name} - ${data.total_questions}题 ${data.total_models}模型`;
+                    
+                    // 渲染问题列表
+                    renderQuestionList();
+                    
+                    // 加载进度信息
+                    loadProgress();
+                    
+                    // 选择第一个问题
+                    if (annotationData.length > 0) {
+                        selectQuestion(0);
+                    }
+                } else {
+                    showError(data.error || '加载标注数据失败');
+                }
+                
+            } catch (error) {
+                showError('加载标注数据失败: ' + error.message);
+            } finally {
+                hideLoading();
+            }
+        }
+        
+        // 加载进度信息
+        async function loadProgress() {
+            try {
+                const response = await fetch(`/api/annotation/progress/${resultId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    progress = data.progress;
+                    renderProgress();
+                }
+            } catch (error) {
+                console.error('加载进度失败:', error);
+            }
+        }
+        
+        // 渲染进度信息
+        function renderProgress() {
+            if (!progress) return;
+            
+            const progressGrid = document.getElementById('progress-grid');
+            progressGrid.innerHTML = `
+                <div class="progress-item">
+                    <div class="progress-number">${progress.annotated_items}</div>
+                    <div class="progress-label">已标注</div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-number">${progress.total_items}</div>
+                    <div class="progress-label">总数</div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-number">${progress.remaining_items}</div>
+                    <div class="progress-label">剩余</div>
+                </div>
+                <div class="progress-item">
+                    <div class="progress-number">${progress.progress_percentage.toFixed(1)}%</div>
+                    <div class="progress-label">完成度</div>
+                </div>
+            `;
+            
+            // 更新进度条
+            document.getElementById('progress-fill').style.width = progress.progress_percentage + '%';
+            document.getElementById('progress-text').textContent = progress.progress_percentage.toFixed(1) + '%';
+        }
+        
+        // 渲染问题列表
+        function renderQuestionList() {
+            const questionItems = document.getElementById('question-items');
+            
+            const itemsHtml = annotationData.map((question, index) => {
+                const status = getQuestionStatus(index);
+                return `
+                    <div class="question-item" onclick="selectQuestion(${index})" data-index="${index}">
+                        <div class="question-number">问题 ${index + 1}</div>
+                        <div class="question-preview">${question.question_text.substring(0, 50)}${question.question_text.length > 50 ? '...' : ''}</div>
+                        <div class="question-status ${status}"></div>
+                    </div>
+                `;
+            }).join('');
+            
+            questionItems.innerHTML = itemsHtml;
+        }
+        
+        // 获取问题状态
+        function getQuestionStatus(questionIndex) {
+            const models = Object.keys(annotationData[questionIndex].models_answers);
+            let completedCount = 0;
+            
+            for (const model of models) {
+                const key = `${questionIndex}_${model}`;
+                if (existingAnnotations[key]) {
+                    completedCount++;
+                }
+            }
+            
+            if (completedCount === 0) return '';
+            if (completedCount === models.length) return 'completed';
+            return 'partial';
+        }
+        
+        // 选择问题
+        function selectQuestion(index) {
+            currentQuestionIndex = index;
+            
+            // 更新问题列表选中状态
+            document.querySelectorAll('.question-item').forEach((item, i) => {
+                item.classList.toggle('active', i === index);
+            });
+            
+            // 渲染标注面板
+            renderAnnotationPanel();
+        }
+        
+        // 渲染标注面板
+        function renderAnnotationPanel() {
+            const question = annotationData[currentQuestionIndex];
+            const title = document.getElementById('annotation-title');
+            const content = document.getElementById('annotation-content');
+            
+            title.textContent = `问题 ${currentQuestionIndex + 1} - 标注`;
+            
+            const modelsHtml = Object.entries(question.models_answers).map(([model, answer]) => {
+                const annotationKey = `${currentQuestionIndex}_${model}`;
+                const existing = existingAnnotations[annotationKey] || {};
+                const isCompleted = Object.keys(existing).length > 0;
+                
+                return createModelResponseHtml(model, answer, existing, isCompleted);
+            }).join('');
+            
+            content.innerHTML = `
+                <div class="question-display">
+                    <div class="question-text">${question.question_text}</div>
+                    <div class="question-meta">
+                        <span><i class="fas fa-tag"></i> ${question.question_type}</span>
+                        <span><i class="fas fa-list-ol"></i> 第 ${currentQuestionIndex + 1} 题</span>
+                    </div>
+                </div>
+                
+                <div class="models-grid">
+                    ${modelsHtml}
+                </div>
+            `;
+        }
+        
+        // 创建模型回答HTML
+        function createModelResponseHtml(model, answer, existing, isCompleted) {
+            const statusClass = isCompleted ? 'completed' : 'pending';
+            const statusText = isCompleted ? '已标注' : '待标注';
+            
+            return `
+                <div class="model-response">
+                    <div class="model-header">
+                        <div class="model-name">${model}</div>
+                        <div class="annotation-status ${statusClass}">${statusText}</div>
+                    </div>
+                    
+                    <div class="model-answer">${answer}</div>
+                    
+                    <div class="annotation-form">
+                        ${createAnnotationFormHtml(model, existing)}
+                    </div>
+                </div>
+            `;
+        }
+        
+        // 创建标注表单HTML
+        function createAnnotationFormHtml(model, existing) {
+            const dimensionsHtml = Object.entries(annotationDimensions).map(([key, dimension]) => {
+                if (dimension.type === 'score') {
+                    const currentValue = existing[`${key}_score`] || null;
+                    
+                    const optionsHtml = dimension.scale.map(score => `
+                        <button class="score-btn ${currentValue === score ? 'selected' : ''}" 
+                                onclick="selectScore('${model}', '${key}', ${score})"
+                                title="${dimension.descriptions[score]}">
+                            ${score}
+                        </button>
+                    `).join('');
+                    
+                    return `
+                        <div class="dimension-group">
+                            <div class="dimension-label">${dimension.name}</div>
+                            <div class="score-options" data-dimension="${key}" data-model="${model}">
+                                ${optionsHtml}
+                            </div>
+                        </div>
+                    `;
+                } else if (dimension.type === 'boolean') {
+                    const currentValue = existing[key];
+                    
+                    return `
+                        <div class="dimension-group">
+                            <div class="dimension-label">${dimension.name}</div>
+                            <div class="boolean-options" data-dimension="${key}" data-model="${model}">
+                                <button class="boolean-btn ${currentValue === true ? 'selected' : ''}" 
+                                        onclick="selectBoolean('${model}', '${key}', true)">
+                                    ${dimension.descriptions[true]}
+                                </button>
+                                <button class="boolean-btn ${currentValue === false ? 'selected' : ''}" 
+                                        onclick="selectBoolean('${model}', '${key}', false)">
+                                    ${dimension.descriptions[false]}
+                                </button>
+                            </div>
+                        </div>
+                    `;
+                }
+                return '';
+            }).join('');
+            
+            return `
+                <div class="annotation-dimensions">
+                    ${dimensionsHtml}
+                </div>
+                
+                <div class="annotation-notes">
+                    <label>标注备注：</label>
+                    <textarea placeholder="可选：添加标注说明或备注..." 
+                              data-model="${model}" 
+                              onchange="updateNotes('${model}', this.value)">${existing.annotation_notes || ''}</textarea>
+                </div>
+                
+                <div class="confidence-slider">
+                    <label>置信度：</label>
+                    <div class="slider-container">
+                        <input type="range" min="1" max="5" value="${existing.confidence_level || 3}" 
+                               class="slider" data-model="${model}"
+                               onchange="updateConfidence('${model}', this.value)">
+                        <span class="confidence-value" data-model="${model}">${existing.confidence_level || 3}</span>
+                    </div>
+                </div>
+                
+                <div class="form-actions">
+                    <button class="btn btn-secondary" onclick="clearAnnotation('${model}')">
+                        <i class="fas fa-eraser"></i> 清除
+                    </button>
+                    <button class="btn btn-primary" onclick="saveAnnotation('${model}')">
+                        <i class="fas fa-save"></i> 保存标注
+                    </button>
+                </div>
+            `;
+        }
+        
+        // 选择评分
+        function selectScore(model, dimension, score) {
+            const container = document.querySelector(`[data-dimension="${dimension}"][data-model="${model}"]`);
+            container.querySelectorAll('.score-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            event.target.classList.add('selected');
+        }
+        
+        // 选择布尔值
+        function selectBoolean(model, dimension, value) {
+            const container = document.querySelector(`[data-dimension="${dimension}"][data-model="${model}"]`);
+            container.querySelectorAll('.boolean-btn').forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            event.target.classList.add('selected');
+        }
+        
+        // 更新备注
+        function updateNotes(model, notes) {
+            // 备注会在保存时一起提交
+        }
+        
+        // 更新置信度
+        function updateConfidence(model, confidence) {
+            document.querySelector(`.confidence-value[data-model="${model}"]`).textContent = confidence;
+        }
+        
+        // 保存标注
+        async function saveAnnotation(model) {
+            try {
+                const annotationData = collectAnnotationData(model);
+                
+                if (!validateAnnotationData(annotationData)) {
+                    showError('请完成必填的标注维度');
+                    return;
+                }
+                
+                const response = await fetch('/api/annotation/save', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        result_id: resultId,
+                        question_index: currentQuestionIndex,
+                        model_name: model,
+                        annotation_data: annotationData,
+                        annotator: 'current_user'  // TODO: 实际用户ID
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (result.success) {
+                    showSuccess('标注保存成功');
+                    
+                    // 更新本地缓存
+                    const key = `${currentQuestionIndex}_${model}`;
+                    existingAnnotations[key] = {
+                        ...annotationData,
+                        annotation_time: new Date().toISOString()
+                    };
+                    
+                    // 更新问题列表状态
+                    renderQuestionList();
+                    
+                    // 重新加载进度
+                    loadProgress();
+                    
+                    // 自动跳转到下一个未完成的标注
+                    moveToNextUnannotated();
+                    
+                } else {
+                    showError(result.error || '保存失败');
+                }
+                
+            } catch (error) {
+                showError('保存失败: ' + error.message);
+            }
+        }
+        
+        // 收集标注数据
+        function collectAnnotationData(model) {
+            const data = {};
+            
+            // 收集评分数据
+            Object.keys(annotationDimensions).forEach(dimension => {
+                if (annotationDimensions[dimension].type === 'score') {
+                    const selected = document.querySelector(`[data-dimension="${dimension}"][data-model="${model}"] .score-btn.selected`);
+                    if (selected) {
+                        data[`${dimension}_score`] = parseInt(selected.textContent);
+                    }
+                } else if (annotationDimensions[dimension].type === 'boolean') {
+                    const selected = document.querySelector(`[data-dimension="${dimension}"][data-model="${model}"] .boolean-btn.selected`);
+                    if (selected) {
+                        data[dimension] = selected.textContent === annotationDimensions[dimension].descriptions[true];
+                    }
+                }
+            });
+            
+            // 收集备注
+            const notesTextarea = document.querySelector(`textarea[data-model="${model}"]`);
+            if (notesTextarea) {
+                data.annotation_notes = notesTextarea.value;
+            }
+            
+            // 收集置信度
+            const confidenceSlider = document.querySelector(`input[data-model="${model}"]`);
+            if (confidenceSlider) {
+                data.confidence_level = parseInt(confidenceSlider.value);
+            }
+            
+            return data;
+        }
+        
+        // 验证标注数据
+        function validateAnnotationData(data) {
+            // 检查必填维度（正确性和相关性）
+            return data.correctness_score && data.relevance_score;
+        }
+        
+        // 清除标注
+        function clearAnnotation(model) {
+            if (!confirm('确定要清除这个标注吗？')) {
+                return;
+            }
+            
+            // 清除UI状态
+            document.querySelectorAll(`[data-model="${model}"] .score-btn`).forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            document.querySelectorAll(`[data-model="${model}"] .boolean-btn`).forEach(btn => {
+                btn.classList.remove('selected');
+            });
+            
+            const notesTextarea = document.querySelector(`textarea[data-model="${model}"]`);
+            if (notesTextarea) {
+                notesTextarea.value = '';
+            }
+            
+            const confidenceSlider = document.querySelector(`input[data-model="${model}"]`);
+            if (confidenceSlider) {
+                confidenceSlider.value = 3;
+                document.querySelector(`.confidence-value[data-model="${model}"]`).textContent = 3;
+            }
+        }
+        
+        // 移动到下一个未标注的项目
+        function moveToNextUnannotated() {
+            // 查找下一个未完成的问题
+            for (let i = currentQuestionIndex; i < annotationData.length; i++) {
+                const question = annotationData[i];
+                const models = Object.keys(question.models_answers);
+                
+                for (const model of models) {
+                    const key = `${i}_${model}`;
+                    if (!existingAnnotations[key]) {
+                        if (i !== currentQuestionIndex) {
+                            selectQuestion(i);
+                        }
+                        return;
+                    }
+                }
+            }
+            
+            // 如果没有找到，从头开始查找
+            for (let i = 0; i < currentQuestionIndex; i++) {
+                const question = annotationData[i];
+                const models = Object.keys(question.models_answers);
+                
+                for (const model of models) {
+                    const key = `${i}_${model}`;
+                    if (!existingAnnotations[key]) {
+                        selectQuestion(i);
+                        return;
+                    }
+                }
+            }
+            
+            // 全部完成
+            showSuccess('所有标注已完成！');
+        }
+        
+        // 导出标注
+        async function exportAnnotations() {
+            try {
+                const response = await fetch(`/api/annotation/export/${resultId}?format=csv`);
+                
+                if (response.ok) {
+                    const blob = await response.blob();
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = `annotations_${resultId.substring(0, 8)}.csv`;
+                    document.body.appendChild(a);
+                    a.click();
+                    document.body.removeChild(a);
+                    window.URL.revokeObjectURL(url);
+                    
+                    showSuccess('标注数据导出成功');
+                } else {
+                    throw new Error('导出失败');
+                }
+            } catch (error) {
+                showError('导出失败: ' + error.message);
+            }
+        }
+        
+        // 显示统计信息
+        async function showStatistics() {
+            try {
+                const response = await fetch(`/api/annotation/statistics/${resultId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    // TODO: 显示统计信息模态框
+                    alert('统计信息：\n' + JSON.stringify(data.statistics, null, 2));
+                } else {
+                    showError(data.error || '获取统计信息失败');
+                }
+            } catch (error) {
+                showError('获取统计信息失败: ' + error.message);
+            }
+        }
+        
+        // 质量检查
+        async function validateQuality() {
+            try {
+                const response = await fetch(`/api/annotation/validate/${resultId}`);
+                const data = await response.json();
+                
+                if (data.success) {
+                    const quality = data.quality_check;
+                    alert(`质量检查结果：\n质量评分：${quality.quality_score}\n发现问题：${quality.total_issues}个`);
+                } else {
+                    showError(data.error || '质量检查失败');
+                }
+            } catch (error) {
+                showError('质量检查失败: ' + error.message);
+            }
+        }
+        
+        // 设置快捷键
+        function setupKeyboardShortcuts() {
+            document.addEventListener('keydown', function(e) {
+                // 防止在输入框中触发快捷键
+                if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+                    return;
+                }
+                
+                switch(e.key) {
+                    case 'ArrowRight':
+                        e.preventDefault();
+                        if (currentQuestionIndex < annotationData.length - 1) {
+                            selectQuestion(currentQuestionIndex + 1);
+                        }
+                        break;
+                    case 'ArrowLeft':
+                        e.preventDefault();
+                        if (currentQuestionIndex > 0) {
+                            selectQuestion(currentQuestionIndex - 1);
+                        }
+                        break;
+                    case '1':
+                    case '2':
+                    case '3':
+                    case '4':
+                    case '5':
+                        e.preventDefault();
+                        // 为当前焦点的维度设置评分
+                        // TODO: 实现快捷评分
+                        break;
+                }
+                
+                // Ctrl+S 保存
+                if (e.ctrlKey && e.key === 's') {
+                    e.preventDefault();
+                    // TODO: 保存当前所有标注
+                }
+            });
+        }
+        
+        // 工具函数
+        function showLoading() {
+            // TODO: 显示加载动画
+        }
+        
+        function hideLoading() {
+            // TODO: 隐藏加载动画
+        }
+        
+        function showSuccess(message) {
+            alert(message);  // TODO: 替换为更好的通知组件
+        }
+        
+        function showError(message) {
+            alert('错误: ' + message);  // TODO: 替换为更好的通知组件
+        }
+    </script>
+</body>
+</html>
