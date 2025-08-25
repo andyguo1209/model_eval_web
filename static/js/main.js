@@ -223,10 +223,19 @@ function toggleModel(modelName) {
 
 // 更新开始按钮状态
 function updateStartButton() {
-    const selectedModels = document.querySelectorAll('.model-item.selected');
+    const selectedModels = document.querySelectorAll('.model-card.selected');
     const startBtn = document.getElementById('start-btn');
     
     startBtn.disabled = selectedModels.length === 0;
+}
+
+// 切换模型选择状态
+function toggleModelSelection(modelName, modelCard) {
+    // 切换选中状态
+    modelCard.classList.toggle('selected');
+    
+    // 更新按钮状态
+    updateStartButton();
 }
 
 // 步骤导航
@@ -269,7 +278,7 @@ function updateStepDisplay() {
 
 // 开始评测
 async function startEvaluation() {
-    const selectedModels = Array.from(document.querySelectorAll('.model-item.selected'))
+    const selectedModels = Array.from(document.querySelectorAll('.model-card.selected'))
         .map(item => item.dataset.model);
     
     const evalMode = document.querySelector('input[name="eval-mode"]:checked').value;
@@ -702,6 +711,7 @@ function updateModelDisplay(data) {
     data.models.forEach(model => {
         const modelCard = document.createElement('div');
         modelCard.className = `model-card ${model.available ? 'available' : 'unavailable'}`;
+        modelCard.dataset.model = model.name; // 添加数据属性
         
         const statusIcon = model.available ? 
             '<i class="fas fa-check-circle status-icon available"></i>' :
@@ -721,6 +731,7 @@ function updateModelDisplay(data) {
         `;
         
         if (model.available) {
+            modelCard.style.cursor = 'pointer';
             modelCard.addEventListener('click', () => toggleModelSelection(model.name, modelCard));
         }
         
@@ -751,5 +762,5 @@ function updateModelDisplay(data) {
     
     modelList.appendChild(geminiCard);
     
-    updateStartButtonState();
+    updateStartButton();
 }

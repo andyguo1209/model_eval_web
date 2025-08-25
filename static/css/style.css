@@ -768,6 +768,53 @@ body {
     border-top: 1px solid #e9ecef;
 }
 
+/* 模型卡片选中状态 */
+.model-card.available {
+    transition: all 0.3s ease;
+}
+
+.model-card.available:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+}
+
+.model-card.selected {
+    border: 2px solid #667eea;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+    color: white;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.3);
+}
+
+.model-card.selected .model-header h4 {
+    color: white;
+}
+
+.model-card.selected .model-status {
+    color: rgba(255, 255, 255, 0.9);
+}
+
+.model-card.selected .status-icon.available {
+    color: #4ade80;
+}
+
+.model-card.selected::after {
+    content: '✓';
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: #4ade80;
+    color: white;
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 12px;
+    font-weight: bold;
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     .modal {
