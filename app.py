@@ -13,6 +13,7 @@ from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from typing import Dict, Any, List, Optional
 import threading
+from utils.env_manager import env_manager
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'model-evaluation-web-2024'
@@ -571,6 +572,86 @@ def view_results(filename):
                              data=df.to_dict('records'))
     except Exception as e:
         return jsonify({'error': f'读取结果文件错误: {str(e)}'}), 400
+
+
+@app.route('/save_api_keys', methods=['POST'])
+def save_api_keys():
+    """保存API密钥到本地.env文件"""
+    try:
+        data = request.get_json()
+        
+        # 获取API密钥
+        google_key = data.get('google_api_key', '').strip()
+        hkgai_v1_key = data.get('hkgai_v1_key', '').strip()
+        hkgai_v2_key = data.get('hkgai_v2_key', '').strip()
+        
+        # 准备要保存的环境变量
+        env_vars_to_save = {}
+        
+        if google_key:
+            env_vars_to_save['GOOGLE_API_KEY'] = google_key
+        if hkgai_v1_key:
+            env_vars_to_save['ARK_API_KEY_HKGAI_V1'] = hkgai_v1_key
+        if hkgai_v2_key:
+            env_vars_to_save['ARK_API_KEY_HKGAI_V2'] = hkgai_v2_key
+        
+        if not env_vars_to_save:
+            return jsonify({
+                'success': False,
+                'message': '没有提供任何API密钥'
+            })
+        
+        # 保存到.env文件
+        success = env_manager.save_env_vars(env_vars_to_save)
+        
+        if success:
+            # 重新配置Google Generative AI（如果有Google密钥）
+            if google_key:
+                genai.configure(api_key=google_key)
+            
+            return jsonify({
+                'success': True,
+                'message': f'已成功保存{len(env_vars_to_save)}个API密钥到本地文件',
+                'saved_keys': list(env_vars_to_save.keys())
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '保存API密钥失败，请检查文件权限'
+            })
+            
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'保存API密钥时发生错误: {str(e)}'
+        })
+
+
+@app.route('/get_env_status', methods=['GET'])
+def get_env_status():
+    """获取.env文件状态信息"""
+    try:
+        env_path = env_manager.get_env_file_path()
+        env_exists = env_manager.env_file_exists()
+        
+        saved_keys = []
+        if env_exists:
+            env_vars = env_manager.load_env()
+            api_keys = ['GOOGLE_API_KEY', 'ARK_API_KEY_HKGAI_V1', 'ARK_API_KEY_HKGAI_V2']
+            saved_keys = [key for key in api_keys if key in env_vars and env_vars[key]]
+        
+        return jsonify({
+            'env_file_path': env_path,
+            'env_file_exists': env_exists,
+            'saved_keys': saved_keys,
+            'total_saved': len(saved_keys)
+        })
+        
+    except Exception as e:
+        return jsonify({
+            'error': f'获取环境状态失败: {str(e)}'
+        })
+
 
 if __name__ == '__main__':
     print("🚀 模型评测Web系统启动中...")

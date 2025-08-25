@@ -6,6 +6,7 @@ AI模型评测系统启动脚本
 import os
 import sys
 from config import check_api_keys
+from utils.env_manager import env_manager
 
 def print_banner():
     """打印启动横幅"""
@@ -108,6 +109,20 @@ def main():
     
     print("🚀 正在启动AI模型评测系统...")
     
+    # 首先加载.env文件中的环境变量
+    print("📁 加载本地配置...")
+    env_vars = env_manager.load_env()
+    if env_vars:
+        api_keys = [k for k in env_vars.keys() if 'API_KEY' in k]
+        if api_keys:
+            print(f"✅ 从.env文件加载了 {len(api_keys)} 个API密钥")
+            for key in api_keys:
+                print(f"   - {key}: ****")
+        else:
+            print(f"📄 从.env文件加载了 {len(env_vars)} 个配置项")
+    else:
+        print("📄 未找到.env文件或文件为空")
+    
     # 检查依赖
     if not check_dependencies():
         sys.exit(1)
@@ -118,6 +133,7 @@ def main():
     # 检查环境（非阻塞）
     if not check_environment():
         print("\n⚠️  API密钥未配置，部分功能可能无法使用")
+        print("💡 提示：您可以通过Web界面的'API配置'按钮保存密钥到本地文件")
         print("系统仍将启动，请在使用前配置API密钥")
     
     # 显示使用提示

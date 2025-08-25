@@ -618,7 +618,7 @@ style.textContent = additionalCSS;
 document.head.appendChild(style);
 
 // API配置相关功能
-function openApiConfig() {
+async function openApiConfig() {
     const modal = document.getElementById('api-config-modal');
     const backdrop = document.getElementById('api-config-backdrop');
     
@@ -635,6 +635,44 @@ function openApiConfig() {
     // 设置表单提交事件
     const form = document.getElementById('api-config-form');
     form.onsubmit = handleApiConfigSubmit;
+    
+    // 加载环境状态
+    await updateEnvStatus();
+}
+
+// 更新环境状态显示
+async function updateEnvStatus() {
+    try {
+        const response = await fetch('/get_env_status');
+        const data = await response.json();
+        
+        const statusDiv = document.getElementById('env-status');
+        if (!statusDiv) return;
+        
+        if (data.error) {
+            statusDiv.innerHTML = `<span style="color: #e74c3c;">获取状态失败: ${data.error}</span>`;
+            return;
+        }
+        
+        const { env_file_exists, saved_keys, total_saved } = data;
+        
+        if (!env_file_exists || total_saved === 0) {
+            statusDiv.innerHTML = '<span style="color: #95a5a6;">📁 暂未保存任何密钥到本地文件</span>';
+        } else {
+            const keyList = saved_keys.map(key => {
+                const displayName = key.replace('ARK_API_KEY_', '').replace('GOOGLE_API_KEY', 'Google Gemini');
+                return `<span style="color: #27ae60;">✓ ${displayName}</span>`;
+            }).join(', ');
+            
+            statusDiv.innerHTML = `<span style="color: #27ae60;">💾 已保存 ${total_saved} 个密钥: ${keyList}</span>`;
+        }
+    } catch (error) {
+        console.error('获取环境状态失败:', error);
+        const statusDiv = document.getElementById('env-status');
+        if (statusDiv) {
+            statusDiv.innerHTML = '<span style="color: #e74c3c;">❌ 获取状态失败</span>';
+        }
+    }
 }
 
 function closeApiConfig() {
@@ -651,12 +689,13 @@ function closeApiConfig() {
     }, 300);
 }
 
-function handleApiConfigSubmit(e) {
+async function handleApiConfigSubmit(e) {
     e.preventDefault();
     
     const googleKey = document.getElementById('google-api-key').value;
     const hkgaiV1Key = document.getElementById('hkgai-v1-key').value;
     const hkgaiV2Key = document.getElementById('hkgai-v2-key').value;
+    const saveToFile = document.getElementById('save-to-file').checked;
     
     // 保存到sessionStorage (仅在当前会话有效)
     if (googleKey) {
@@ -669,8 +708,40 @@ function handleApiConfigSubmit(e) {
         sessionStorage.setItem('ARK_API_KEY_HKGAI_V2', hkgaiV2Key);
     }
     
+    let successMessage = 'API密钥配置已保存到当前会话！';
+    
+    // 如果选择保存到文件，则调用后端API
+    if (saveToFile && (googleKey || hkgaiV1Key || hkgaiV2Key)) {
+        try {
+            const response = await fetch('/save_api_keys', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    google_api_key: googleKey,
+                    hkgai_v1_key: hkgaiV1Key,
+                    hkgai_v2_key: hkgaiV2Key
+                })
+            });
+            
+            const result = await response.json();
+            
+            if (result.success) {
+                successMessage = `✅ ${result.message}（重启后仍然有效）`;
+                updateEnvStatus(); // 刷新环境状态
+            } else {
+                showNotification('error', `保存到文件失败: ${result.message}`);
+                return;
+            }
+        } catch (error) {
+            showNotification('error', `保存到文件时发生错误: ${error.message}`);
+            return;
+        }
+    }
+    
     // 显示成功消息
-    showNotification('success', 'API密钥配置已保存！请注意密钥仅在当前会话有效。');
+    showNotification('success', successMessage);
     
     // 关闭弹窗
     closeApiConfig();

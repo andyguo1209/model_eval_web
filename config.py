@@ -4,6 +4,12 @@
 """
 
 import os
+from utils.env_manager import env_manager
+
+# 首先从.env文件加载环境变量
+env_vars = env_manager.load_env()
+for key, value in env_vars.items():
+    os.environ[key] = value
 
 # API配置
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
