@@ -769,6 +769,10 @@ body {
 }
 
 /* 模型卡片选中状态 */
+.model-card {
+    position: relative; /* 为选中标记提供定位基准 */
+}
+
 .model-card.available {
     transition: all 0.3s ease;
 }
