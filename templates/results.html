@@ -386,13 +386,13 @@
 
     <script>
         // 全局变量
-        let originalData = {{ data | tojsonfilter }};
+        let originalData = {{ data | tojson }};
         let filteredData = [...originalData];
         let currentPage = 1;
         let pageSize = 25;
         let sortColumn = null;
         let sortDirection = 'asc';
-        let columns = {{ columns | tojsonfilter }};
+        let columns = {{ columns | tojson }};
         
         // 页面初始化
         document.addEventListener('DOMContentLoaded', function() {

@@ -370,9 +370,74 @@ def index():
     """首页"""
     return render_template('index.html')
 
+@app.route('/get_uploaded_files', methods=['GET'])
+def get_uploaded_files():
+    """获取已上传的文件列表"""
+    try:
+        upload_folder = app.config['UPLOAD_FOLDER']
+        files = []
+        
+        if os.path.exists(upload_folder):
+            for filename in os.listdir(upload_folder):
+                if filename.endswith(('.xlsx', '.xls', '.csv')):
+                    filepath = os.path.join(upload_folder, filename)
+                    stat = os.stat(filepath)
+                    files.append({
+                        'filename': filename,
+                        'size': stat.st_size,
+                        'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                        'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB"
+                    })
+        
+        # 按上传时间倒序排列
+        files.sort(key=lambda x: x['upload_time'], reverse=True)
+        return jsonify({'success': True, 'files': files})
+    except Exception as e:
+        return jsonify({'error': f'获取文件列表失败: {str(e)}'}), 500
+
+@app.route('/delete_file/<filename>', methods=['DELETE'])
+def delete_file(filename):
+    """删除上传的文件"""
+    try:
+        filename = secure_filename(filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        os.remove(filepath)
+        return jsonify({'success': True, 'message': f'文件 {filename} 已删除'})
+    except Exception as e:
+        return jsonify({'error': f'删除文件失败: {str(e)}'}), 500
+
+@app.route('/download_uploaded_file/<filename>', methods=['GET'])
+def download_uploaded_file(filename):
+    """下载上传的文件"""
+    try:
+        filename = secure_filename(filename)
+        upload_folder = app.config['UPLOAD_FOLDER']
+        return send_from_directory(upload_folder, filename, as_attachment=True)
+    except Exception as e:
+        return jsonify({'error': f'下载文件失败: {str(e)}'}), 500
+
+@app.route('/check_file_exists/<filename>', methods=['GET'])
+def check_file_exists(filename):
+    """检查文件是否已存在"""
+    filename = secure_filename(filename)
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    exists = os.path.exists(filepath)
+    return jsonify({'exists': exists, 'filename': filename})
+
 @app.route('/upload_file', methods=['POST'])
 def upload_file():
     """上传评测文件"""
+    # 检查是否是选择历史文件
+    if request.content_type == 'application/json':
+        data = request.get_json()
+        existing_file = data.get('existing_file')
+        if existing_file:
+            return analyze_existing_file(existing_file)
+    
     if 'file' not in request.files:
         return jsonify({'error': '没有选择文件'}), 400
     
@@ -380,9 +445,21 @@ def upload_file():
     if file.filename == '':
         return jsonify({'error': '没有选择文件'}), 400
     
+    # 检查是否允许覆盖
+    overwrite = request.form.get('overwrite', 'false').lower() == 'true'
+    
     if file and file.filename.endswith(('.xlsx', '.xls', '.csv')):
         filename = secure_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # 如果文件存在且不允许覆盖，返回提示
+        if os.path.exists(filepath) and not overwrite:
+            return jsonify({
+                'error': 'file_exists',
+                'message': f'文件 "{filename}" 已存在，是否要覆盖？',
+                'filename': filename
+            }), 409
+        
         file.save(filepath)
         
         try:
@@ -417,6 +494,49 @@ def upload_file():
             return jsonify({'error': f'文件解析错误: {str(e)}'}), 400
     
     return jsonify({'error': '不支持的文件格式，请上传 .xlsx、.xls 或 .csv 文件'}), 400
+
+def analyze_existing_file(filename):
+    """分析已存在的文件"""
+    try:
+        filename = secure_filename(filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        # 读取文件
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+        else:
+            df = pd.read_excel(filepath, engine='openpyxl')
+        
+        # 检查必需列
+        if 'query' not in df.columns:
+            return jsonify({'error': '文件必须包含"query"列'}), 400
+        
+        # 检测评测模式
+        mode = detect_evaluation_mode(df)
+        
+        # 统计信息
+        total_count = len(df)
+        type_counts = df['type'].value_counts().to_dict() if 'type' in df.columns else {'未分类': total_count}
+        
+        # 生成预览数据
+        preview_data = df.head(3).to_dict('records')
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'mode': mode,
+            'total_count': total_count,
+            'type_counts': type_counts,
+            'has_answer': 'answer' in df.columns,
+            'has_type': 'type' in df.columns,
+            'preview': preview_data
+        })
+        
+    except Exception as e:
+        return jsonify({'error': f'分析文件失败: {str(e)}'}), 500
 
 @app.route('/get_available_models', methods=['GET'])
 def get_available_models():
@@ -498,25 +618,28 @@ def start_evaluation():
         task_status[task_id].evaluation_mode = mode
         task_status[task_id].selected_models = selected_models
         
+        # 在主线程中获取所有需要的数据
+        headers_dict = dict(request.headers)
+        google_api_key = GOOGLE_API_KEY or request.headers.get('X-Google-API-Key')
+        data_list = df.to_dict('records')
+        queries = [str(row.get("query", "")) for row in data_list]
+        
         def task():
             try:
-                # 从请求头获取API密钥
-                headers_dict = dict(request.headers)
-                
                 # 第一步：获取模型答案
                 model_results = run_async_task(get_multiple_model_answers, queries, selected_models, task_id, headers_dict)
                 
                 # 第二步：评测
-                google_api_key = GOOGLE_API_KEY or request.headers.get('X-Google-API-Key')
                 output_file = run_async_task(evaluate_models, data_list, mode, model_results, task_id, google_api_key)
                 
                 task_status[task_id].status = "完成"
-                task_status[task_id].result_file = output_file
+                task_status[task_id].result_file = os.path.basename(output_file)
                 task_status[task_id].current_step = f"评测完成，结果已保存到 {os.path.basename(output_file)}"
                 
             except Exception as e:
                 task_status[task_id].status = "失败"
                 task_status[task_id].error_message = str(e)
+                print(f"评测任务失败: {e}")  # 添加日志
         
         # 在后台运行任务
         thread = threading.Thread(target=task)

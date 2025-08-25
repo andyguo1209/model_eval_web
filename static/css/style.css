@@ -240,6 +240,49 @@ body {
     margin-bottom: 30px;
 }
 
+/* 模型卡片头部 */
+.model-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 8px;
+}
+
+.model-header h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: bold;
+    color: #333;
+}
+
+.status-icon {
+    font-size: 16px;
+}
+
+.status-icon.available {
+    color: #28a745;
+}
+
+.status-icon.unavailable {
+    color: #dc3545;
+}
+
+/* 模型注释样式 */
+.model-note {
+    font-size: 12px;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 5px;
+}
+
+/* 模型要求样式 */
+.requirement {
+    font-size: 12px;
+    color: #6c757d;
+    font-style: italic;
+    margin-top: 8px;
+}
+
 .model-item {
     border: 2px solid #e9ecef;
     border-radius: 8px;
@@ -536,6 +579,264 @@ body {
     border-bottom: none;
 }
 
+/* 文件上传选项卡样式 */
+.file-upload-tabs {
+    margin-bottom: 20px;
+}
+
+.tab-buttons {
+    display: flex;
+    border-bottom: 2px solid #e9ecef;
+    gap: 0;
+}
+
+.tab-btn {
+    padding: 12px 20px;
+    border: none;
+    background: transparent;
+    color: #6c757d;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    border-bottom: 3px solid transparent;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.tab-btn:hover {
+    color: #4CAF50;
+    background: rgba(76, 175, 80, 0.05);
+}
+
+.tab-btn.active {
+    color: #4CAF50;
+    border-bottom-color: #4CAF50;
+    background: rgba(76, 175, 80, 0.1);
+}
+
+.upload-tab-content {
+    display: none;
+    margin-top: 20px;
+}
+
+.upload-tab-content.active {
+    display: block;
+}
+
+/* 历史文件列表样式 */
+.history-files-container {
+    min-height: 300px;
+}
+
+.history-files-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 15px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid #e9ecef;
+}
+
+.history-files-header h4 {
+    margin: 0;
+    color: #333;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.history-files-list {
+    max-height: 400px;
+    overflow-y: auto;
+}
+
+.loading-placeholder {
+    text-align: center;
+    padding: 40px;
+    color: #6c757d;
+}
+
+.no-files {
+    text-align: center;
+    padding: 40px 20px;
+    color: #6c757d;
+}
+
+.no-files i {
+    font-size: 48px;
+    margin-bottom: 15px;
+    color: #dee2e6;
+}
+
+.no-files p {
+    font-size: 16px;
+    margin-bottom: 5px;
+}
+
+.no-files small {
+    font-size: 12px;
+    color: #adb5bd;
+}
+
+.history-file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 15px;
+    border: 1px solid #e9ecef;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: white;
+    transition: all 0.3s ease;
+}
+
+.history-file-item:hover {
+    border-color: #4CAF50;
+    background: #f8fff8;
+    transform: translateY(-1px);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+}
+
+.file-info {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex: 1;
+}
+
+.file-icon {
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 8px;
+    background: #f8f9fa;
+    color: #4CAF50;
+    font-size: 18px;
+}
+
+.file-details {
+    flex: 1;
+}
+
+.file-name {
+    font-weight: 500;
+    color: #333;
+    margin-bottom: 4px;
+    max-width: 300px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.file-meta {
+    display: flex;
+    gap: 15px;
+    font-size: 12px;
+    color: #6c757d;
+}
+
+.file-meta span {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.file-actions {
+    display: flex;
+    gap: 8px;
+}
+
+.btn-sm {
+    padding: 6px 10px;
+    font-size: 12px;
+    border-radius: 4px;
+}
+
+/* 自定义弹窗样式 */
+.custom-alert {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.5);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    animation: fadeIn 0.3s ease;
+}
+
+.custom-alert-content {
+    background: white;
+    border-radius: 12px;
+    max-width: 500px;
+    width: 90%;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    animation: slideIn 0.3s ease;
+}
+
+.custom-alert-header {
+    padding: 20px 24px 15px;
+    border-bottom: 1px solid #e9ecef;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.custom-alert-header h4 {
+    margin: 0;
+    color: #333;
+    font-size: 1.2em;
+}
+
+.custom-alert-body {
+    padding: 20px 24px;
+}
+
+.custom-alert-body p {
+    margin-bottom: 15px;
+    color: #666;
+}
+
+.custom-alert-body ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+
+.custom-alert-body li {
+    padding: 8px 0;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    color: #555;
+}
+
+.custom-alert-footer {
+    padding: 15px 24px 20px;
+    display: flex;
+    justify-content: flex-end;
+}
+
+.text-warning { color: #f39c12 !important; }
+.text-danger { color: #e74c3c !important; }
+.text-info { color: #3498db !important; }
+
+@keyframes fadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes slideIn {
+    from { transform: translateY(-50px) scale(0.95); }
+    to { transform: translateY(0) scale(1); }
+}
+
 /* 响应式设计 */
 @media (max-width: 768px) {
     .container {
@@ -562,6 +863,11 @@ body {
     .step {
         max-width: none;
         flex: 0 0 calc(50% - 5px);
+    }
+    
+    .custom-alert-content {
+        width: 95%;
+        margin: 10px;
     }
 }
 
@@ -770,8 +1076,14 @@ body {
     border-top: 1px solid #e9ecef;
 }
 
-/* 模型卡片选中状态 */
+/* 模型卡片样式 - 统一使用 model-card */
 .model-card {
+    border: 2px solid #e9ecef;
+    border-radius: 8px;
+    padding: 20px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: white;
     position: relative; /* 为选中标记提供定位基准 */
 }
 
@@ -780,8 +1092,16 @@ body {
 }
 
 .model-card.available:hover {
+    border-color: #4CAF50;
     transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+}
+
+.model-card.disabled,
+.model-card.unavailable {
+    opacity: 0.5;
+    cursor: not-allowed;
+    background: #f8f9fa;
 }
 
 .model-card.selected {

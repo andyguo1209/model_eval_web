@@ -51,15 +51,47 @@
                 <div class="card">
                     <h2><i class="fas fa-upload"></i> 上传评测文件</h2>
                     
-                    <div class="file-upload-area" id="file-upload-area">
-                        <div class="upload-placeholder">
-                            <i class="fas fa-cloud-upload-alt"></i>
-                            <p>拖拽Excel文件到此处或点击选择文件</p>
-                            <p class="upload-hint">支持 .xlsx, .xls, .csv 格式</p>
-                            <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;">
-                            <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
-                                选择文件
+                    <!-- 文件上传选项卡 -->
+                    <div class="file-upload-tabs">
+                        <div class="tab-buttons">
+                            <button class="tab-btn active" onclick="switchUploadTab('new')">
+                                <i class="fas fa-upload"></i> 上传新文件
                             </button>
+                            <button class="tab-btn" onclick="switchUploadTab('history')">
+                                <i class="fas fa-history"></i> 选择历史文件
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 新文件上传 -->
+                    <div class="upload-tab-content active" id="new-upload-tab">
+                        <div class="file-upload-area" id="file-upload-area">
+                            <div class="upload-placeholder">
+                                <i class="fas fa-cloud-upload-alt"></i>
+                                <p>拖拽Excel文件到此处或点击选择文件</p>
+                                <p class="upload-hint">支持 .xlsx, .xls, .csv 格式</p>
+                                <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;">
+                                <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                    选择文件
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 历史文件选择 -->
+                    <div class="upload-tab-content" id="history-upload-tab">
+                        <div class="history-files-container">
+                            <div class="history-files-header">
+                                <h4><i class="fas fa-folder-open"></i> 历史文件</h4>
+                                <button class="btn btn-sm btn-secondary" onclick="refreshHistoryFiles()">
+                                    <i class="fas fa-sync-alt"></i> 刷新
+                                </button>
+                            </div>
+                            <div class="history-files-list" id="history-files-list">
+                                <div class="loading-placeholder">
+                                    <i class="fas fa-spinner fa-spin"></i> 加载中...
+                                </div>
+                            </div>
                         </div>
                     </div>
 
@@ -121,7 +153,7 @@
                             <label class="radio-option">
                                 <input type="radio" name="eval-mode" value="auto" checked>
                                 <span>自动检测</span>
-                                <small>根据文件是否包含answer列自动判断</small>
+                                <small>根据文件是否包含answer列自动判断评测模式</small>
                             </label>
                             <label class="radio-option">
                                 <input type="radio" name="eval-mode" value="subjective">
@@ -138,7 +170,7 @@
 
                     <div class="action-buttons">
                         <button class="btn btn-secondary" onclick="prevStep()">上一步</button>
-                        <button class="btn btn-primary" onclick="startEvaluation()" id="start-btn" disabled>
+                        <button class="btn btn-primary" id="start-btn" disabled>
                             开始评测
                         </button>
                     </div>

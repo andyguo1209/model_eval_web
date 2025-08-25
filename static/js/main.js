@@ -15,6 +15,7 @@ function initializeApp() {
     setupFileUpload();
     loadAvailableModels();
     updateStepDisplay();
+    loadHistoryFiles();
 }
 
 // 设置文件上传功能
@@ -74,9 +75,10 @@ function handleFileSelect() {
 }
 
 // 上传文件
-async function uploadFile(file) {
+async function uploadFile(file, overwrite = false) {
     const formData = new FormData();
     formData.append('file', file);
+    formData.append('overwrite', overwrite.toString());
 
     showLoading('正在上传文件...');
 
@@ -89,10 +91,15 @@ async function uploadFile(file) {
         const result = await response.json();
 
         if (result.success) {
-            fileInfo = result;
+            console.log('📤 上传成功，调用displayFileInfo');
             displayFileInfo(result);
             showSuccess('文件上传成功！');
+            loadHistoryFiles(); // 刷新历史文件列表
+        } else if (result.error === 'file_exists') {
+            // 文件已存在，询问是否覆盖
+            showFileExistsDialog(result.filename, file);
         } else {
+            console.error('❌ 文件上传失败:', result.error);
             showError(result.error || '文件上传失败');
         }
     } catch (error) {
@@ -102,13 +109,62 @@ async function uploadFile(file) {
     }
 }
 
+// 显示文件存在对话框
+function showFileExistsDialog(filename, file) {
+    const dialogHtml = `
+        <div class="custom-alert">
+            <div class="custom-alert-content">
+                <div class="custom-alert-header">
+                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <h4>文件已存在</h4>
+                </div>
+                <div class="custom-alert-body">
+                    <p>文件 "<strong>${filename}</strong>" 已存在，您要如何处理？</p>
+                </div>
+                <div class="custom-alert-footer">
+                    <button class="btn btn-secondary" onclick="closeCustomAlert()">取消</button>
+                    <button class="btn btn-primary" onclick="overwriteFile('${filename}')">覆盖文件</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = dialogHtml;
+    alertContainer.id = 'custom-alert-container';
+    document.body.appendChild(alertContainer);
+    
+    // 存储文件对象以便覆盖时使用
+    window.pendingFile = file;
+}
+
+// 覆盖文件
+async function overwriteFile(filename) {
+    closeCustomAlert();
+    if (window.pendingFile) {
+        await uploadFile(window.pendingFile, true);
+        window.pendingFile = null;
+    }
+}
+
 // 显示文件信息
 function displayFileInfo(info) {
+    // 确保全局变量设置
+    fileInfo = info;
+    console.log('✅ displayFileInfo 调用，文件信息已更新:', fileInfo);
+    
     const fileInfoDiv = document.getElementById('file-info');
     const previewDiv = document.getElementById('file-preview');
 
     let modeText = info.mode === 'objective' ? '客观题评测' : '主观题评测';
     let modeIcon = info.mode === 'objective' ? 'fa-check-circle' : 'fa-question-circle';
+    
+    // 根据检测结果自动设置评测模式
+    const modeRadio = document.querySelector(`input[name="eval-mode"][value="${info.mode}"]`);
+    if (modeRadio) {
+        modeRadio.checked = true;
+        console.log('✅ 评测模式已自动设置为:', info.mode);
+    }
 
     let typeCountsHtml = '';
     if (Object.keys(info.type_counts).length > 0) {
@@ -172,6 +228,13 @@ function displayFileInfo(info) {
     `;
 
     fileInfoDiv.style.display = 'block';
+    
+    // 重新检查按钮状态
+    console.log('🔄 文件信息显示完成，更新按钮状态');
+    updateStartButton();
+    
+    // 自动进入下一步
+    nextStep();
 }
 
 // 加载可用模型
@@ -196,8 +259,12 @@ async function loadAvailableModels() {
 function displayModelList(models) {
     const modelList = document.getElementById('model-list');
     
-    modelList.innerHTML = models.map(model => `
-        <div class="model-item ${model.available ? '' : 'disabled'}" 
+    console.log('🔧 生成模型列表，模型数量:', models.length);
+    
+    modelList.innerHTML = models.map(model => {
+        console.log(`📋 处理模型: ${model.name}, 可用: ${model.available}`);
+        return `
+        <div class="model-card ${model.available ? 'available' : 'disabled'}" 
              data-model="${model.name}" 
              onclick="${model.available ? `toggleModel('${model.name}')` : ''}">
             <div class="model-name">${model.name}</div>
@@ -207,17 +274,21 @@ function displayModelList(models) {
             </div>
             ${!model.available ? `<div class="model-env-hint">需配置 ${model.token_env}</div>` : ''}
         </div>
-    `).join('');
+        `;
+    }).join('');
     
+    console.log('✅ 模型列表已生成，调用updateStartButton');
     updateStartButton();
 }
 
 // 切换模型选择
 function toggleModel(modelName) {
-    const modelItem = document.querySelector(`[data-model="${modelName}"]`);
-    if (!modelItem || modelItem.classList.contains('disabled')) return;
+    const modelCard = document.querySelector(`[data-model="${modelName}"]`);
+    if (!modelCard || modelCard.classList.contains('disabled')) return;
     
-    modelItem.classList.toggle('selected');
+    console.log('🎯 切换模型选择:', modelName);
+    modelCard.classList.toggle('selected');
+    console.log('📋 模型选中状态:', modelCard.classList.contains('selected') ? '已选中' : '未选中');
     updateStartButton();
 }
 
@@ -227,16 +298,40 @@ function updateStartButton() {
     const availableModels = document.querySelectorAll('.model-card.available');
     const startBtn = document.getElementById('start-btn');
     
-    // 只有当有选中的模型且至少有一个模型可用时才启用按钮
+    // 检查各种条件
     const hasSelection = selectedModels.length > 0;
     const hasAvailableModels = availableModels.length > 0;
+    const hasFileUploaded = fileInfo !== null;
     
-    startBtn.disabled = !hasSelection || !hasAvailableModels;
+    // 确定按钮是否应该禁用
+    const shouldDisable = !hasSelection || !hasAvailableModels || !hasFileUploaded;
+    startBtn.disabled = shouldDisable;
+    
+    // 移除所有现有的事件监听器，重新绑定
+    startBtn.onclick = null;
+    
+    // 为按钮添加点击事件
+    if (shouldDisable) {
+        startBtn.onclick = function(e) {
+            e.preventDefault();
+            console.log('🚫 按钮被禁用，显示原因');
+            showStartButtonDisabledReason(hasFileUploaded, hasAvailableModels, hasSelection);
+        };
+    } else {
+        startBtn.onclick = function(e) {
+            e.preventDefault();
+            console.log('✅ 按钮可用，调用评测函数');
+            startEvaluation();
+        };
+    }
     
     // 调试信息
-    console.log('选中模型数量:', selectedModels.length);
-    console.log('可用模型数量:', availableModels.length);
-    console.log('按钮状态:', startBtn.disabled ? '禁用' : '启用');
+    console.log('🔍 按钮状态更新:');
+    console.log('  - 文件已上传:', hasFileUploaded);
+    console.log('  - 选中模型数量:', selectedModels.length);
+    console.log('  - 可用模型数量:', availableModels.length);
+    console.log('  - 按钮状态:', startBtn.disabled ? '禁用' : '启用');
+    console.log('  - 按钮onclick函数:', startBtn.onclick ? '已绑定' : '未绑定');
 }
 
 // 切换模型选择状态
@@ -286,29 +381,259 @@ function updateStepDisplay() {
     });
 }
 
+// 显示开始按钮禁用原因
+function showStartButtonDisabledReason(hasFileUploaded, hasAvailableModels, hasSelection) {
+    let reasons = [];
+    
+    if (!hasFileUploaded) {
+        reasons.push('<li><i class="fas fa-upload text-warning"></i> 请先上传评测文件</li>');
+    }
+    
+    if (!hasAvailableModels) {
+        reasons.push('<li><i class="fas fa-key text-danger"></i> 没有可用的模型，请先配置API密钥</li>');
+    }
+    
+    if (!hasSelection) {
+        reasons.push('<li><i class="fas fa-robot text-info"></i> 请至少选择一个模型进行评测</li>');
+    }
+    
+    const reasonHtml = `
+        <div class="custom-alert">
+            <div class="custom-alert-content">
+                <div class="custom-alert-header">
+                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <h4>无法开始评测</h4>
+                </div>
+                <div class="custom-alert-body">
+                    <p>请解决以下问题后再试：</p>
+                    <ul>${reasons.join('')}</ul>
+                </div>
+                <div class="custom-alert-footer">
+                    <button class="btn btn-primary" onclick="closeCustomAlert()">我知道了</button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 添加弹窗到页面
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = reasonHtml;
+    alertContainer.id = 'custom-alert-container';
+    document.body.appendChild(alertContainer);
+    
+    // 添加点击背景关闭功能
+    alertContainer.addEventListener('click', function(e) {
+        if (e.target === alertContainer) {
+            closeCustomAlert();
+        }
+    });
+}
+
+// 关闭自定义弹窗
+function closeCustomAlert() {
+    const alertContainer = document.getElementById('custom-alert-container');
+    if (alertContainer) {
+        alertContainer.remove();
+    }
+}
+
+// 切换上传选项卡
+function switchUploadTab(tabName) {
+    // 更新选项卡按钮状态
+    document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+    
+    // 找到点击的按钮并激活
+    const clickedBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
+        btn.textContent.includes(tabName === 'new' ? '上传新文件' : '选择历史文件')
+    );
+    if (clickedBtn) {
+        clickedBtn.classList.add('active');
+    }
+    
+    // 显示对应的内容
+    document.querySelectorAll('.upload-tab-content').forEach(content => content.classList.remove('active'));
+    document.getElementById(`${tabName}-upload-tab`).classList.add('active');
+    
+    // 如果切换到历史文件，加载文件列表
+    if (tabName === 'history') {
+        loadHistoryFiles();
+    }
+}
+
+// 加载历史文件列表
+async function loadHistoryFiles() {
+    const historyList = document.getElementById('history-files-list');
+    
+    try {
+        const response = await fetch('/get_uploaded_files');
+        const result = await response.json();
+        
+        if (result.success) {
+            displayHistoryFiles(result.files);
+        } else {
+            historyList.innerHTML = '<div class="no-files">获取文件列表失败</div>';
+        }
+    } catch (error) {
+        historyList.innerHTML = '<div class="no-files">网络错误</div>';
+    }
+}
+
+// 显示历史文件列表
+function displayHistoryFiles(files) {
+    const historyList = document.getElementById('history-files-list');
+    
+    if (files.length === 0) {
+        historyList.innerHTML = `
+            <div class="no-files">
+                <i class="fas fa-folder-open"></i>
+                <p>暂无历史文件</p>
+                <small>上传文件后将显示在这里</small>
+            </div>
+        `;
+        return;
+    }
+    
+    const filesHtml = files.map(file => `
+        <div class="history-file-item" data-filename="${file.filename}">
+            <div class="file-info">
+                <div class="file-icon">
+                    <i class="fas ${getFileIcon(file.filename)}"></i>
+                </div>
+                <div class="file-details">
+                    <div class="file-name" title="${file.filename}">${file.filename}</div>
+                    <div class="file-meta">
+                        <span><i class="fas fa-clock"></i> ${file.upload_time}</span>
+                        <span><i class="fas fa-hdd"></i> ${file.size_formatted}</span>
+                    </div>
+                </div>
+            </div>
+            <div class="file-actions">
+                <button class="btn btn-sm btn-primary" onclick="selectHistoryFile('${file.filename}')" 
+                        title="选择此文件">
+                    <i class="fas fa-check"></i>
+                </button>
+                <button class="btn btn-sm btn-secondary" onclick="downloadHistoryFile('${file.filename}')" 
+                        title="下载文件">
+                    <i class="fas fa-download"></i>
+                </button>
+                <button class="btn btn-sm btn-danger" onclick="deleteHistoryFile('${file.filename}')" 
+                        title="删除文件">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </div>
+        </div>
+    `).join('');
+    
+    historyList.innerHTML = filesHtml;
+}
+
+// 获取文件图标
+function getFileIcon(filename) {
+    const ext = filename.toLowerCase().split('.').pop();
+    switch (ext) {
+        case 'xlsx':
+        case 'xls':
+            return 'fa-file-excel';
+        case 'csv':
+            return 'fa-file-csv';
+        default:
+            return 'fa-file';
+    }
+}
+
+// 选择历史文件
+async function selectHistoryFile(filename) {
+    showLoading('正在加载文件...');
+    
+    try {
+        // 构造一个虚拟的file对象，直接调用后端API分析文件
+        const response = await fetch('/upload_file', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                existing_file: filename
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            console.log('✅ 历史文件加载成功，调用displayFileInfo');
+            displayFileInfo(result);
+            showSuccess(`已选择文件: ${filename}`);
+            
+            // 切换回文件上传选项卡显示结果
+            switchUploadTab('new');
+        } else {
+            console.error('❌ 历史文件加载失败:', result.error);
+            showError(result.error || '选择文件失败');
+        }
+    } catch (error) {
+        showError('网络错误：' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// 下载历史文件
+function downloadHistoryFile(filename) {
+    window.open(`/download_uploaded_file/${encodeURIComponent(filename)}`, '_blank');
+}
+
+// 删除历史文件
+async function deleteHistoryFile(filename) {
+    if (!confirm(`确定要删除文件 "${filename}" 吗？\n此操作不可撤销。`)) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/delete_file/${encodeURIComponent(filename)}`, {
+            method: 'DELETE'
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess(result.message);
+            loadHistoryFiles(); // 刷新文件列表
+            
+            // 如果删除的是当前选中的文件，清除文件信息
+            if (fileInfo && fileInfo.filename === filename) {
+                fileInfo = null;
+                document.getElementById('file-info').style.display = 'none';
+            }
+        } else {
+            showError(result.error || '删除文件失败');
+        }
+    } catch (error) {
+        showError('网络错误：' + error.message);
+    }
+}
+
+// 刷新历史文件
+function refreshHistoryFiles() {
+    loadHistoryFiles();
+}
+
 // 开始评测
 async function startEvaluation() {
+    console.log('🚀 开始评测');
+    
     const selectedModels = Array.from(document.querySelectorAll('.model-card.selected'))
         .map(item => item.dataset.model);
     
     const evalMode = document.querySelector('input[name="eval-mode"]:checked').value;
     
-    console.log('开始评测，选中的模型:', selectedModels);
+    // 验证必要条件
+    if (!fileInfo) {
+        showError('请先选择文件');
+        return;
+    }
     
     if (selectedModels.length === 0) {
         showError('请至少选择一个模型');
-        return;
-    }
-    
-    // 检查是否有API密钥
-    const availableModels = Array.from(document.querySelectorAll('.model-card.available'));
-    if (availableModels.length === 0) {
-        showError('没有可用的模型，请先配置API密钥');
-        return;
-    }
-
-    if (!fileInfo) {
-        showError('请先上传文件');
         return;
     }
 
@@ -318,7 +643,10 @@ async function startEvaluation() {
         force_mode: evalMode
     };
 
+    console.log('📤 发送请求数据:', requestData);
+
     try {
+        console.log('🌐 发起网络请求...');
         const response = await fetch('/start_evaluation', {
             method: 'POST',
             headers: {
@@ -327,17 +655,22 @@ async function startEvaluation() {
             body: JSON.stringify(requestData)
         });
 
+        console.log('📥 收到响应，状态码:', response.status);
         const result = await response.json();
+        console.log('📋 响应结果:', result);
 
         if (result.success) {
             currentTaskId = result.task_id;
+            console.log('✅ 评测任务创建成功，任务ID:', currentTaskId);
             nextStep(); // 进入进度页面
             startProgressMonitoring();
             showSuccess('评测任务已启动');
         } else {
+            console.error('❌ 评测启动失败:', result.error);
             showError(result.error || '启动评测失败');
         }
     } catch (error) {
+        console.error('💥 网络请求异常:', error);
         showError('网络错误：' + error.message);
     }
 }
@@ -462,7 +795,7 @@ function resetForm() {
     document.getElementById('file-info').style.display = 'none';
     
     // 清除模型选择
-    document.querySelectorAll('.model-item').forEach(item => {
+    document.querySelectorAll('.model-card').forEach(item => {
         item.classList.remove('selected');
     });
     
