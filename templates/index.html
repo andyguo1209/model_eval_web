@@ -264,6 +264,26 @@
                         <small class="form-help">用于调用HKGAI-V2模型</small>
                     </div>
                     
+                    <!-- 显示当前状态 -->
+                    <div class="env-status-section">
+                        <h4>💾 本地保存状态</h4>
+                        <div id="env-status" class="env-status">
+                            <span style="color: #95a5a6;">正在加载状态...</span>
+                        </div>
+                    </div>
+                    
+                    <!-- 保存选项 -->
+                    <div class="form-group checkbox-group">
+                        <label class="checkbox-label">
+                            <input type="checkbox" id="save-to-file" checked>
+                            <span class="checkmark"></span>
+                            💾 保存到本地文件（重启后仍然有效）
+                        </label>
+                        <small class="help-text">
+                            勾选此项将把API密钥保存到.env文件中，部署后永久有效
+                        </small>
+                    </div>
+                    
                     <div class="form-actions">
                         <button type="button" class="btn btn-secondary" onclick="closeApiConfig()">
                             取消

@@ -378,8 +378,10 @@ body {
 }
 
 .info-item {
-    display: flex;
-    justify-content: space-between;
+    display: grid;
+    grid-template-columns: 1fr 2fr;
+    gap: 15px;
+    align-items: center;
     margin-bottom: 10px;
     padding-bottom: 10px;
     border-bottom: 1px solid #dee2e6;
