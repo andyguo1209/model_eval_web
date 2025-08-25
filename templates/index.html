@@ -1,0 +1,283 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI模型评测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <!-- 头部标题 -->
+        <header class="header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1><i class="fas fa-robot"></i> AI模型评测系统</h1>
+                    <p>支持主观题/客观题评测，多模型对比分析</p>
+                </div>
+                <div class="header-actions">
+                    <button class="btn btn-outline" onclick="openApiConfig()" title="API密钥配置">
+                        <i class="fas fa-key"></i> API配置
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <!-- 步骤指示器 -->
+        <div class="steps">
+            <div class="step active" id="step1">
+                <div class="step-number">1</div>
+                <div class="step-text">上传文件</div>
+            </div>
+            <div class="step" id="step2">
+                <div class="step-number">2</div>
+                <div class="step-text">选择模型</div>
+            </div>
+            <div class="step" id="step3">
+                <div class="step-number">3</div>
+                <div class="step-text">开始评测</div>
+            </div>
+            <div class="step" id="step4">
+                <div class="step-number">4</div>
+                <div class="step-text">查看结果</div>
+            </div>
+        </div>
+
+        <!-- 主要内容区域 -->
+        <main class="main-content">
+            <!-- 第一步：文件上传 -->
+            <section class="section active" id="upload-section">
+                <div class="card">
+                    <h2><i class="fas fa-upload"></i> 上传评测文件</h2>
+                    
+                    <div class="file-upload-area" id="file-upload-area">
+                        <div class="upload-placeholder">
+                            <i class="fas fa-cloud-upload-alt"></i>
+                            <p>拖拽Excel文件到此处或点击选择文件</p>
+                            <p class="upload-hint">支持 .xlsx, .xls, .csv 格式</p>
+                            <input type="file" id="file-input" accept=".xlsx,.xls,.csv" style="display: none;">
+                            <button class="btn btn-primary" onclick="document.getElementById('file-input').click()">
+                                选择文件
+                            </button>
+                        </div>
+                    </div>
+
+                    <!-- 文件要求说明 -->
+                    <div class="file-requirements">
+                        <h3>文件格式要求：</h3>
+                        <div class="requirements-grid">
+                            <div class="requirement-item">
+                                <h4><i class="fas fa-question-circle"></i> 主观题评测</h4>
+                                <p>必需列：<code>query</code>（问题）</p>
+                                <p>可选列：<code>type</code>（问题类型）</p>
+                                <p class="example">适用于：创意写作、观点表达等</p>
+                            </div>
+                            <div class="requirement-item">
+                                <h4><i class="fas fa-check-circle"></i> 客观题评测</h4>
+                                <p>必需列：<code>query</code>（问题）、<code>answer</code>（标准答案）</p>
+                                <p>可选列：<code>type</code>（问题类型）</p>
+                                <p class="example">适用于：知识问答、数学计算等</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 文件信息预览 -->
+                <div class="card" id="file-info" style="display: none;">
+                    <h3><i class="fas fa-info-circle"></i> 文件信息</h3>
+                    <div id="file-preview"></div>
+                    <button class="btn btn-primary" onclick="nextStep()">下一步：选择模型</button>
+                </div>
+            </section>
+
+            <!-- 第二步：模型选择 -->
+            <section class="section" id="model-section">
+                <div class="card">
+                    <h2><i class="fas fa-cogs"></i> 选择评测模型</h2>
+                    
+                    <!-- API密钥状态提示 -->
+                    <div class="api-status" id="api-status" style="display: none;">
+                        <div class="alert alert-warning">
+                            <i class="fas fa-exclamation-triangle"></i>
+                            <strong>需要配置API密钥</strong>
+                            <p>部分模型需要API密钥才能使用，请先配置相关密钥。</p>
+                            <button class="btn btn-sm btn-primary" onclick="openApiConfig()">
+                                <i class="fas fa-key"></i> 立即配置
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="model-selection">
+                        <h3>可用模型：</h3>
+                        <div id="model-list" class="model-grid">
+                            <!-- 动态生成模型列表 -->
+                        </div>
+                    </div>
+
+                    <div class="evaluation-mode">
+                        <h3>评测模式：</h3>
+                        <div class="mode-options">
+                            <label class="radio-option">
+                                <input type="radio" name="eval-mode" value="auto" checked>
+                                <span>自动检测</span>
+                                <small>根据文件是否包含answer列自动判断</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="eval-mode" value="subjective">
+                                <span>强制主观评测</span>
+                                <small>忽略answer列，进行主观质量评测</small>
+                            </label>
+                            <label class="radio-option">
+                                <input type="radio" name="eval-mode" value="objective">
+                                <span>强制客观评测</span>
+                                <small>必须有answer列，进行准确性评测</small>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-secondary" onclick="prevStep()">上一步</button>
+                        <button class="btn btn-primary" onclick="startEvaluation()" id="start-btn" disabled>
+                            开始评测
+                        </button>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 第三步：评测进度 -->
+            <section class="section" id="progress-section">
+                <div class="card">
+                    <h2><i class="fas fa-spinner fa-spin"></i> 评测进行中</h2>
+                    
+                    <div class="progress-info">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="progress-fill"></div>
+                        </div>
+                        <div class="progress-text">
+                            <span id="progress-percent">0%</span>
+                            <span id="progress-detail"></span>
+                        </div>
+                    </div>
+
+                    <div class="task-info" id="task-info">
+                        <div class="info-item">
+                            <strong>评测模式：</strong>
+                            <span id="eval-mode-display"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>选择模型：</strong>
+                            <span id="selected-models-display"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>当前状态：</strong>
+                            <span id="current-status"></span>
+                        </div>
+                        <div class="info-item">
+                            <strong>已用时间：</strong>
+                            <span id="elapsed-time"></span>
+                        </div>
+                    </div>
+
+                    <div class="log-area">
+                        <h4>详细日志：</h4>
+                        <div id="log-content" class="log-content"></div>
+                    </div>
+                </div>
+            </section>
+
+            <!-- 第四步：结果展示 -->
+            <section class="section" id="results-section">
+                <div class="card">
+                    <h2><i class="fas fa-chart-bar"></i> 评测完成</h2>
+                    
+                    <div class="results-summary" id="results-summary">
+                        <!-- 动态生成结果摘要 -->
+                    </div>
+
+                    <div class="action-buttons">
+                        <button class="btn btn-success" onclick="downloadResults()" id="download-btn">
+                            <i class="fas fa-download"></i> 下载Excel报告
+                        </button>
+                        <button class="btn btn-primary" onclick="viewResults()" id="view-btn">
+                            <i class="fas fa-eye"></i> 在线查看结果
+                        </button>
+                        <button class="btn btn-secondary" onclick="resetForm()">
+                            <i class="fas fa-redo"></i> 重新开始
+                        </button>
+                    </div>
+                </div>
+            </section>
+        </main>
+
+        <!-- 错误提示 -->
+        <div class="notification error" id="error-notification" style="display: none;">
+            <i class="fas fa-exclamation-circle"></i>
+            <span id="error-message"></span>
+            <button onclick="hideNotification('error')">&times;</button>
+        </div>
+
+        <!-- 成功提示 -->
+        <div class="notification success" id="success-notification" style="display: none;">
+            <i class="fas fa-check-circle"></i>
+            <span id="success-message"></span>
+            <button onclick="hideNotification('success')">&times;</button>
+        </div>
+    </div>
+
+    <!-- API密钥配置弹窗 -->
+    <div class="modal" id="api-config-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-key"></i> API密钥配置</h3>
+                <button class="modal-close" onclick="closeApiConfig()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <form id="api-config-form">
+                    <div class="form-group">
+                        <label for="google-api-key">
+                            <i class="fas fa-brain"></i> Google Gemini API密钥
+                        </label>
+                        <input type="password" id="google-api-key" name="google-api-key" 
+                               placeholder="输入Google API密钥用于AI评测" class="form-control">
+                        <small class="form-help">
+                            用于AI评分和评测功能。
+                            <a href="https://makersuite.google.com/" target="_blank" rel="noopener">获取密钥</a>
+                        </small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="hkgai-v1-key">
+                            <i class="fas fa-robot"></i> HKGAI-V1 API密钥
+                        </label>
+                        <input type="password" id="hkgai-v1-key" name="hkgai-v1-key" 
+                               placeholder="输入HKGAI-V1模型API密钥" class="form-control">
+                        <small class="form-help">用于调用HKGAI-V1模型</small>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="hkgai-v2-key">
+                            <i class="fas fa-robot"></i> HKGAI-V2 API密钥
+                        </label>
+                        <input type="password" id="hkgai-v2-key" name="hkgai-v2-key" 
+                               placeholder="输入HKGAI-V2模型API密钥" class="form-control">
+                        <small class="form-help">用于调用HKGAI-V2模型</small>
+                    </div>
+                    
+                    <div class="form-actions">
+                        <button type="button" class="btn btn-secondary" onclick="closeApiConfig()">
+                            取消
+                        </button>
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> 保存配置
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop" id="api-config-backdrop" style="display: none;" onclick="closeApiConfig()"></div>
+
+    <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+</body>
+</html>
