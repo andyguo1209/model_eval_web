@@ -224,9 +224,19 @@ function toggleModel(modelName) {
 // 更新开始按钮状态
 function updateStartButton() {
     const selectedModels = document.querySelectorAll('.model-card.selected');
+    const availableModels = document.querySelectorAll('.model-card.available');
     const startBtn = document.getElementById('start-btn');
     
-    startBtn.disabled = selectedModels.length === 0;
+    // 只有当有选中的模型且至少有一个模型可用时才启用按钮
+    const hasSelection = selectedModels.length > 0;
+    const hasAvailableModels = availableModels.length > 0;
+    
+    startBtn.disabled = !hasSelection || !hasAvailableModels;
+    
+    // 调试信息
+    console.log('选中模型数量:', selectedModels.length);
+    console.log('可用模型数量:', availableModels.length);
+    console.log('按钮状态:', startBtn.disabled ? '禁用' : '启用');
 }
 
 // 切换模型选择状态
@@ -283,8 +293,17 @@ async function startEvaluation() {
     
     const evalMode = document.querySelector('input[name="eval-mode"]:checked').value;
     
+    console.log('开始评测，选中的模型:', selectedModels);
+    
     if (selectedModels.length === 0) {
         showError('请至少选择一个模型');
+        return;
+    }
+    
+    // 检查是否有API密钥
+    const availableModels = Array.from(document.querySelectorAll('.model-card.available'));
+    if (availableModels.length === 0) {
+        showError('没有可用的模型，请先配置API密钥');
         return;
     }
 
@@ -695,6 +714,9 @@ function updateModelDisplay(data) {
     const modelList = document.getElementById('model-list');
     const apiStatus = document.getElementById('api-status');
     
+    // 调试信息
+    console.log('模型数据:', data);
+    
     // 检查是否有不可用的模型
     const hasUnavailableModels = data.models.some(model => !model.available) || !data.gemini_available;
     
@@ -738,9 +760,9 @@ function updateModelDisplay(data) {
         modelList.appendChild(modelCard);
     });
     
-    // 添加Gemini状态
+    // 添加Gemini状态（注意：Gemini仅用于评分，不参与模型选择）
     const geminiCard = document.createElement('div');
-    geminiCard.className = `model-card ${data.gemini_available ? 'available' : 'unavailable'}`;
+    geminiCard.className = `model-card ${data.gemini_available ? 'available' : 'unavailable'} gemini-card`;
     
     const geminiStatusIcon = data.gemini_available ? 
         '<i class="fas fa-check-circle status-icon available"></i>' :
