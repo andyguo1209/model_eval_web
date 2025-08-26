@@ -10,8 +10,7 @@ import csv
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
-import google.generativeai as genai
-from google.generativeai import types
+# Removed google.generativeai import as we're using direct API calls
 from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
@@ -84,7 +83,6 @@ SUPPORTED_MODELS = {
 MODEL_NAME = "gemini-2.5-flash"
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 if GOOGLE_API_KEY:
-    genai.configure(api_key=GOOGLE_API_KEY)
     print(f"✅ Gemini配置成功: {MODEL_NAME}")
 else:
     print("⚠️ 未配置GOOGLE_API_KEY")
@@ -232,23 +230,61 @@ def parse_json_str(s: str) -> Dict[str, Any]:
 
 
 async def query_gemini_model(prompt: str, api_key: str = None) -> str:
-    """查询Gemini模型"""
-    def call_model():
-        # 使用传入的API密钥或默认密钥
-        if api_key:
-            genai.configure(api_key=api_key)
-        
-        try:
-            model = genai.GenerativeModel(MODEL_NAME)
-            resp = model.generate_content(prompt)
-            result = resp.text if resp and resp.text else ""
-            print(f"✅ Gemini评测成功，返回长度: {len(result)}")
-            return result
-        except Exception as e:
-            print(f"❌ Gemini评测失败: {e}")
-            return f"Gemini模型调用失败: {str(e)}"
+    """查询Gemini模型 使用 curl 方式"""
+    # 使用传入的API密钥或默认密钥
+    actual_api_key = api_key or GOOGLE_API_KEY
     
-    return await asyncio.to_thread(call_model)
+    if not actual_api_key:
+        return "Gemini模型调用失败: 未配置GOOGLE_API_KEY"
+    
+    # 构建 API 请求
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+    headers = {
+        "x-goog-api-key": actual_api_key,
+        "Content-Type": "application/json"
+    }
+    
+    data = {
+        "contents": [
+            {
+                "parts": [
+                    {"text": prompt}
+                ]
+            }
+        ],
+        "tools": [
+            {
+                "google_search": {}
+            }
+        ]
+    }
+    
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=data, timeout=60) as response:
+                if response.status == 200:
+                    result = await response.json()
+                    
+                    # 提取结果文本
+                    if "candidates" in result and len(result["candidates"]) > 0:
+                        candidate = result["candidates"][0]
+                        if "content" in candidate and "parts" in candidate["content"]:
+                            parts = candidate["content"]["parts"]
+                            if len(parts) > 0 and "text" in parts[0]:
+                                text_result = parts[0]["text"]
+                                print(f"✅ Gemini评测成功，返回长度: {len(text_result)}")
+                                return text_result
+                    
+                    print(f"⚠️ Gemini返回格式异常: {result}")
+                    return "Gemini模型调用失败: 返回格式异常"
+                else:
+                    error_text = await response.text()
+                    print(f"❌ Gemini API请求失败: HTTP {response.status} - {error_text}")
+                    return f"Gemini模型调用失败: HTTP {response.status} - {error_text}"
+                    
+    except Exception as e:
+        print(f"❌ Gemini评测失败: {e}")
+        return f"Gemini模型调用失败: {str(e)}"
 
 def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_type: str = "") -> str:
     """构建主观题评测提示"""
@@ -881,10 +917,7 @@ def save_api_keys():
         success = env_manager.save_env_vars(env_vars_to_save)
         
         if success:
-            # 重新配置Google Generative AI（如果有Google密钥）
-            if google_key:
-                genai.configure(api_key=google_key)
-            
+            # API密钥已保存，无需额外配置（使用直接API调用）
             return jsonify({
                 'success': True,
                 'message': f'已成功保存{len(env_vars_to_save)}个API密钥到本地文件',
