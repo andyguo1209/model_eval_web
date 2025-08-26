@@ -28,7 +28,41 @@ chmod +x deploy.sh
 ./deploy.sh
 ```
 
-### 手动安装 (5分钟)
+### 手动安装
+
+#### 方式1: 使用Conda (推荐)
+
+##### 快速启动
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-repo/model-evaluation-web.git
+cd model-evaluation-web
+
+# 2. 一键启动 (自动创建环境并启动)
+./start_conda.sh
+```
+
+##### 详细步骤
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-repo/model-evaluation-web.git
+cd model-evaluation-web
+
+# 2. 创建conda环境
+conda env create -f environment.yml
+
+# 3. 激活环境
+conda activate model-evaluation-web
+
+# 4. 配置环境变量
+cp config.env.template .env
+nano .env  # 编辑API密钥配置
+
+# 5. 启动服务
+python start.py
+```
+
+#### 方式2: 使用pip/venv
 
 ```bash
 # 1. 克隆项目
@@ -46,11 +80,8 @@ pip install -r requirements.txt
 cp config.env.template .env
 nano .env  # 编辑API密钥配置
 
-# 5. 初始化数据库
-python3 -c "from database import EvaluationDatabase; EvaluationDatabase()"
-
-# 6. 启动服务
-python3 start.py
+# 5. 启动服务
+python start.py
 ```
 
 ### 🛠️ 环境问题修复
@@ -69,10 +100,36 @@ chmod +x fix_environment.sh
 
 ### 系统要求
 
-- **Python**: 3.8+
+- **Python**: 3.8+ (推荐 3.9)
 - **操作系统**: Windows/macOS/Linux
 - **内存**: 最低2GB，推荐4GB+
 - **存储**: 最低1GB可用空间
+- **环境管理**: 推荐使用Conda，也支持pip/venv
+
+### 环境管理工具安装
+
+#### Conda (推荐)
+```bash
+# 安装Miniconda (轻量版)
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# 或安装Anaconda (完整版)
+wget https://repo.anaconda.com/archive/Anaconda3-latest-Linux-x86_64.sh
+bash Anaconda3-latest-Linux-x86_64.sh
+```
+
+#### pip (系统自带)
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install python3-pip python3-venv
+
+# CentOS/RHEL
+sudo yum install python3-pip
+
+# macOS (使用Homebrew)
+brew install python
+```
 
 ### API密钥配置
 
@@ -191,15 +248,22 @@ python3 start.py
 model-evaluation-web/
 ├── app.py                 # 主应用程序
 ├── start.py              # 启动脚本
+├── start_conda.sh        # Conda环境一键启动脚本
+├── fix_environment.sh    # 环境修复脚本
 ├── database.py           # 数据库管理
 ├── history_manager.py    # 历史管理
 ├── comparison_analysis.py # 对比分析
+├── environment.yml       # Conda环境配置
+├── requirements.txt      # pip依赖配置
+├── config.env.template   # 环境变量模板
 ├── templates/            # HTML模板
 ├── static/              # 静态资源
 ├── utils/               # 工具模块
 ├── data/                # 示例数据
 ├── results/             # 评测结果
-└── results_history/     # 历史结果
+├── results_history/     # 历史结果
+├── TROUBLESHOOTING.md   # 问题解决指南
+└── DEPLOYMENT.md        # 部署指南
 ```
 
 ## 🔄 API接口

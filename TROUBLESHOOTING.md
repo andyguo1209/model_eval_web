@@ -157,7 +157,45 @@ rm -rf /tmp/*
 sudo apt clean
 ```
 
-### 8. 🔧 虚拟环境问题
+### 8. 🔧 环境管理问题
+
+#### Conda环境问题
+
+**问题: conda命令未找到**
+```bash
+# 解决方案: 安装conda
+# 下载Miniconda
+wget https://repo.anaconda.com/miniconda/Miniconda3-latest-Linux-x86_64.sh
+bash Miniconda3-latest-Linux-x86_64.sh
+
+# 重新加载shell配置
+source ~/.bashrc
+```
+
+**问题: 环境创建失败**
+```bash
+# 清理conda缓存
+conda clean --all
+
+# 更新conda
+conda update conda
+
+# 重新创建环境
+conda env remove -n model-evaluation-web
+conda env create -f environment.yml
+```
+
+**问题: 包冲突**
+```bash
+# 严格按照environment.yml创建环境
+conda env create -f environment.yml --force
+
+# 如果仍有问题，使用mamba (更快的包管理器)
+conda install mamba -c conda-forge
+mamba env create -f environment.yml
+```
+
+#### pip/venv环境问题
 
 **推荐使用虚拟环境:**
 ```bash
@@ -171,6 +209,51 @@ venv\Scripts\activate     # Windows
 
 # 安装依赖
 pip install -r requirements.txt
+```
+
+### 9. 🐍 环境管理最佳实践
+
+#### Conda环境管理
+```bash
+# 创建环境
+conda env create -f environment.yml
+
+# 激活环境
+conda activate model-evaluation-web
+
+# 更新环境
+conda env update -f environment.yml
+
+# 导出环境
+conda env export > environment.yml
+
+# 删除环境
+conda env remove -n model-evaluation-web
+
+# 列出所有环境
+conda env list
+```
+
+#### pip环境管理
+```bash
+# 创建虚拟环境
+python -m venv venv
+
+# 激活环境
+source venv/bin/activate  # Linux/Mac
+venv\Scripts\activate     # Windows
+
+# 更新pip
+pip install --upgrade pip
+
+# 安装依赖
+pip install -r requirements.txt
+
+# 导出环境
+pip freeze > requirements.txt
+
+# 停用环境
+deactivate
 ```
 
 ## 🚀 一键诊断和修复

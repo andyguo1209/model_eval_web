@@ -1,0 +1,42 @@
+name: model-evaluation-web
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.9
+  - pip=23.2.*
+  - numpy>=1.21.0,<1.25.0
+  - pandas=2.0.3
+  - flask=2.3.3
+  - aiohttp=3.8.5
+  - openpyxl=3.1.2
+  - werkzeug=2.3.7
+  - python-dotenv=1.0.0
+  - sqlite=3.42.*
+  - pip:
+    - google-generativeai==0.7.2
+    
+# 可选的开发依赖
+# - jupyter
+# - ipython
+# - pytest
+
+# 系统信息
+# 支持的操作系统: Windows, macOS, Linux
+# Python版本要求: 3.8+
+# 推荐Python版本: 3.9
+
+# 安装说明:
+# 1. 安装Anaconda或Miniconda
+# 2. 创建环境: conda env create -f environment.yml
+# 3. 激活环境: conda activate model-evaluation-web
+# 4. 运行系统: python start.py
+
+# 更新环境:
+# conda env update -f environment.yml
+
+# 导出当前环境:
+# conda env export > environment.yml
+
+# 删除环境:
+# conda env remove -n model-evaluation-web
