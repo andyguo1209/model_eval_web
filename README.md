@@ -1,15 +1,18 @@
-# AI模型评测Web系统
+# 🚀 AI模型评测Web系统
 
 一个功能强大且易于使用的AI模型评测系统，支持主观题和客观题评测，多模型对比分析。
 
 ## ✨ 主要特性
 
 - 🎯 **智能评测模式**：自动识别主观题/客观题，或手动选择评测模式
-- 🤖 **多模型支持**：支持HKGAI-V1、HKGAI-V2等多个模型，可灵活选择
-- 📊 **美观的Web界面**：直观的步骤引导，实时进度显示
-- 📈 **丰富的结果展示**：在线查看、筛选、排序，支持导出Excel
+- 🤖 **多模型支持**：支持Gemini、HKGAI-V1、HKGAI-V2等多个模型，可灵活选择
+- 📊 **美观的Web界面**：直观的步骤引导，实时进度显示，现代化响应式设计
+- 📈 **丰富的结果展示**：在线查看、筛选、排序，支持Excel/CSV多格式导出
 - ⚡ **高性能处理**：异步并发处理，支持大批量评测
 - 🔍 **详细分析**：按类型统计，支持详细查看每个问题的评测结果
+- 📚 **历史管理**：完整的评测历史记录，支持版本管理和智能检索
+- 🏷️ **人工标注**：专业的多维度标注系统（正确性、相关性、安全性、创造性、逻辑一致性）
+- 📊 **对比分析**：模型性能对比、趋势分析、质量指标统计
 
 ## 🚀 快速开始
 
@@ -18,6 +21,11 @@
 ```bash
 # 下载并运行一键部署脚本
 curl -fsSL https://raw.githubusercontent.com/your-repo/model-evaluation-web/main/deploy.sh | bash
+
+# 或者手动下载执行
+wget https://github.com/your-repo/model-evaluation-web/raw/main/deploy.sh
+chmod +x deploy.sh
+./deploy.sh
 ```
 
 ### 手动安装 (5分钟)
@@ -27,189 +35,228 @@ curl -fsSL https://raw.githubusercontent.com/your-repo/model-evaluation-web/main
 git clone https://github.com/your-repo/model-evaluation-web.git
 cd model-evaluation-web
 
-# 2. 安装依赖
+# 2. 创建虚拟环境
 python3 -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # Windows: venv\Scripts\activate
+
+# 3. 安装依赖
 pip install -r requirements.txt
 
-# 3. 配置环境
+# 4. 配置环境变量
 cp config.env.template .env
-nano .env  # 编辑API密钥
+nano .env  # 编辑API密钥配置
 
-# 4. 启动服务
-python3 app.py
+# 5. 初始化数据库
+python3 -c "from database import EvaluationDatabase; EvaluationDatabase()"
+
+# 6. 启动服务
+python3 start.py
 ```
 
-### 环境要求
+## 🔧 环境配置
 
-- Python 3.8+
-- Flask 2.3+
-- pandas, aiohttp 等依赖包
+### 系统要求
 
-### 📚 详细文档
-
-- [📖 详细部署指南](DEPLOYMENT.md) - 生产环境部署
-- [⚡ 快速开始指南](QUICK_START.md) - 5分钟快速上手  
-- [📋 更新日志](CHANGELOG.md) - 版本更新记录
-- [🔧 功能说明](FEATURE_SUMMARY.md) - 完整功能列表
-
-### 🌐 访问地址
-
-- **开发环境**: http://localhost:5001
-- **生产环境**: http://your-domain.com
-
-## 📋 使用说明
-
-### 1. 准备测试文件
-
-#### 主观题评测文件格式：
-```csv
-query,type
-写一首关于春天的诗,创意写作
-请解释人工智能的基本概念,知识问答
-如何看待远程工作的利弊,观点表达
-```
-
-#### 客观题评测文件格式：
-```csv
-query,answer,type
-1+1等于几?,2,数学计算
-中国的首都是哪里?,北京,地理知识
-Python是哪一年发布的?,1991,技术知识
-```
-
-**必需列：**
-- `query`：问题内容
-
-**可选列：**
-- `type`：问题类型（用于分类统计）
-- `answer`：标准答案（客观题评测时需要）
-
-### 2. 使用流程
-
-1. **上传文件**：将Excel或CSV文件拖拽到上传区域
-2. **选择模型**：勾选要评测的AI模型
-3. **选择模式**：选择评测模式（自动检测/强制主观/强制客观）
-4. **开始评测**：点击开始按钮，系统自动处理
-5. **查看结果**：在线查看或下载Excel报告
-
-### 3. 评测模式说明
-
-- **主观题评测**：基于内容质量进行评分（0-5分）
-  - 适用于：创意写作、观点表达、开放性问题等
-  - 评分标准：逻辑性、完整性、创新性等
-
-- **客观题评测**：基于标准答案进行准确性评分（0-5分）
-  - 适用于：知识问答、数学计算、技术问题等
-  - 评分标准：正确性、准确性、完整性等
-
-## 📊 结果展示
-
-### 统计概览
-- 总题数、评测模型数量
-- 按类型分布统计
-- 模型评分统计
-
-### 详细结果
-- 支持搜索、筛选、排序
-- 分页显示，可调整每页条数
-- 点击展开查看完整答案和评测理由
-
-### 导出功能
-- Excel格式完整报告
-- 包含所有原始数据和评测结果
-- 支持筛选后导出
-
-## 🔧 配置说明
+- **Python**: 3.8+
+- **操作系统**: Windows/macOS/Linux
+- **内存**: 最低2GB，推荐4GB+
+- **存储**: 最低1GB可用空间
 
 ### API密钥配置
 
 系统需要以下API密钥：
 
-1. **Google API Key**（必需）
-   - 用于Gemini模型进行评测
-   - 申请地址：https://ai.google.dev/
-
-2. **HKGAI API Key**（必需）
-   - 用于调用HKGAI模型获取答案
-   - 联系HKGAI获取密钥
-
-### 环境变量
-
+#### 1. Google Gemini API密钥
 ```bash
-# 必需
-export GOOGLE_API_KEY="your_google_api_key"
-export ARK_API_KEY_HKGAI="your_hkgai_api_key"
+GOOGLE_API_KEY=your_google_api_key_here
+```
+获取方式：访问 [Google AI Studio](https://makersuite.google.com/) 创建API密钥
 
-# 可选
-export FLASK_DEBUG="True"
-export MAX_CONCURRENT_REQUESTS="10"
-export REQUEST_TIMEOUT="60"
+#### 2. HKGAI模型API密钥
+```bash
+ARK_API_KEY_HKGAI_V1=your_hkgai_v1_key_here
+ARK_API_KEY_HKGAI_V2=your_hkgai_v2_key_here
+```
+获取方式：联系HKGAI服务提供商
+
+### 配置方法
+
+#### 方法一：环境变量文件（推荐）
+1. 复制模板：`cp config.env.template .env`
+2. 编辑`.env`文件，填入您的API密钥
+3. 启动系统
+
+#### 方法二：Web界面配置
+1. 启动系统：`python3 start.py`
+2. 访问 http://localhost:5001
+3. 在页面上输入API密钥并保存
+
+#### 方法三：环境变量
+```bash
+export GOOGLE_API_KEY="your_api_key"
+export ARK_API_KEY_HKGAI_V1="your_hkgai_v1_key"
+export ARK_API_KEY_HKGAI_V2="your_hkgai_v2_key"
+python3 start.py
 ```
 
-## 📂 项目结构
+## 🌐 访问系统
+
+### 开发环境
+- **主页**: http://localhost:5001
+- **历史管理**: http://localhost:5001/history
+- **手动标注**: http://localhost:5001/annotate/[result_id]
+
+### 生产环境
+详细的生产环境部署请参考 [DEPLOYMENT.md](DEPLOYMENT.md)
+
+## 📋 使用指南
+
+### 1. 评测流程
+
+1. **准备数据文件**
+   - 主观题：包含 `query`, `type` 列的CSV/Excel文件
+   - 客观题：包含 `query`, `answer`, `type` 列的CSV/Excel文件
+
+2. **上传并配置**
+   - 访问系统主页，上传测试文件
+   - 选择评测模型（可多选）
+   - 选择评测模式（自动识别或手动指定）
+
+3. **开始评测**
+   - 点击"开始评测"按钮
+   - 系统显示实时进度
+   - 评测完成后自动跳转到结果页面
+
+### 2. 结果分析
+
+- **实时查看**：支持筛选、排序、分页
+- **导出功能**：支持Excel完整报告、CSV增强报告、筛选结果导出
+- **详细分析**：点击题目查看详细评测结果和评分理由
+- **统计图表**：分数分布、模型对比、质量指标
+
+### 3. 历史管理
+
+- **智能检索**：按时间、模型、数据集、标签筛选
+- **版本管理**：同一数据集的不同评测版本关联
+- **批量操作**：支持批量下载、删除、归档
+
+### 4. 人工标注
+
+- **多维度评分**：正确性(0-5分)、相关性(0-5分)、安全性(0-5分)、创造性(0-5分)、逻辑一致性(0-5分)
+- **快捷操作**：数字键0-5快速评分、方向键导航
+- **实时更新**：修改后统计数据实时更新
+
+## 🔥 高级功能
+
+### 评测结果历史管理
+- 📊 无限存储：按项目维度管理，支持无限历史记录
+- 🔍 智能检索：多维度筛选和搜索
+- 🏷️ 自动标签：基于内容自动生成分类标签
+- 📈 趋势分析：历史数据对比和趋势展示
+
+### 专业标注系统
+- 🎯 多维度标注：5个核心维度的专业评分
+- ⚡ 快速操作：键盘快捷键支持
+- 📊 质量控制：自动质量检查和一致性分析
+- 👥 协作支持：多人标注和结果合并
+
+### 对比分析功能
+- 📈 模型性能对比：详细的性能指标对比
+- 📊 分数分布分析：可视化分数分布统计
+- 🎯 质量指标评估：数据完整性、评分有效性分析
+- 📋 自动化报告：专业的分析报告生成
+
+## 📊 示例数据
+
+系统提供了示例数据供您快速体验：
+
+- **主观题示例**: `data/sample_subjective.csv`
+- **客观题示例**: `data/sample_objective.csv`
+
+## 🛠️ 项目结构
 
 ```
 model-evaluation-web/
-├── app.py                 # Flask主应用
-├── config.py              # 配置文件
-├── requirements.txt       # 依赖包列表
-├── templates/             # HTML模板
-│   ├── index.html        # 主页
-│   └── results.html      # 结果页
-├── static/               # 静态文件
-│   ├── css/
-│   │   └── style.css     # 样式文件
-│   └── js/
-│       └── main.js       # 交互脚本
-├── data/                 # 示例数据
-│   ├── sample_subjective.csv
-│   └── sample_objective.csv
-├── uploads/              # 上传文件存储
-├── results/              # 结果文件存储
-└── README.md            # 说明文档
+├── app.py                 # 主应用程序
+├── start.py              # 启动脚本
+├── database.py           # 数据库管理
+├── history_manager.py    # 历史管理
+├── comparison_analysis.py # 对比分析
+├── templates/            # HTML模板
+├── static/              # 静态资源
+├── utils/               # 工具模块
+├── data/                # 示例数据
+├── results/             # 评测结果
+└── results_history/     # 历史结果
 ```
 
-## 🧪 测试数据
+## 🔄 API接口
 
-系统提供了示例测试文件：
+### 核心评测API
+- `POST /upload`: 文件上传
+- `POST /evaluate`: 开始评测
+- `GET /task_status/<task_id>`: 查询评测状态
+- `GET /view_results/<filename>`: 查看结果
 
-- `data/sample_subjective.csv`：主观题测试数据
-- `data/sample_objective.csv`：客观题测试数据
+### 历史管理API
+- `GET /api/history/list`: 获取历史列表
+- `GET /api/history/download/<result_id>`: 下载历史结果
+- `DELETE /api/history/delete/<result_id>`: 删除历史记录
 
-可以直接使用这些文件测试系统功能。
+### 标注系统API
+- `POST /api/update_score`: 更新评分
+- `GET /api/export_filtered`: 导出筛选结果
 
-## 🚨 常见问题
+### 报告生成API
+- `GET /api/generate_report/<filename>/excel`: Excel格式报告
+- `GET /api/generate_report/<filename>/csv`: CSV格式报告
 
-### Q: 上传文件后提示"缺少必需列"？
-A: 请确保Excel文件包含`query`列，如果是客观题评测，还需要`answer`列。
+## 🔒 安全特性
 
-### Q: 显示"模型不可用"？
-A: 请检查是否正确设置了对应的API密钥环境变量。
+- 🔐 API密钥安全存储
+- 🛡️ 输入数据验证和清理
+- 📝 操作日志记录
+- 🚫 防止恶意文件上传
+- 🔄 自动备份机制
 
-### Q: 评测过程中出现超时？
-A: 可以调整`REQUEST_TIMEOUT`环境变量增加超时时间，或减少并发数。
+详细安全信息请参考 [SECURITY.md](SECURITY.md)
 
-### Q: 如何添加新的AI模型？
-A: 在`app.py`中的`SUPPORTED_MODELS`字典中添加新模型配置。
+## 📈 更新日志
 
-## 📝 更新日志
+查看 [CHANGELOG.md](CHANGELOG.md) 了解最新功能和改进。
 
-### v1.0.0 (2024-08-25)
-- ✅ 完成基础评测功能
-- ✅ 支持主观题/客观题评测
-- ✅ 多模型选择和对比
-- ✅ Web界面和结果展示
-- ✅ 文件上传和导出功能
+## 🤝 贡献指南
 
-## 🤝 贡献
+欢迎提交Issue和Pull Request来改进这个项目！
 
-欢迎提交Issue和Pull Request来改进项目！
+### 开发环境设置
+```bash
+git clone https://github.com/your-repo/model-evaluation-web.git
+cd model-evaluation-web
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+```
+
+### 提交规范
+- feat: 新功能
+- fix: 修复bug
+- docs: 文档更新
+- style: 代码格式调整
+- refactor: 代码重构
 
 ## 📄 许可证
 
-MIT License
+本项目采用 MIT 许可证。
 
-## 📞 联系方式
+## 📞 支持与反馈
 
-如有问题或建议，请联系开发者。
+如果您在使用过程中遇到问题或有改进建议，请：
+
+1. 查看文档和FAQ
+2. 提交 [Issue](https://github.com/your-repo/model-evaluation-web/issues)
+3. 发送邮件至：your-email@example.com
+
+---
+
+⭐ 如果这个项目对您有帮助，请给我们一个星标！
