@@ -3,7 +3,7 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - python=3.9
+  - python=3.10  # 建议使用 python 3.10
   - pip=23.2.*
   - numpy>=1.21.0,<1.25.0
   - pandas=2.0.3

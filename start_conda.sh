@@ -19,16 +19,28 @@ eval "$(conda shell.bash hook)"
 if ! conda env list | grep -q "model-evaluation-web"; then
     echo "⚠️  未找到model-evaluation-web环境"
     echo "🔧 正在创建conda环境..."
+    echo "💡 建议使用Python 3.10以获得最佳兼容性"
     
     if [ -f "environment.yml" ]; then
+        echo "📦 使用environment.yml创建环境..."
         conda env create -f environment.yml
         if [ $? -ne 0 ]; then
-            echo "❌ 环境创建失败"
-            exit 1
+            echo "❌ 环境创建失败，尝试手动创建..."
+            echo "🔧 创建基础Python 3.10环境..."
+            conda create -n model-evaluation-web python=3.10 -y
+            conda activate model-evaluation-web
+            pip install -r requirements.txt
         fi
     else
-        echo "❌ 未找到environment.yml文件"
-        exit 1
+        echo "❌ 未找到environment.yml文件，创建基础环境..."
+        conda create -n model-evaluation-web python=3.10 -y
+        conda activate model-evaluation-web
+        if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt
+        else
+            echo "❌ 未找到requirements.txt文件"
+            exit 1
+        fi
     fi
 fi
 

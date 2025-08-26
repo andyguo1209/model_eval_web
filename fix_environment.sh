@@ -83,6 +83,7 @@ if [ "$USE_CONDA" = true ]; then
         fi
     else
         echo "📦 创建新的conda环境..."
+        echo "💡 建议使用Python 3.10以获得最佳兼容性"
         conda env create -f environment.yml
     fi
     

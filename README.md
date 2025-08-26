@@ -32,56 +32,138 @@ chmod +x deploy.sh
 
 #### 方式1: 使用Conda (推荐)
 
-##### 快速启动
+##### 1. 创建conda环境（可选）
 ```bash
-# 1. 克隆项目
-git clone https://github.com/your-repo/model-evaluation-web.git
-cd model-evaluation-web
+# 建议使用 python 3.10
+conda create -n model-evaluation-web python=3.10
 
-# 2. 一键启动 (自动创建环境并启动)
-./start_conda.sh
+# 激活conda环境
+conda activate model-evaluation-web
 ```
 
-##### 详细步骤
+##### 2. 安装依赖
 ```bash
-# 1. 克隆项目
+# 克隆项目
 git clone https://github.com/your-repo/model-evaluation-web.git
 cd model-evaluation-web
 
-# 2. 创建conda环境
+# 使用environment.yml创建环境（推荐）
 conda env create -f environment.yml
-
-# 3. 激活环境
 conda activate model-evaluation-web
 
-# 4. 配置环境变量
+# 或者使用pip安装
+pip install -r requirements.txt
+```
+
+##### 3. 安装额外依赖（可选）
+
+- 若要使用性能分析功能，需安装perf依赖：
+```bash
+pip install psutil memory-profiler line-profiler
+```
+
+- 若要使用可视化功能，需安装viz依赖：
+```bash
+pip install matplotlib seaborn plotly
+```
+
+- 若要使用开发调试功能，需安装dev依赖：
+```bash
+pip install jupyter ipython pytest pytest-cov black flake8
+```
+
+- 若使用高级分析功能，可按需安装analytics依赖：
+```bash
+pip install scipy scikit-learn networkx
+```
+
+- 安装全部可选依赖：
+```bash
+pip install -r requirements-optional.txt
+```
+
+##### 4. 配置和启动
+```bash
+# 配置环境变量
 cp config.env.template .env
 nano .env  # 编辑API密钥配置
 
-# 5. 启动服务
+# 启动服务
 python start.py
+```
+
+##### 快速启动（一键脚本）
+```bash
+# 自动创建环境并启动
+./start_conda.sh
 ```
 
 #### 方式2: 使用pip/venv
 
+##### 1. 创建虚拟环境
 ```bash
-# 1. 克隆项目
+# 建议使用 python 3.10
+python3.10 -m venv model-evaluation-web
+source model-evaluation-web/bin/activate  # Windows: model-evaluation-web\Scripts\activate
+```
+
+##### 2. 安装依赖
+```bash
+# 克隆项目
 git clone https://github.com/your-repo/model-evaluation-web.git
 cd model-evaluation-web
 
-# 2. 创建虚拟环境
-python3 -m venv venv
-source venv/bin/activate  # Windows: venv\Scripts\activate
-
-# 3. 安装依赖
+# 安装基础依赖
 pip install -r requirements.txt
 
-# 4. 配置环境变量
+# 安装可选依赖（按需选择）
+pip install -r requirements-optional.txt
+```
+
+##### 3. 配置和启动
+```bash
+# 配置环境变量
 cp config.env.template .env
 nano .env  # 编辑API密钥配置
 
-# 5. 启动服务
+# 启动服务
 python start.py
+```
+
+### 📦 可选依赖说明
+
+系统支持按需安装额外功能模块：
+
+| 功能模块 | 依赖包 | 用途 |
+|---------|--------|------|
+| **perf** | `psutil`, `memory-profiler`, `line-profiler` | 性能分析和系统监控 |
+| **viz** | `matplotlib`, `seaborn`, `plotly` | 高级图表和数据可视化 |
+| **dev** | `jupyter`, `ipython`, `pytest` | 开发调试和测试 |
+| **analytics** | `scipy`, `scikit-learn`, `networkx` | 高级统计分析 |
+| **i18n** | `babel`, `flask-babel` | 多语言界面支持 |
+| **export** | `xlsxwriter`, `reportlab` | 增强数据导出功能 |
+| **cache** | `redis`, `flask-caching` | Redis缓存支持 |
+| **security** | `cryptography`, `flask-limiter` | 安全增强功能 |
+
+#### 安装示例
+
+##### 方式1: 交互式安装（推荐）
+```bash
+# 使用交互式脚本安装
+./install_optional.sh
+# 根据提示选择需要的功能模块
+```
+
+##### 方式2: 命令行安装
+```bash
+# 安装全部可选依赖
+pip install -r requirements-optional.txt
+
+# 按需安装
+pip install psutil memory-profiler line-profiler    # 仅性能分析
+pip install matplotlib seaborn plotly              # 仅可视化
+pip install jupyter ipython pytest                 # 仅开发调试
+pip install scipy scikit-learn networkx            # 仅高级分析
 ```
 
 ### 🛠️ 环境问题修复
@@ -100,7 +182,7 @@ chmod +x fix_environment.sh
 
 ### 系统要求
 
-- **Python**: 3.8+ (推荐 3.9)
+- **Python**: 3.8+ (建议使用 3.10)
 - **操作系统**: Windows/macOS/Linux
 - **内存**: 最低2GB，推荐4GB+
 - **存储**: 最低1GB可用空间
@@ -246,24 +328,26 @@ python3 start.py
 
 ```
 model-evaluation-web/
-├── app.py                 # 主应用程序
-├── start.py              # 启动脚本
-├── start_conda.sh        # Conda环境一键启动脚本
-├── fix_environment.sh    # 环境修复脚本
-├── database.py           # 数据库管理
-├── history_manager.py    # 历史管理
-├── comparison_analysis.py # 对比分析
-├── environment.yml       # Conda环境配置
-├── requirements.txt      # pip依赖配置
-├── config.env.template   # 环境变量模板
-├── templates/            # HTML模板
-├── static/              # 静态资源
-├── utils/               # 工具模块
-├── data/                # 示例数据
-├── results/             # 评测结果
-├── results_history/     # 历史结果
-├── TROUBLESHOOTING.md   # 问题解决指南
-└── DEPLOYMENT.md        # 部署指南
+├── app.py                   # 主应用程序
+├── start.py                # 启动脚本
+├── start_conda.sh          # Conda环境一键启动脚本
+├── fix_environment.sh      # 环境修复脚本
+├── install_optional.sh     # 可选依赖交互式安装脚本
+├── database.py             # 数据库管理
+├── history_manager.py      # 历史管理
+├── comparison_analysis.py   # 对比分析
+├── environment.yml         # Conda环境配置
+├── requirements.txt        # 基础依赖配置
+├── requirements-optional.txt # 可选依赖配置
+├── config.env.template     # 环境变量模板
+├── templates/              # HTML模板
+├── static/                # 静态资源
+├── utils/                 # 工具模块
+├── data/                  # 示例数据
+├── results/               # 评测结果
+├── results_history/       # 历史结果
+├── TROUBLESHOOTING.md     # 问题解决指南
+└── DEPLOYMENT.md          # 部署指南
 ```
 
 ## 🔄 API接口
