@@ -8,7 +8,7 @@ import time
 import re
 import csv
 from datetime import datetime
-from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
 from google.generativeai import types
@@ -21,11 +21,13 @@ try:
     from database import db
     from history_manager import history_manager
     from annotation_system import annotation_system
+    from utils.advanced_analytics import analytics
 except ImportError as e:
     print(f"警告: 无法导入高级功能模块: {e}")
     db = None
     history_manager = None
     annotation_system = None
+    analytics = None
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'model-evaluation-web-2024'
@@ -85,6 +87,8 @@ class TaskStatus:
         self.evaluation_mode = ""
         self.selected_models = []
         self.start_time = datetime.now()
+        self.end_time = None
+        self.question_count = 0
 
 def extract_stream_content(stream) -> str:
     """提取HKGAI流式响应的内容"""
@@ -656,6 +660,8 @@ def start_evaluation():
         task_status[task_id] = TaskStatus(task_id)
         task_status[task_id].evaluation_mode = mode
         task_status[task_id].selected_models = selected_models
+        task_status[task_id].start_time = datetime.now()
+        task_status[task_id].question_count = len(data_list)
         
         # 在主线程中获取所有需要的数据
         headers_dict = dict(request.headers)
@@ -674,13 +680,17 @@ def start_evaluation():
                 task_status[task_id].status = "完成"
                 task_status[task_id].result_file = os.path.basename(output_file)
                 task_status[task_id].current_step = f"评测完成，结果已保存到 {os.path.basename(output_file)}"
+                task_status[task_id].end_time = datetime.now()
                 
                 # 保存到历史记录
                 try:
                     evaluation_data = {
                         'dataset_file': filename,
                         'models': selected_models,
-                        'evaluation_mode': mode
+                        'evaluation_mode': mode,
+                        'start_time': task_status[task_id].start_time.isoformat(),
+                        'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
+                        'question_count': len(data_list)
                     }
                     history_manager.save_evaluation_result(evaluation_data, output_file)
                 except Exception as e:
@@ -707,7 +717,7 @@ def get_task_status(task_id):
         return jsonify({'error': '任务不存在'}), 404
     
     task = task_status[task_id]
-    elapsed_time = (datetime.now() - task.start_time).total_seconds()
+    elapsed_time = (datetime.now() - task.start_time).total_seconds() if hasattr(task, 'start_time') and task.start_time else 0
     
     return jsonify({
         'status': task.status,
@@ -739,10 +749,36 @@ def view_results(filename):
     
     try:
         df = pd.read_csv(filepath, encoding='utf-8-sig')
+        
+        # 获取高级分析结果
+        advanced_stats = None
+        if analytics:
+            # 尝试从task_status获取时间数据
+            evaluation_data = None
+            for task_id, task in task_status.items():
+                if (hasattr(task, 'result_file') and 
+                    task.result_file == filename and
+                    hasattr(task, 'start_time') and hasattr(task, 'end_time')):
+                    evaluation_data = {
+                        'start_time': task.start_time.isoformat() if task.start_time else None,
+                        'end_time': task.end_time.isoformat() if task.end_time else None,
+                        'question_count': len(df)
+                    }
+                    break
+            
+            analysis_result = analytics.analyze_evaluation_results(
+                result_file=filepath,
+                evaluation_data=evaluation_data
+            )
+            
+            if analysis_result.get('success'):
+                advanced_stats = analysis_result['analysis']
+        
         return render_template('results.html', 
                              filename=filename,
                              columns=df.columns.tolist(),
-                             data=df.to_dict('records'))
+                             data=df.to_dict('records'),
+                             advanced_stats=advanced_stats)
     except Exception as e:
         return jsonify({'error': f'读取结果文件错误: {str(e)}'}), 400
 
@@ -1000,11 +1036,30 @@ def view_history(result_id):
             }), 404
             
         df = pd.read_csv(filepath, encoding='utf-8-sig')
+        
+        # 获取高级分析结果
+        task_data = result_detail.get('result', {})
+        evaluation_data = {
+            'start_time': task_data.get('start_time'),
+            'end_time': task_data.get('end_time'),
+            'question_count': len(df)
+        }
+        
+        analysis_result = analytics.analyze_evaluation_results(
+            result_file=filepath,
+            evaluation_data=evaluation_data
+        )
+        
+        advanced_stats = None
+        if analysis_result.get('success'):
+            advanced_stats = analysis_result['analysis']
+        
         return render_template('results.html', 
                              filename=result_file,
                              columns=df.columns.tolist(),
                              data=df.to_dict('records'),
-                             result_detail=result_detail)
+                             result_detail=result_detail,
+                             advanced_stats=advanced_stats)
     except Exception as e:
         return jsonify({'error': f'处理异常: {str(e)}'}), 500
 

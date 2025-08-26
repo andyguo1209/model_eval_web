@@ -49,6 +49,206 @@
             margin-top: 5px;
         }
         
+        /* 高级分析样式 */
+        .advanced-analysis {
+            margin: 20px 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            gap: 20px;
+        }
+        
+        .analysis-section {
+            background: white;
+            border-radius: 8px;
+            padding: 20px;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .analysis-section h3 {
+            margin: 0 0 15px 0;
+            color: #1976d2;
+            font-size: 1.1em;
+        }
+        
+        .model-rank-item {
+            display: flex;
+            align-items: center;
+            margin-bottom: 10px;
+            padding: 8px;
+            background: #f5f5f5;
+            border-radius: 4px;
+        }
+        
+        .rank-number {
+            background: #1976d2;
+            color: white;
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 0.8em;
+            margin-right: 10px;
+        }
+        
+        .model-name {
+            flex: 1;
+            font-weight: 500;
+        }
+        
+        .model-score {
+            color: #1976d2;
+            font-weight: bold;
+        }
+        
+        .completion-rate {
+            font-size: 0.8em;
+            color: #666;
+            margin-left: 10px;
+        }
+        
+        .efficiency-metrics, .quality-analysis {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+        
+        .metric-item, .quality-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .metric-item:last-child, .quality-item:last-child {
+            border-bottom: none;
+        }
+        
+        .score-good { color: #4caf50; font-weight: bold; }
+        .score-ok { color: #ff9800; font-weight: bold; }
+        .score-poor { color: #f44336; font-weight: bold; }
+        
+        .quality-score {
+            font-weight: bold;
+            color: #1976d2;
+        }
+        
+        .quality-grade {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: bold;
+            color: white;
+        }
+        
+        .grade-A, .grade-A+ { background: #4caf50; color: white; }
+        .grade-B { background: #2196f3; color: white; }
+        .grade-C { background: #ff9800; color: white; }
+        .grade-D { background: #f44336; color: white; }
+        
+        .recommendations-list {
+            margin: 0;
+            padding-left: 20px;
+        }
+        
+        .recommendations-list li {
+            margin-bottom: 8px;
+            line-height: 1.4;
+        }
+        
+        /* 可点击行样式 */
+        .clickable-row {
+            cursor: pointer;
+            transition: background-color 0.2s ease;
+        }
+        
+        .clickable-row:hover {
+            background-color: #f8f9fa !important;
+        }
+        
+        .expand-hint {
+            color: #007bff;
+            font-size: 0.8em;
+            margin-left: 5px;
+        }
+        
+        /* 评分编辑样式 */
+        .score-edit-section {
+            margin: 10px 0;
+        }
+        
+        .edit-score-btn {
+            background: #28a745;
+            color: white;
+            border: none;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            cursor: pointer;
+            margin-left: 10px;
+            transition: background-color 0.2s;
+        }
+        
+        .edit-score-btn:hover {
+            background: #218838;
+        }
+        
+        .score-edit-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.5);
+            display: none;
+            z-index: 2000;
+        }
+        
+        .score-edit-content {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            min-width: 400px;
+        }
+        
+        .score-input {
+            width: 100px;
+            padding: 8px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            text-align: center;
+            font-size: 16px;
+            margin: 0 10px;
+        }
+        
+        .score-buttons {
+            margin-top: 20px;
+            text-align: center;
+        }
+        
+        .score-buttons button {
+            margin: 0 10px;
+            padding: 8px 16px;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        
+        .save-btn {
+            background: #007bff;
+            color: white;
+        }
+        
+        .cancel-btn {
+            background: #6c757d;
+            color: white;
+        }
+        
         .controls {
             background: white;
             padding: 20px;
@@ -383,6 +583,30 @@
             </div>
         </div>
     </div>
+    
+    <!-- 评分编辑模态框 -->
+    <div id="score-edit-modal" class="score-edit-modal">
+        <div class="score-edit-content">
+            <h3><i class="fas fa-edit"></i> 修改评分</h3>
+            <p id="edit-model-name">模型名称</p>
+            <div style="text-align: center; margin: 20px 0;">
+                <label for="new-score">新评分 (1-5分):</label>
+                <input type="number" id="new-score" class="score-input" min="1" max="5" step="1">
+            </div>
+            <div>
+                <label for="edit-reason">修改理由:</label>
+                <textarea id="edit-reason" style="width: 100%; height: 80px; margin-top: 10px; padding: 8px; border: 1px solid #ddd; border-radius: 4px;" placeholder="请输入修改理由..."></textarea>
+            </div>
+            <div class="score-buttons">
+                <button class="save-btn" onclick="saveScore()">
+                    <i class="fas fa-save"></i> 保存
+                </button>
+                <button class="cancel-btn" onclick="closeScoreEditModal()">
+                    <i class="fas fa-times"></i> 取消
+                </button>
+            </div>
+        </div>
+    </div>
 
     <script>
         // 全局变量
@@ -413,21 +637,40 @@
             const statsContainer = document.getElementById('stats-container');
             const totalCount = originalData.length;
             
-            // 计算基本统计
-            let stats = {
-                '总题数': totalCount,
-                '评测模型': 0,
-                '平均耗时': '未知'
-            };
+            // 获取高级统计信息
+            const advancedStats = {{ advanced_stats | tojson if advanced_stats else 'null' }};
             
-            // 分析数据结构，计算模型数量
-            const modelColumns = columns.filter(col => col.includes('评分'));
-            stats['评测模型'] = Math.floor(modelColumns.length);
+            let stats = {};
             
-            // 如果有类型列，统计类型分布
-            if (columns.includes('类型')) {
-                const types = [...new Set(originalData.map(row => row['类型'] || '未分类'))];
-                stats['题目类型'] = types.length;
+            if (advancedStats) {
+                // 使用高级分析结果
+                const basicStats = advancedStats.basic_stats || {};
+                const performanceMetrics = advancedStats.performance_metrics || {};
+                const qualityIndicators = advancedStats.quality_indicators || {};
+                
+                stats = {
+                    '总题数': basicStats.total_questions || totalCount,
+                    '评测模型': Object.keys(advancedStats.score_analysis?.model_performance || {}).length,
+                    '平均耗时': performanceMetrics.estimated_time_per_question || '未知',
+                    '完成率': `${Math.round(basicStats.response_rate || 0)}%`,
+                    '质量等级': qualityIndicators.quality_grade || 'C'
+                };
+                
+                if (performanceMetrics.throughput > 0) {
+                    stats['处理效率'] = `${Math.round(performanceMetrics.throughput)}题/小时`;
+                }
+            } else {
+                // 基础统计
+                stats = {
+                    '总题数': totalCount,
+                    '评测模型': columns.filter(col => col.includes('评分')).length,
+                    '平均耗时': '未知'
+                };
+                
+                if (columns.includes('类型')) {
+                    const types = [...new Set(originalData.map(row => row['类型'] || '未分类'))];
+                    stats['题目类型'] = types.length;
+                }
             }
             
             // 生成统计卡片
@@ -437,6 +680,113 @@
                     <div class="stat-label">${label}</div>
                 </div>
             `).join('');
+            
+            // 如果有高级统计信息，生成详细分析
+            if (advancedStats) {
+                generateAdvancedAnalysis(advancedStats);
+            }
+        }
+        
+        // 生成高级分析展示
+        function generateAdvancedAnalysis(stats) {
+            const container = document.createElement('div');
+            container.className = 'advanced-analysis';
+            container.innerHTML = `
+                <div class="analysis-section">
+                    <h3>📊 模型性能对比</h3>
+                    ${generateModelComparison(stats.model_comparison)}
+                </div>
+                
+                <div class="analysis-section">
+                    <h3>⚡ 效率指标</h3>
+                    ${generateEfficiencyMetrics(stats.performance_metrics)}
+                </div>
+                
+                <div class="analysis-section">
+                    <h3>🎯 质量分析</h3>
+                    ${generateQualityAnalysis(stats.quality_indicators)}
+                </div>
+                
+                <div class="analysis-section">
+                    <h3>💡 改进建议</h3>
+                    ${generateRecommendations(stats.recommendations)}
+                </div>
+            `;
+            
+            // 插入到统计信息后面
+            const statsContainer = document.getElementById('stats-container');
+            statsContainer.parentNode.insertBefore(container, statsContainer.nextSibling);
+        }
+        
+        function generateModelComparison(comparison) {
+            if (!comparison || !comparison.ranking) return '<p>暂无对比数据</p>';
+            
+            return comparison.ranking.map((model, index) => `
+                <div class="model-rank-item">
+                    <span class="rank-number">#${index + 1}</span>
+                    <span class="model-name">${model.model}</span>
+                    <span class="model-score">${model.avg_score.toFixed(2)}分</span>
+                    <div class="completion-rate">完成率: ${model.completion_rate.toFixed(1)}%</div>
+                </div>
+            `).join('');
+        }
+        
+        function generateEfficiencyMetrics(metrics) {
+            if (!metrics) return '<p>暂无效率数据</p>';
+            
+            return `
+                <div class="efficiency-metrics">
+                    <div class="metric-item">
+                        <label>平均处理时间:</label>
+                        <span>${metrics.estimated_time_per_question || '未知'}</span>
+                    </div>
+                    <div class="metric-item">
+                        <label>效率评分:</label>
+                        <span class="score-${metrics.efficiency_score >= 80 ? 'good' : metrics.efficiency_score >= 60 ? 'ok' : 'poor'}">
+                            ${metrics.efficiency_score}/100
+                        </span>
+                    </div>
+                    ${metrics.throughput ? `
+                    <div class="metric-item">
+                        <label>处理吞吐量:</label>
+                        <span>${Math.round(metrics.throughput)}题/小时</span>
+                    </div>
+                    ` : ''}
+                </div>
+            `;
+        }
+        
+        function generateQualityAnalysis(quality) {
+            if (!quality) return '<p>暂无质量数据</p>';
+            
+            return `
+                <div class="quality-analysis">
+                    <div class="quality-item">
+                        <label>数据完整性:</label>
+                        <span class="quality-score">${quality.data_completeness?.toFixed(1) || 0}%</span>
+                    </div>
+                    <div class="quality-item">
+                        <label>评分有效性:</label>
+                        <span class="quality-score">${quality.score_validity?.toFixed(1) || 0}%</span>
+                    </div>
+                    <div class="quality-item">
+                        <label>整体质量等级:</label>
+                        <span class="quality-grade grade-${quality.quality_grade || 'C'}">${quality.quality_grade || 'C'}</span>
+                    </div>
+                </div>
+            `;
+        }
+        
+        function generateRecommendations(recommendations) {
+            if (!recommendations || recommendations.length === 0) {
+                return '<p>暂无改进建议</p>';
+            }
+            
+            return `
+                <ul class="recommendations-list">
+                    ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
+                </ul>
+            `;
         }
         
         // 填充类型筛选器
@@ -478,7 +828,7 @@
             tableBody.innerHTML = pageData.map((row, index) => {
                 const globalIndex = startIndex + index;
                 return `
-                    <tr>
+                    <tr class="clickable-row" onclick="showRowDetails(${globalIndex})" title="点击查看详细信息">
                         ${columns.map(col => {
                             const value = row[col] || '';
                             const cellClass = getCellClass(col, value);
@@ -486,9 +836,9 @@
                             
                             if (isExpandable) {
                                 return `
-                                    <td class="expandable-cell ${cellClass}" onclick="showDetail(${globalIndex}, '${col}')">
+                                    <td class="expandable-cell ${cellClass}">
                                         ${String(value).substring(0, 50)}...
-                                        <button class="expand-btn">展开</button>
+                                        <span class="expand-hint">点击展开</span>
                                     </td>
                                 `;
                             } else {
@@ -681,6 +1031,11 @@
             renderTable();
         }
         
+        // 显示行详情
+        function showRowDetails(index) {
+            showDetail(index, null);
+        }
+        
         // 显示详情
         function showDetail(index, column) {
             const row = filteredData[index];
@@ -710,8 +1065,15 @@
                 <div class="detail-section">
                     <h4><i class="fas fa-robot"></i> ${key}</h4>
                     <p>${row[key] || '无答案'}</p>
-                    ${row[key.replace('答案', '评分')] ? `
-                        <p><strong>评分：</strong><span class="score-cell score-${row[key.replace('答案', '评分')]}">${row[key.replace('答案', '评分')]}分</span></p>
+                    ${row[key.replace('答案', '评分')] !== null && row[key.replace('答案', '评分')] !== undefined && row[key.replace('答案', '评分')] !== '' ? `
+                        <div class="score-edit-section">
+                            <p><strong>评分：</strong>
+                                <span class="score-cell score-${row[key.replace('答案', '评分')]}">${row[key.replace('答案', '评分')]}分</span>
+                                <button class="edit-score-btn" onclick="editScore(${index}, '${key.replace('答案', '评分')}', ${row[key.replace('答案', '评分')]})">
+                                    <i class="fas fa-edit"></i> 修改评分
+                                </button>
+                            </p>
+                        </div>
                     ` : ''}
                     ${row[key.replace('答案', '理由')] ? `
                         <p><strong>评分理由：</strong>${row[key.replace('答案', '理由')]}</p>
@@ -755,9 +1117,93 @@
         // 点击模态框外部关闭
         window.onclick = function(event) {
             const modal = document.getElementById('detail-modal');
+            const scoreModal = document.getElementById('score-edit-modal');
             if (event.target === modal) {
                 closeModal();
             }
+            if (event.target === scoreModal) {
+                closeScoreEditModal();
+            }
+        }
+        
+        // 评分编辑相关函数
+        let currentEditData = null;
+        
+        function editScore(rowIndex, scoreColumn, currentScore) {
+            const row = filteredData[rowIndex];
+            const modelName = scoreColumn.replace('_评分', '').replace('评分', '');
+            
+            currentEditData = {
+                rowIndex: rowIndex,
+                scoreColumn: scoreColumn,
+                currentScore: currentScore,
+                modelName: modelName
+            };
+            
+            document.getElementById('edit-model-name').textContent = `模型: ${modelName}`;
+            document.getElementById('new-score').value = currentScore;
+            document.getElementById('edit-reason').value = '';
+            document.getElementById('score-edit-modal').style.display = 'block';
+        }
+        
+        function closeScoreEditModal() {
+            document.getElementById('score-edit-modal').style.display = 'none';
+            currentEditData = null;
+        }
+        
+        function saveScore() {
+            if (!currentEditData) return;
+            
+            const newScore = parseInt(document.getElementById('new-score').value);
+            const reason = document.getElementById('edit-reason').value;
+            
+            if (newScore < 1 || newScore > 5) {
+                alert('评分必须在1-5分之间');
+                return;
+            }
+            
+            if (!reason.trim()) {
+                alert('请输入修改理由');
+                return;
+            }
+            
+            // 发送到后端保存
+            fetch('/api/update_score', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    filename: '{{ filename }}',
+                    row_index: currentEditData.rowIndex,
+                    score_column: currentEditData.scoreColumn,
+                    new_score: newScore,
+                    reason: reason,
+                    model_name: currentEditData.modelName
+                })
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success) {
+                    // 更新本地数据
+                    originalData[currentEditData.rowIndex][currentEditData.scoreColumn] = newScore;
+                    filteredData[currentEditData.rowIndex][currentEditData.scoreColumn] = newScore;
+                    
+                    // 重新渲染表格
+                    renderTable();
+                    
+                    // 关闭模态框
+                    closeScoreEditModal();
+                    
+                    alert('评分修改成功！');
+                } else {
+                    alert('保存失败: ' + data.error);
+                }
+            })
+            .catch(error => {
+                console.error('Error:', error);
+                alert('保存失败，请稍后重试');
+            });
         }
     </script>
 </body>

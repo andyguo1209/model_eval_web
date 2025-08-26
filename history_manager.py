@@ -290,17 +290,22 @@ class EvaluationHistoryManager:
             df = pd.read_csv(result_file)
             
             summary = {
-                'total_questions': len(df),
+                'total_questions': int(len(df)),
                 'models': evaluation_data.get('models', []),
                 'evaluation_mode': evaluation_data.get('evaluation_mode'),
                 'question_types': {},
-                'model_scores': {}
+                'model_scores': {},
+                # 添加时间信息
+                'start_time': evaluation_data.get('start_time'),
+                'end_time': evaluation_data.get('end_time'),
+                'question_count': evaluation_data.get('question_count', len(df))
             }
             
             # 统计题目类型分布
             if '类型' in df.columns:
-                type_counts = df['类型'].value_counts().to_dict()
-                summary['question_types'] = type_counts
+                type_counts = df['类型'].value_counts()
+                # 转换为Python原生数据类型
+                summary['question_types'] = {str(k): int(v) for k, v in type_counts.items()}
             
             # 统计模型评分
             score_columns = [col for col in df.columns if '评分' in col]
@@ -313,7 +318,7 @@ class EvaluationHistoryManager:
                             'avg_score': float(scores.mean()),
                             'max_score': float(scores.max()),
                             'min_score': float(scores.min()),
-                            'scored_count': len(scores)
+                            'scored_count': int(len(scores))
                         }
             
             return summary
