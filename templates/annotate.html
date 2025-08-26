@@ -451,6 +451,31 @@
                 grid-template-columns: 1fr;
             }
         }
+        
+        .back-link {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            color: #ffffff;
+            background: #1976d2;
+            text-decoration: none;
+            margin-bottom: 20px;
+            font-weight: 500;
+            padding: 10px 16px;
+            border-radius: 6px;
+            border: 2px solid #1976d2;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .back-link:hover {
+            background: #1565c0;
+            border-color: #1565c0;
+            color: #ffffff;
+            text-decoration: none;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
     </style>
 </head>
 <body>
@@ -535,8 +560,8 @@
             <span class="shortcut-key">←</span>
         </div>
         <div class="shortcut-item">
-            <span>评分1-5</span>
-            <span class="shortcut-key">1-5</span>
+            <span>评分0-5</span>
+            <span class="shortcut-key">0-5</span>
         </div>
         <div class="shortcut-item">
             <span>保存</span>
@@ -801,7 +826,7 @@
                 <div class="confidence-slider">
                     <label>置信度：</label>
                     <div class="slider-container">
-                        <input type="range" min="1" max="5" value="${existing.confidence_level || 3}" 
+                        <input type="range" min="0" max="5" value="${existing.confidence_level || 3}" 
                                class="slider" data-model="${model}"
                                onchange="updateConfidence('${model}', this.value)">
                         <span class="confidence-value" data-model="${model}">${existing.confidence_level || 3}</span>

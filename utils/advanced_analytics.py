@@ -277,7 +277,7 @@ class AdvancedAnalytics:
         
         for col in score_columns:
             scores = df[col].dropna()
-            valid_count = ((scores >= 1) & (scores <= 5)).sum()
+            valid_count = ((scores >= 0) & (scores <= 5)).sum()
             valid_scores += valid_count
             total_scores += len(scores)
         
@@ -434,47 +434,96 @@ class AdvancedAnalytics:
     
     def _analyze_time_efficiency(self, evaluation_data: Dict = None) -> Dict:
         """分析时间效率"""
-        if not evaluation_data:
-            return {'error': '缺少评测时间数据'}
-        
         time_analysis = {
             'total_duration': '未知',
             'average_per_question': '未知',
             'efficiency_rating': '未评级',
             'bottlenecks': [],
-            'optimization_suggestions': []
+            'optimization_suggestions': [],
+            'data_source': 'unknown'
         }
+        
+        if not evaluation_data:
+            time_analysis['data_source'] = 'no_data'
+            time_analysis['optimization_suggestions'].append('建议记录评测开始和结束时间以获得准确的效率分析')
+            return time_analysis
         
         start_time = evaluation_data.get('start_time')
         end_time = evaluation_data.get('end_time')
+        is_estimated = evaluation_data.get('is_estimated', False)
         
         if start_time and end_time:
             try:
-                start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                duration = end_dt - start_dt
+                # 处理ISO格式时间字符串
+                if isinstance(start_time, str):
+                    # 移除时区信息并解析
+                    start_time_clean = start_time.replace('Z', '').replace('+00:00', '')
+                    if '.' in start_time_clean:
+                        start_dt = datetime.fromisoformat(start_time_clean.split('.')[0])
+                    else:
+                        start_dt = datetime.fromisoformat(start_time_clean)
+                else:
+                    start_dt = start_time
                 
+                if isinstance(end_time, str):
+                    end_time_clean = end_time.replace('Z', '').replace('+00:00', '')
+                    if '.' in end_time_clean:
+                        end_dt = datetime.fromisoformat(end_time_clean.split('.')[0])
+                    else:
+                        end_dt = datetime.fromisoformat(end_time_clean)
+                else:
+                    end_dt = end_time
+                
+                duration = end_dt - start_dt
                 total_seconds = duration.total_seconds()
                 question_count = evaluation_data.get('question_count', 1)
                 
-                time_analysis['total_duration'] = str(duration).split('.')[0]
-                time_analysis['average_per_question'] = f"{total_seconds/question_count:.1f}秒"
+                # 设置数据源标识
+                time_analysis['data_source'] = 'estimated' if is_estimated else 'actual'
                 
-                # 效率评级
-                avg_time = total_seconds / question_count
-                if avg_time < 10:
-                    time_analysis['efficiency_rating'] = '优秀'
-                elif avg_time < 30:
-                    time_analysis['efficiency_rating'] = '良好'
-                elif avg_time < 60:
-                    time_analysis['efficiency_rating'] = '一般'
+                # 格式化时长显示
+                if total_seconds < 60:
+                    time_analysis['total_duration'] = f"{total_seconds:.0f}秒"
+                elif total_seconds < 3600:
+                    minutes = total_seconds // 60
+                    seconds = total_seconds % 60
+                    time_analysis['total_duration'] = f"{minutes:.0f}分{seconds:.0f}秒"
                 else:
-                    time_analysis['efficiency_rating'] = '需要优化'
-                    time_analysis['bottlenecks'].append('处理时间过长')
-                    time_analysis['optimization_suggestions'].append('考虑并行处理或优化API调用')
+                    hours = total_seconds // 3600
+                    minutes = (total_seconds % 3600) // 60
+                    time_analysis['total_duration'] = f"{hours:.0f}小时{minutes:.0f}分"
+                
+                avg_time = total_seconds / question_count
+                time_analysis['average_per_question'] = f"{avg_time:.1f}秒"
+                
+                # 效率评级（根据是否为估算数据调整标准）
+                if is_estimated:
+                    time_analysis['efficiency_rating'] = '估算数据'
+                    time_analysis['optimization_suggestions'].append('数据为基于文件时间的估算，建议记录实际评测时间以获得准确分析')
+                else:
+                    if avg_time < 10:
+                        time_analysis['efficiency_rating'] = '优秀'
+                    elif avg_time < 30:
+                        time_analysis['efficiency_rating'] = '良好'
+                    elif avg_time < 60:
+                        time_analysis['efficiency_rating'] = '一般'
+                    else:
+                        time_analysis['efficiency_rating'] = '需要优化'
+                        time_analysis['bottlenecks'].append('处理时间过长')
+                        time_analysis['optimization_suggestions'].append('考虑并行处理或优化API调用')
+                
+                # 根据总时长给出建议
+                if total_seconds > 3600:  # 超过1小时
+                    time_analysis['bottlenecks'].append('总评测时间过长')
+                    time_analysis['optimization_suggestions'].append('考虑批量处理或分批评测')
                 
             except Exception as e:
                 print(f"时间分析错误: {e}")
+                time_analysis['data_source'] = 'error'
+                time_analysis['optimization_suggestions'].append(f'时间数据解析错误: {str(e)}')
+        else:
+            time_analysis['data_source'] = 'incomplete'
+            time_analysis['optimization_suggestions'].append('缺少完整的开始或结束时间信息')
         
         return time_analysis
     

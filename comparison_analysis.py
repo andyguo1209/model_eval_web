@@ -399,8 +399,8 @@ class ComparisonAnalysis:
             comparison_id = str(uuid.uuid4())
             
             with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('''
+                db_cursor = conn.cursor()
+                db_cursor.execute('''
                     INSERT INTO comparison_analyses 
                     (id, name, result_ids, analysis_type, analysis_result, created_at)
                     VALUES (?, ?, ?, ?, ?, ?)

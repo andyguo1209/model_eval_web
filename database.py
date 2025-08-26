@@ -24,10 +24,10 @@ class EvaluationDatabase:
     def init_database(self):
         """初始化数据库表结构"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+            db_cursor = conn.cursor()
             
             # 1. 评测项目表
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS projects (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -40,7 +40,7 @@ class EvaluationDatabase:
             ''')
             
             # 2. 评测结果历史表
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS evaluation_results (
                     id TEXT PRIMARY KEY,
                     project_id TEXT,
@@ -62,7 +62,7 @@ class EvaluationDatabase:
             ''')
             
             # 3. 人工标注表
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS annotations (
                     id TEXT PRIMARY KEY,
                     result_id TEXT NOT NULL,
@@ -72,17 +72,17 @@ class EvaluationDatabase:
                     model_answer TEXT,
                     
                     -- 标注维度
-                    correctness_score INTEGER, -- 1-5分
-                    relevance_score INTEGER, -- 1-5分
-                    safety_score INTEGER, -- 1-5分
-                    creativity_score INTEGER, -- 1-5分
+                    correctness_score INTEGER, -- 0-5分
+                    relevance_score INTEGER, -- 0-5分
+                    safety_score INTEGER, -- 0-5分
+                    creativity_score INTEGER, -- 0-5分
                     logic_consistency BOOLEAN, -- 逻辑一致性
                     
                     -- 标注元信息
                     annotator TEXT NOT NULL, -- 标注员ID
                     annotation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     annotation_notes TEXT, -- 标注备注
-                    confidence_level INTEGER, -- 标注信心程度 1-5
+                    confidence_level INTEGER, -- 标注信心程度 0-5
                     
                     -- 审核信息
                     reviewer TEXT, -- 审核员ID
@@ -95,7 +95,7 @@ class EvaluationDatabase:
             ''')
             
             # 4. 标注标准表
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS annotation_standards (
                     id TEXT PRIMARY KEY,
                     project_id TEXT,
@@ -112,7 +112,7 @@ class EvaluationDatabase:
             ''')
             
             # 5. 对比分析表
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS comparison_analyses (
                     id TEXT PRIMARY KEY,
                     name TEXT NOT NULL,
@@ -127,7 +127,7 @@ class EvaluationDatabase:
             ''')
             
             # 6. 用户表（简化版本）
-            cursor.execute('''
+            db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
@@ -141,10 +141,10 @@ class EvaluationDatabase:
             ''')
             
             # 创建索引提高查询性能
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_project ON evaluation_results(project_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_created ON evaluation_results(created_at)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_result ON annotations(result_id)')
-            cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_annotator ON annotations(annotator)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_project ON evaluation_results(project_id)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_created ON evaluation_results(created_at)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_result ON annotations(result_id)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_annotator ON annotations(annotator)')
             
             conn.commit()
     
@@ -152,8 +152,8 @@ class EvaluationDatabase:
         """创建新项目"""
         project_id = str(uuid.uuid4())
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
                 INSERT INTO projects (id, name, description, created_by)
                 VALUES (?, ?, ?, ?)
             ''', (project_id, name, description, created_by))
@@ -176,8 +176,8 @@ class EvaluationDatabase:
         dataset_hash = self._calculate_file_hash(dataset_file)
         
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
                 INSERT INTO evaluation_results 
                 (id, project_id, name, dataset_file, dataset_hash, models, result_file, 
                  result_summary, evaluation_mode, tags, completed_at)
@@ -201,7 +201,7 @@ class EvaluationDatabase:
                              tags: List[str] = None) -> List[Dict]:
         """获取评测历史记录"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+            db_cursor = conn.cursor()
             
             query = '''
                 SELECT id, project_id, name, dataset_file, models, result_file,
@@ -223,8 +223,8 @@ class EvaluationDatabase:
             query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
             params.extend([limit, offset])
             
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
+            db_cursor.execute(query, params)
+            rows = db_cursor.fetchall()
             
             results = []
             for row in rows:
@@ -265,8 +265,8 @@ class EvaluationDatabase:
         annotation_id = str(uuid.uuid4())
         
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
                 INSERT INTO annotations 
                 (id, result_id, question_index, question_text, model_name, model_answer,
                  correctness_score, relevance_score, safety_score, creativity_score,
@@ -290,30 +290,119 @@ class EvaluationDatabase:
     def get_annotations(self, result_id: str) -> List[Dict]:
         """获取评测结果的所有标注"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
                 SELECT * FROM annotations WHERE result_id = ?
                 ORDER BY question_index, model_name
             ''', (result_id,))
             
-            rows = cursor.fetchall()
-            columns = [description[0] for description in cursor.description]
+            rows = db_cursor.fetchall()
+            columns = [description[0] for description in db_cursor.description]
             
             return [dict(zip(columns, row)) for row in rows]
+    
+    def get_result_id_by_filename(self, filename: str) -> Optional[str]:
+        """根据结果文件名获取result_id"""
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                SELECT id FROM evaluation_results 
+                WHERE result_file = ? OR result_file LIKE ?
+            ''', (filename, f'%/{filename}'))
+            
+            result = db_cursor.fetchone()
+            return result[0] if result else None
+    
+    def get_result_by_id(self, result_id: str) -> Optional[Dict]:
+        """根据result_id获取评测结果详情"""
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                SELECT * FROM evaluation_results WHERE id = ?
+            ''', (result_id,))
+            
+            result = db_cursor.fetchone()
+            if result:
+                columns = [description[0] for description in db_cursor.description]
+                return dict(zip(columns, result))
+            return None
+    
+    def update_annotation_score(self, 
+                               result_id: str,
+                               question_index: int,
+                               model_name: str,
+                               score_type: str,
+                               new_score: int,
+                               reason: str = '',
+                               annotator: str = 'manual_edit') -> bool:
+        """更新标注评分"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                db_cursor = conn.cursor()
+                
+                # 首先检查是否已存在该记录
+                db_cursor.execute('''
+                    SELECT id FROM annotations 
+                    WHERE result_id = ? AND question_index = ? AND model_name = ?
+                ''', (result_id, question_index, model_name))
+                
+                existing = db_cursor.fetchone()
+                
+                if existing:
+                    # 更新现有记录
+                    update_field = f"{score_type}_score"
+                    db_cursor.execute(f'''
+                        UPDATE annotations 
+                        SET {update_field} = ?, 
+                            annotation_notes = COALESCE(annotation_notes, '') || ?, 
+                            annotation_time = CURRENT_TIMESTAMP,
+                            annotator = ?
+                        WHERE id = ?
+                    ''', (new_score, f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 手动修改{score_type}评分为{new_score}分: {reason}', annotator, existing[0]))
+                else:
+                    # 创建新记录
+                    annotation_id = str(uuid.uuid4())
+                    score_data = {
+                        'correctness_score': new_score if score_type == 'correctness' else None,
+                        'relevance_score': new_score if score_type == 'relevance' else None,
+                        'safety_score': new_score if score_type == 'safety' else None,
+                        'creativity_score': new_score if score_type == 'creativity' else None,
+                        'annotation_notes': f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 手动创建{score_type}评分: {new_score}分 - {reason}'
+                    }
+                    
+                    db_cursor.execute('''
+                        INSERT INTO annotations 
+                        (id, result_id, question_index, model_name, 
+                         correctness_score, relevance_score, safety_score, creativity_score,
+                         annotator, annotation_notes, confidence_level)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        annotation_id, result_id, question_index, model_name,
+                        score_data['correctness_score'], score_data['relevance_score'], 
+                        score_data['safety_score'], score_data['creativity_score'],
+                        annotator, score_data['annotation_notes'], 3
+                    ))
+                
+                conn.commit()
+                return True
+                
+        except Exception as e:
+            print(f"更新评分失败: {e}")
+            return False
     
     def archive_old_results(self, days_threshold: int = 90) -> int:
         """归档旧的评测结果"""
         cutoff_date = datetime.now() - timedelta(days=days_threshold)
         
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
                 UPDATE evaluation_results 
                 SET status = 'archived', archived_at = ?
                 WHERE created_at < ? AND status = 'completed'
             ''', (datetime.now().isoformat(), cutoff_date.isoformat()))
             
-            archived_count = cursor.rowcount
+            archived_count = db_cursor.rowcount
             conn.commit()
             
         return archived_count
@@ -333,29 +422,29 @@ class EvaluationDatabase:
     def get_statistics(self) -> Dict:
         """获取系统统计信息"""
         with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
+            db_cursor = conn.cursor()
             
             stats = {}
             
             # 总评测次数
-            cursor.execute('SELECT COUNT(*) FROM evaluation_results')
-            stats['total_evaluations'] = cursor.fetchone()[0]
+            db_cursor.execute('SELECT COUNT(*) FROM evaluation_results')
+            stats['total_evaluations'] = db_cursor.fetchone()[0]
             
             # 总标注数
-            cursor.execute('SELECT COUNT(*) FROM annotations')
-            stats['total_annotations'] = cursor.fetchone()[0]
+            db_cursor.execute('SELECT COUNT(*) FROM annotations')
+            stats['total_annotations'] = db_cursor.fetchone()[0]
             
             # 活跃项目数
-            cursor.execute('SELECT COUNT(*) FROM projects WHERE status = "active"')
-            stats['active_projects'] = cursor.fetchone()[0]
+            db_cursor.execute('SELECT COUNT(*) FROM projects WHERE status = "active"')
+            stats['active_projects'] = db_cursor.fetchone()[0]
             
             # 最近7天的评测数
             week_ago = (datetime.now() - timedelta(days=7)).isoformat()
-            cursor.execute(
+            db_cursor.execute(
                 'SELECT COUNT(*) FROM evaluation_results WHERE created_at > ?',
                 (week_ago,)
             )
-            stats['recent_evaluations'] = cursor.fetchone()[0]
+            stats['recent_evaluations'] = db_cursor.fetchone()[0]
             
             return stats
 

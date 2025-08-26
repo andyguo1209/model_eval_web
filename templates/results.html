@@ -53,7 +53,8 @@
         .advanced-analysis {
             margin: 20px 0;
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+            grid-template-columns: 1fr 1fr;
+            grid-template-rows: auto auto;
             gap: 20px;
         }
         
@@ -62,6 +63,10 @@
             border-radius: 8px;
             padding: 20px;
             box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .analysis-section-wide {
+            grid-column: 1 / -1;
         }
         
         .analysis-section h3 {
@@ -139,13 +144,15 @@
             padding: 4px 8px;
             border-radius: 4px;
             font-weight: bold;
-            color: white;
+            color: white !important;
+            text-shadow: 0 1px 2px rgba(0,0,0,0.5);
         }
         
-        .grade-A, .grade-A+ { background: #4caf50; color: white; }
-        .grade-B { background: #2196f3; color: white; }
-        .grade-C { background: #ff9800; color: white; }
-        .grade-D { background: #f44336; color: white; }
+        .grade-A { background: #4caf50 !important; color: white !important; }
+        .grade-A\+ { background: #2e7d32 !important; color: white !important; }
+        .grade-B { background: #2196f3 !important; color: white !important; }
+        .grade-C { background: #ff9800 !important; color: white !important; }
+        .grade-D { background: #f44336 !important; color: white !important; }
         
         .recommendations-list {
             margin: 0;
@@ -468,14 +475,52 @@
             display: inline-flex;
             align-items: center;
             gap: 8px;
-            color: #007bff;
+            color: #ffffff;
+            background: #1976d2;
             text-decoration: none;
             margin-bottom: 20px;
             font-weight: 500;
+            padding: 10px 16px;
+            border-radius: 6px;
+            border: 2px solid #1976d2;
+            transition: all 0.3s ease;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
         }
         
         .back-link:hover {
-            text-decoration: underline;
+            background: #1565c0;
+            border-color: #1565c0;
+            color: #ffffff;
+            text-decoration: none;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        .download-group {
+            margin-right: 15px;
+        }
+        
+        .btn-secondary {
+            background: #6c757d !important;
+            border-color: #6c757d !important;
+        }
+        
+        .btn-secondary:hover {
+            background: #5a6268 !important;
+            border-color: #545b62 !important;
+        }
+        
+        .action-buttons .btn {
+            margin: 0 5px;
+            padding: 10px 16px;
+            font-weight: 500;
+            border-radius: 6px;
+            transition: all 0.3s ease;
+        }
+        
+        .action-buttons .btn:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
     </style>
 </head>
@@ -496,9 +541,14 @@
             </div>
             
             <div class="action-buttons" style="margin-top: 20px;">
-                <button class="btn btn-success" onclick="downloadFile()">
-                    <i class="fas fa-download"></i> 下载完整报告
-                </button>
+                <div class="download-group" style="display: inline-flex; gap: 5px; align-items: center;">
+                    <button class="btn btn-success" onclick="downloadFile('excel')">
+                        <i class="fas fa-file-excel"></i> 下载Excel报告
+                    </button>
+                    <button class="btn btn-success btn-secondary" onclick="downloadFile('csv')">
+                        <i class="fas fa-file-csv"></i> 下载CSV报告
+                    </button>
+                </div>
                 <button class="btn btn-primary" onclick="exportFiltered()">
                     <i class="fas fa-filter"></i> 导出筛选结果
                 </button>
@@ -590,8 +640,8 @@
             <h3><i class="fas fa-edit"></i> 修改评分</h3>
             <p id="edit-model-name">模型名称</p>
             <div style="text-align: center; margin: 20px 0;">
-                <label for="new-score">新评分 (1-5分):</label>
-                <input type="number" id="new-score" class="score-input" min="1" max="5" step="1">
+                <label for="new-score">新评分 (0-5分):</label>
+                <input type="number" id="new-score" class="score-input" min="0" max="5" step="1">
             </div>
             <div>
                 <label for="edit-reason">修改理由:</label>
@@ -702,13 +752,8 @@
                     ${generateEfficiencyMetrics(stats.performance_metrics)}
                 </div>
                 
-                <div class="analysis-section">
-                    <h3>🎯 质量分析</h3>
-                    ${generateQualityAnalysis(stats.quality_indicators)}
-                </div>
-                
-                <div class="analysis-section">
-                    <h3>💡 改进建议</h3>
+                <div class="analysis-section analysis-section-wide">
+                    <h3>📊 分数分布统计</h3>
                     ${generateRecommendations(stats.recommendations)}
                 </div>
             `;
@@ -740,12 +785,6 @@
                         <label>平均处理时间:</label>
                         <span>${metrics.estimated_time_per_question || '未知'}</span>
                     </div>
-                    <div class="metric-item">
-                        <label>效率评分:</label>
-                        <span class="score-${metrics.efficiency_score >= 80 ? 'good' : metrics.efficiency_score >= 60 ? 'ok' : 'poor'}">
-                            ${metrics.efficiency_score}/100
-                        </span>
-                    </div>
                     ${metrics.throughput ? `
                     <div class="metric-item">
                         <label>处理吞吐量:</label>
@@ -756,37 +795,81 @@
             `;
         }
         
-        function generateQualityAnalysis(quality) {
-            if (!quality) return '<p>暂无质量数据</p>';
+        // 计算分数分布的辅助函数
+        function calculateScoreDistribution() {
+            const distribution = {};
+            const scoreColumns = columns.filter(col => col.includes('评分'));
             
-            return `
-                <div class="quality-analysis">
-                    <div class="quality-item">
-                        <label>数据完整性:</label>
-                        <span class="quality-score">${quality.data_completeness?.toFixed(1) || 0}%</span>
-                    </div>
-                    <div class="quality-item">
-                        <label>评分有效性:</label>
-                        <span class="quality-score">${quality.score_validity?.toFixed(1) || 0}%</span>
-                    </div>
-                    <div class="quality-item">
-                        <label>整体质量等级:</label>
-                        <span class="quality-grade grade-${quality.quality_grade || 'C'}">${quality.quality_grade || 'C'}</span>
-                    </div>
-                </div>
-            `;
+            scoreColumns.forEach(col => {
+                const modelName = col.replace('_评分', '').replace('评分', '');
+                distribution[modelName] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 0: 0};
+                
+                originalData.forEach(row => {
+                    const score = parseInt(row[col]);
+                    if (!isNaN(score) && score >= 0 && score <= 5) {
+                        distribution[modelName][score]++;
+                    }
+                });
+            });
+            
+            return distribution;
         }
         
+
+        
         function generateRecommendations(recommendations) {
-            if (!recommendations || recommendations.length === 0) {
-                return '<p>暂无改进建议</p>';
+            // 计算每个模型的分数分布
+            const scoreDistribution = calculateScoreDistribution();
+            
+            let distributionHtml = '';
+            if (scoreDistribution && Object.keys(scoreDistribution).length > 0) {
+                const modelNames = Object.keys(scoreDistribution);
+                
+                // 创建紧凑的表格布局
+                distributionHtml = `
+                    <div class="score-distribution-table">
+                        <table style="width: 100%; border-collapse: collapse; margin-top: 10px;">
+                            <thead>
+                                <tr style="background: #f8f9fa;">
+                                    <th style="padding: 12px; text-align: left; border: 1px solid #dee2e6; font-weight: 600;">模型</th>
+                                    ${[0,1,2,3,4,5].map(score => `
+                                        <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6; font-weight: 600; color: #666;">${score}分</th>
+                                    `).join('')}
+                                    <th style="padding: 12px; text-align: center; border: 1px solid #dee2e6; font-weight: 600; color: #666;">总分</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${modelNames.map(modelName => {
+                                    const distribution = scoreDistribution[modelName];
+                                    const totalQuestions = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+                                    const totalScore = Object.entries(distribution).reduce((sum, [score, count]) => sum + (parseInt(score) * count), 0);
+                                    return `
+                                        <tr>
+                                            <td style="padding: 12px; border: 1px solid #dee2e6; font-weight: 500; background: #f8f9fa;">${modelName}</td>
+                                            ${[0,1,2,3,4,5].map(score => `
+                                                <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6;">
+                                                    <span class="score-count score-${score}" style="font-weight: bold; font-size: 16px;">
+                                                        ${distribution[score] || 0}
+                                                    </span>
+                                                    <div style="font-size: 11px; color: #666; margin-top: 2px;">
+                                                        ${totalQuestions > 0 ? Math.round((distribution[score] || 0) / totalQuestions * 100) : 0}%
+                                                    </div>
+                                                </td>
+                                            `).join('')}
+                                            <td style="padding: 12px; text-align: center; border: 1px solid #dee2e6; font-weight: bold; background: #f8f9fa;">
+                                                <div style="font-size: 16px; font-weight: bold; color: #1976d2;">${totalScore}</div>
+                                                <div style="font-size: 11px; color: #666; margin-top: 2px;">${totalQuestions}题</div>
+                                            </td>
+                                        </tr>
+                                    `;
+                                }).join('')}
+                            </tbody>
+                        </table>
+                    </div>
+                `;
             }
             
-            return `
-                <ul class="recommendations-list">
-                    ${recommendations.map(rec => `<li>${rec}</li>`).join('')}
-                </ul>
-            `;
+            return distributionHtml || '<p>暂无分数分布数据</p>';
         }
         
         // 填充类型筛选器
@@ -830,7 +913,7 @@
                 return `
                     <tr class="clickable-row" onclick="showRowDetails(${globalIndex})" title="点击查看详细信息">
                         ${columns.map(col => {
-                            const value = row[col] || '';
+                            const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
                             const cellClass = getCellClass(col, value);
                             const isExpandable = String(value).length > 50;
                             
@@ -1065,7 +1148,7 @@
                 <div class="detail-section">
                     <h4><i class="fas fa-robot"></i> ${key}</h4>
                     <p>${row[key] || '无答案'}</p>
-                    ${row[key.replace('答案', '评分')] !== null && row[key.replace('答案', '评分')] !== undefined && row[key.replace('答案', '评分')] !== '' ? `
+                    ${(row[key.replace('答案', '评分')] !== null && row[key.replace('答案', '评分')] !== undefined && row[key.replace('答案', '评分')] !== '') || row[key.replace('答案', '评分')] === 0 ? `
                         <div class="score-edit-section">
                             <p><strong>评分：</strong>
                                 <span class="score-cell score-${row[key.replace('答案', '评分')]}">${row[key.replace('答案', '评分')]}分</span>
@@ -1090,15 +1173,128 @@
             document.getElementById('detail-modal').style.display = 'none';
         }
         
-        // 下载文件
-        function downloadFile() {
-            window.open(`/download/{{ filename }}`, '_blank');
+        // 下载完整报告
+        function downloadFile(format = 'excel') {
+            // 显示加载状态
+            const button = event.target;
+            const originalText = button.innerHTML;
+            
+            if (format === 'excel') {
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成Excel...';
+            } else {
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 生成CSV...';
+            }
+            button.disabled = true;
+            
+            // 调用完整报告生成API
+            const filename = '{{ filename }}';
+            const url = `/api/generate_report/${filename}/${format}`;
+            
+            console.log('下载URL:', url);
+            
+            // 创建一个隐藏的链接进行下载
+            const downloadLink = document.createElement('a');
+            downloadLink.href = url;
+            downloadLink.style.display = 'none';
+            document.body.appendChild(downloadLink);
+            downloadLink.click();
+            document.body.removeChild(downloadLink);
+            
+            // 恢复按钮状态
+            setTimeout(() => {
+                button.innerHTML = originalText;
+                button.disabled = false;
+            }, 2000);
         }
         
         // 导出筛选结果
         function exportFiltered() {
-            // 这里可以实现导出筛选后的数据
-            alert('导出功能开发中...');
+            try {
+                // 获取当前筛选后的数据
+                const filteredData = getFilteredData();
+                
+                if (!filteredData || filteredData.length === 0) {
+                    alert('没有要导出的数据，请确保数据已加载且筛选条件有效');
+                    return;
+                }
+                
+                // 获取当前筛选条件
+                const filters = {
+                    search: document.getElementById('search-input') ? document.getElementById('search-input').value : '',
+                    type: document.getElementById('type-filter') ? document.getElementById('type-filter').value : '',
+                    score_range: document.getElementById('score-filter') ? document.getElementById('score-filter').value : ''
+                };
+                
+                // 显示加载状态
+                const button = event.target;
+                const originalText = button.innerHTML;
+                button.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 导出中...';
+                button.disabled = true;
+                
+                // 发送导出请求
+                fetch('/api/export_filtered', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        filename: '{{ filename }}',
+                        filtered_data: filteredData,
+                        filters: filters
+                    })
+                })
+                .then(response => {
+                    if (!response.ok) {
+                        throw new Error('导出失败');
+                    }
+                    // 获取文件名
+                    const contentDisposition = response.headers.get('Content-Disposition');
+                    let filename = 'filtered_results.csv';
+                    if (contentDisposition) {
+                        const match = contentDisposition.match(/filename="?([^"]+)"?/);
+                        if (match) {
+                            filename = match[1];
+                        }
+                    }
+                    
+                    // 下载文件
+                    return response.blob().then(blob => ({ blob, filename }));
+                })
+                .then(({ blob, filename }) => {
+                    const url = window.URL.createObjectURL(blob);
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    document.body.appendChild(a);
+                    a.click();
+                    window.URL.revokeObjectURL(url);
+                    document.body.removeChild(a);
+                    
+                    alert('筛选结果导出成功！');
+                })
+                .catch(error => {
+                    console.error('导出失败:', error);
+                    alert('导出失败: ' + error.message);
+                })
+                .finally(() => {
+                    // 恢复按钮状态
+                    button.innerHTML = originalText;
+                    button.disabled = false;
+                });
+                
+            } catch (error) {
+                console.error('导出筛选结果失败:', error);
+                alert('导出失败: ' + error.message);
+            }
+        }
+        
+        // 获取当前筛选后的数据
+        function getFilteredData() {
+            if (!filteredData || filteredData.length === 0) {
+                // 如果没有筛选数据，返回原始数据
+                return originalData;
+            }
+            return filteredData;
         }
         
         // 防抖函数
@@ -1157,8 +1353,8 @@
             const newScore = parseInt(document.getElementById('new-score').value);
             const reason = document.getElementById('edit-reason').value;
             
-            if (newScore < 1 || newScore > 5) {
-                alert('评分必须在1-5分之间');
+            if (newScore < 0 || newScore > 5) {
+                alert('评分必须在0-5分之间');
                 return;
             }
             
@@ -1192,6 +1388,9 @@
                     // 重新渲染表格
                     renderTable();
                     
+                    // 重新生成所有统计分析
+                    refreshAllAnalysis();
+                    
                     // 关闭模态框
                     closeScoreEditModal();
                     
@@ -1204,6 +1403,70 @@
                 console.error('Error:', error);
                 alert('保存失败，请稍后重试');
             });
+        }
+        
+        // 刷新所有分析面板
+        function refreshAllAnalysis() {
+            console.log('🔄 开始刷新统计分析...');
+            
+            // 1. 重新生成基础统计
+            generateStats();
+            
+            // 2. 重新计算并更新分数分布（查找现有的分数分布面板并更新）
+            const analysisSection = document.querySelector('.analysis-section-wide');
+            if (analysisSection) {
+                const newDistributionHtml = generateRecommendations(null); // 参数在函数内部不使用
+                analysisSection.innerHTML = `
+                    <h3>📊 分数分布统计</h3>
+                    ${newDistributionHtml}
+                `;
+            }
+            
+            // 3. 如果有高级统计数据，重新生成模型对比（模拟数据）
+            const modelComparisonSection = document.querySelector('.analysis-section:first-child');
+            if (modelComparisonSection) {
+                const updatedComparison = generateUpdatedModelComparison();
+                modelComparisonSection.innerHTML = `
+                    <h3>📊 模型性能对比</h3>
+                    ${updatedComparison}
+                `;
+            }
+            
+            console.log('✅ 统计分析刷新完成');
+        }
+        
+        // 根据最新数据生成模型对比
+        function generateUpdatedModelComparison() {
+            const scoreColumns = columns.filter(col => col.includes('评分'));
+            const modelPerformance = [];
+            
+            scoreColumns.forEach(col => {
+                const modelName = col.replace('_评分', '').replace('评分', '');
+                const scores = originalData.map(row => parseInt(row[col])).filter(score => !isNaN(score));
+                
+                if (scores.length > 0) {
+                    const avgScore = scores.reduce((sum, score) => sum + score, 0) / scores.length;
+                    const completionRate = (scores.length / originalData.length) * 100;
+                    
+                    modelPerformance.push({
+                        model: modelName,
+                        avg_score: avgScore,
+                        completion_rate: completionRate
+                    });
+                }
+            });
+            
+            // 按平均分排序
+            modelPerformance.sort((a, b) => b.avg_score - a.avg_score);
+            
+            return modelPerformance.map((model, index) => `
+                <div class="model-rank-item">
+                    <span class="rank-number">#${index + 1}</span>
+                    <span class="model-name">${model.model}</span>
+                    <span class="model-score">${model.avg_score.toFixed(2)}分</span>
+                    <div class="completion-rate">完成率: ${model.completion_rate.toFixed(1)}%</div>
+                </div>
+            `).join('');
         }
     </script>
 </body>

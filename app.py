@@ -7,7 +7,7 @@ import pandas as pd
 import time
 import re
 import csv
-from datetime import datetime
+from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
 from werkzeug.utils import secure_filename
 import google.generativeai as genai
@@ -740,6 +740,36 @@ def download_file(filename):
     else:
         return jsonify({'error': '文件不存在'}), 404
 
+@app.route('/api/history/download/<result_id>')
+def download_history_result(result_id):
+    """通过result_id下载历史记录结果文件"""
+    try:
+        # 获取数据库中的结果信息
+        if db:
+            result = db.get_result_by_id(result_id)
+            if result and result.get('result_file'):
+                result_file = result['result_file']
+                
+                # 检查文件是否存在
+                if os.path.exists(result_file):
+                    return send_file(result_file, as_attachment=True)
+                else:
+                    # 如果绝对路径不存在，尝试在results文件夹中查找
+                    filename = os.path.basename(result_file)
+                    filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+                    if os.path.exists(filepath):
+                        return send_file(filepath, as_attachment=True)
+                    
+                    return jsonify({'error': '结果文件不存在'}), 404
+            else:
+                return jsonify({'error': '找不到该评测记录'}), 404
+        else:
+            return jsonify({'error': '数据库连接失败'}), 500
+            
+    except Exception as e:
+        print(f"下载历史记录失败: {str(e)}")
+        return jsonify({'error': f'下载失败: {str(e)}'}), 500
+
 @app.route('/view_results/<filename>')
 def view_results(filename):
     """查看评测结果"""
@@ -765,6 +795,26 @@ def view_results(filename):
                         'question_count': len(df)
                     }
                     break
+            
+            # 如果没有找到时间数据，使用文件的创建和修改时间作为估算
+            if not evaluation_data or not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
+                try:
+                    file_stat = os.stat(filepath)
+                    # 估算：假设每题需要30秒处理时间
+                    estimated_duration = len(df) * 30
+                    file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                    estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+                    
+                    evaluation_data = {
+                        'start_time': estimated_start.isoformat(),
+                        'end_time': file_mtime.isoformat(), 
+                        'question_count': len(df),
+                        'is_estimated': True
+                    }
+                    print(f"⚠️ 使用估算时间数据: {estimated_start} -> {file_mtime}")
+                except Exception as e:
+                    print(f"❌ 无法获取文件时间: {e}")
+                    evaluation_data = {'question_count': len(df)}
             
             analysis_result = analytics.analyze_evaluation_results(
                 result_file=filepath,
@@ -1045,6 +1095,24 @@ def view_history(result_id):
             'question_count': len(df)
         }
         
+        # 如果没有时间数据，使用文件的创建和修改时间作为估算
+        if not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
+            try:
+                file_stat = os.stat(filepath)
+                # 估算：假设每题需要30秒处理时间
+                estimated_duration = len(df) * 30
+                file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+                
+                evaluation_data.update({
+                    'start_time': estimated_start.isoformat(),
+                    'end_time': file_mtime.isoformat(),
+                    'is_estimated': True
+                })
+                print(f"⚠️ 历史记录使用估算时间数据: {estimated_start} -> {file_mtime}")
+            except Exception as e:
+                print(f"❌ 无法获取历史文件时间: {e}")
+        
         analysis_result = analytics.analyze_evaluation_results(
             result_file=filepath,
             evaluation_data=evaluation_data
@@ -1074,6 +1142,477 @@ def delete_history_result(result_id):
             return jsonify({'success': False, 'error': '删除失败'}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
+
+@app.route('/api/update_score', methods=['POST'])
+def update_score():
+    """修改评分"""
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        row_index = data.get('row_index')
+        score_column = data.get('score_column')
+        new_score = data.get('new_score')
+        reason = data.get('reason')
+        model_name = data.get('model_name')
+        
+        # 验证参数
+        if not filename or row_index is None or not score_column or new_score is None:
+            return jsonify({'success': False, 'error': '缺少必要参数'}), 400
+        
+        # 验证评分范围
+        if not isinstance(new_score, int) or new_score < 0 or new_score > 5:
+            return jsonify({'success': False, 'error': '评分必须在0-5分之间'}), 400
+        
+        # 首先尝试更新数据库
+        if db:
+            try:
+                # 根据文件名查找result_id
+                result_id = db.get_result_id_by_filename(filename)
+                if result_id:
+                    # 根据评分列确定评分类型
+                    if '评分' in score_column:
+                        score_type = 'correctness'  # 默认为正确性评分，可以根据具体列名细化
+                        if '相关' in score_column:
+                            score_type = 'relevance'
+                        elif '安全' in score_column:
+                            score_type = 'safety'
+                        elif '创意' in score_column or '创造' in score_column:
+                            score_type = 'creativity'
+                    
+                    # 更新数据库中的评分
+                    success = db.update_annotation_score(
+                        result_id=result_id,
+                        question_index=row_index,
+                        model_name=model_name,
+                        score_type=score_type,
+                        new_score=new_score,
+                        reason=reason,
+                        annotator='manual_edit'
+                    )
+                    
+                    if success:
+                        print(f"✅ 数据库评分已更新: {filename} 第{row_index+1}行 {model_name} -> {new_score}分")
+                    else:
+                        print(f"⚠️ 数据库更新失败，继续更新CSV文件")
+            except Exception as e:
+                print(f"⚠️ 数据库更新异常: {e}")
+        
+        # 同时更新CSV文件以保持兼容性
+        filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+        if os.path.exists(filepath):
+            # 读取CSV文件
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+            
+            # 验证行索引
+            if row_index < 0 or row_index >= len(df):
+                return jsonify({'success': False, 'error': '行索引超出范围'}), 400
+            
+            # 验证列名
+            if score_column not in df.columns:
+                return jsonify({'success': False, 'error': f'列 {score_column} 不存在'}), 400
+            
+            # 更新评分
+            df.loc[row_index, score_column] = new_score
+            
+            # 如果有理由列，也更新理由
+            reason_column = score_column.replace('评分', '理由')
+            if reason_column in df.columns and reason:
+                current_reason = df.loc[row_index, reason_column] or ''
+                # 添加修改记录
+                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+                modification_note = f"\n[{timestamp}] 手动修改为{new_score}分: {reason}"
+                df.loc[row_index, reason_column] = current_reason + modification_note
+            
+            # 保存文件
+            df.to_csv(filepath, index=False, encoding='utf-8-sig')
+            print(f"✅ CSV文件评分已更新: {filename} 第{row_index+1}行 {score_column} -> {new_score}分")
+        else:
+            # 如果CSV文件不存在但数据库操作成功，仍然返回成功
+            if db and result_id:
+                print(f"⚠️ CSV文件不存在，但数据库更新成功")
+            else:
+                return jsonify({'success': False, 'error': '文件不存在且数据库中无记录'}), 404
+        
+        return jsonify({
+            'success': True,
+            'message': f'{model_name} 的评分已更新为 {new_score} 分'
+        })
+        
+    except Exception as e:
+        print(f"❌ 更新评分失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': f'更新失败: {str(e)}'}), 500
+
+@app.route('/api/generate_report/<path:filename>')
+@app.route('/api/generate_report/<path:filename>/<format_type>')
+def generate_complete_report(filename, format_type='excel'):
+    """生成完整报告API - 支持Excel和CSV格式"""
+    try:
+        # 验证格式类型
+        if format_type not in ['excel', 'csv']:
+            format_type = 'excel'
+        
+        # 确定文件路径
+        if filename.startswith('results_history/'):
+            # 如果filename已经包含results_history路径，直接使用
+            filepath = filename
+        elif filename.startswith('evaluation_result_'):
+            # 常规评测结果文件
+            filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+        else:
+            # 其他历史文件，放在results_history目录下
+            filepath = os.path.join('results_history', filename)
+        
+        print(f"🔍 尝试访问文件: {filepath}")
+        
+        if not os.path.exists(filepath):
+            print(f"❌ 文件不存在: {filepath}")
+            # 如果文件不存在，尝试其他可能的路径
+            alternative_paths = []
+            
+            # 如果原路径包含results_history，尝试去掉这部分
+            if 'results_history/' in filename:
+                base_filename = filename.replace('results_history/', '')
+                alternative_paths.extend([
+                    os.path.join('results_history', base_filename),
+                    os.path.join(app.config['RESULTS_FOLDER'], base_filename),
+                    base_filename
+                ])
+            
+            # 尝试其他路径
+            for alt_path in alternative_paths:
+                if os.path.exists(alt_path):
+                    filepath = alt_path
+                    print(f"✅ 找到备用路径: {filepath}")
+                    break
+            else:
+                return jsonify({'error': f'文件不存在: {filename}'}), 404
+        
+        # 读取评测数据
+        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        
+        # 使用高级分析引擎生成报告
+        from utils.advanced_analytics import AdvancedAnalytics
+        analytics = AdvancedAnalytics()
+        
+        # 尝试获取evaluation_data
+        evaluation_data = None
+        
+        # 从数据库获取评测数据
+        if db:
+            try:
+                result_id = db.get_result_id_by_filename(filename)
+                if result_id:
+                    result_info = db.get_result_by_id(result_id)
+                    if result_info:
+                        evaluation_data = {
+                            'start_time': result_info.get('created_at'),
+                            'end_time': result_info.get('completed_at'),
+                            'question_count': len(df),
+                            'models': result_info.get('models', '[]'),
+                            'evaluation_mode': result_info.get('evaluation_mode', 'unknown')
+                        }
+            except Exception as e:
+                print(f"⚠️ 无法从数据库获取evaluation_data: {e}")
+        
+        # 如果数据库中没有找到，使用文件时间估算
+        if not evaluation_data:
+            try:
+                import time
+                file_stat = os.stat(filepath)
+                file_creation_time = datetime.fromtimestamp(file_stat.st_ctime)
+                file_modification_time = datetime.fromtimestamp(file_stat.st_mtime)
+                
+                # 估算每题30秒的处理时间
+                estimated_duration = len(df) * 30  # 秒
+                estimated_start_time = file_modification_time - timedelta(seconds=estimated_duration)
+                
+                evaluation_data = {
+                    'start_time': estimated_start_time.isoformat(),
+                    'end_time': file_modification_time.isoformat(),
+                    'question_count': len(df),
+                    'models': '[]',
+                    'evaluation_mode': 'estimated',
+                    'is_estimated': True
+                }
+                print(f"📊 使用估算的evaluation_data: {estimated_duration}秒")
+            except Exception as e:
+                print(f"⚠️ 无法估算evaluation_data: {e}")
+                evaluation_data = {
+                    'start_time': None,
+                    'end_time': None,
+                    'question_count': len(df),
+                    'models': '[]',
+                    'evaluation_mode': 'unknown'
+                }
+        
+        # 生成统计分析
+        analysis_response = analytics.analyze_evaluation_results(filepath, evaluation_data)
+        
+        # 处理分析结果
+        if analysis_response.get('success'):
+            analysis_result = analysis_response.get('analysis', {})
+        else:
+            print(f"⚠️ 分析失败: {analysis_response.get('error', '未知错误')}")
+            # 使用基础分析作为备选
+            analysis_result = {
+                'basic_stats': {
+                    'total_questions': len(df),
+                    'total_models': len([col for col in df.columns if '评分' in col]),
+                    'average_score': 0,
+                    'evaluation_duration': '未知'
+                },
+                'quality_indicators': {},
+                'model_performance': {},
+                'time_analysis': {
+                    'total_duration': '未知',
+                    'average_per_question': '未知',
+                    'efficiency_rating': '未评级',
+                    'data_source': 'fallback'
+                }
+            }
+        
+        # 获取原文件名（不含扩展名和路径）
+        base_filename = os.path.basename(filename)  # 只取文件名，不含路径
+        base_name = os.path.splitext(base_filename)[0]
+        
+        # 创建临时文件
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        
+        if format_type == 'excel':
+            # 生成Excel格式报告
+            report_filename = f"{base_name}_完整报告.xlsx"
+            temp_path = os.path.join(temp_dir, report_filename)
+            
+            # 创建Excel写入器
+            with pd.ExcelWriter(temp_path, engine='openpyxl') as writer:
+                # 工作表1: 原始数据
+                df.to_excel(writer, sheet_name='原始数据', index=False)
+                
+                # 工作表2: 统计摘要
+                summary_data = []
+                basic_stats = analysis_result.get('basic_stats', {})
+                time_analysis = analysis_result.get('time_analysis', {})
+                
+                summary_data.append(['报告信息', ''])
+                summary_data.append(['文件名', filename])
+                summary_data.append(['生成时间', datetime.now().strftime('%Y-%m-%d %H:%M:%S')])
+                summary_data.append(['', ''])
+                
+                summary_data.append(['基础统计', ''])
+                summary_data.append(['总题目数', basic_stats.get('total_questions', 0)])
+                summary_data.append(['参与模型数', basic_stats.get('total_models', 0)])
+                summary_data.append(['平均评分', f"{basic_stats.get('average_score', 0):.2f}"])
+                summary_data.append(['评测时长', basic_stats.get('evaluation_duration', '未知')])
+                summary_data.append(['', ''])
+                
+                # 质量指标
+                quality_indicators = analysis_result.get('quality_indicators', {})
+                if quality_indicators:
+                    summary_data.append(['质量指标', ''])
+                    for key, value in quality_indicators.items():
+                        if key == 'data_completeness':
+                            summary_data.append(['数据完整性', f"{value:.1f}%"])
+                        elif key == 'score_validity':
+                            summary_data.append(['评分有效性', f"{value:.1f}%"])
+                        elif key == 'consistency_score':
+                            summary_data.append(['一致性评分', f"{value:.1f}%"])
+                    summary_data.append(['', ''])
+                
+                # 时间效率指标
+                if time_analysis:
+                    summary_data.append(['时间效率指标', ''])
+                    summary_data.append(['总评测时长', time_analysis.get('total_duration', '未知')])
+                    summary_data.append(['平均每题时长', time_analysis.get('average_per_question', '未知')])
+                    summary_data.append(['效率评级', time_analysis.get('efficiency_rating', '未评级')])
+                    
+                    data_source = time_analysis.get('data_source', 'unknown')
+                    if data_source == 'estimated':
+                        summary_data.append(['数据来源', '基于文件时间估算'])
+                    elif data_source == 'actual':
+                        summary_data.append(['数据来源', '实际记录时间'])
+                    elif data_source == 'no_data':
+                        summary_data.append(['数据来源', '无时间数据'])
+                    else:
+                        summary_data.append(['数据来源', '未知'])
+                    
+                    # 添加优化建议
+                    suggestions = time_analysis.get('optimization_suggestions', [])
+                    if suggestions:
+                        summary_data.append(['', ''])
+                        summary_data.append(['优化建议', ''])
+                        for i, suggestion in enumerate(suggestions[:3], 1):  # 最多显示3条建议
+                            summary_data.append([f'建议{i}', suggestion])
+                
+                summary_df = pd.DataFrame(summary_data, columns=['项目', '值'])
+                summary_df.to_excel(writer, sheet_name='统计摘要', index=False)
+                
+                # 工作表3: 模型性能对比
+                model_performance = analysis_result.get('model_performance', {})
+                if model_performance:
+                    performance_data = []
+                    for i, (model, stats) in enumerate(model_performance.items(), 1):
+                        performance_data.append([
+                            i,  # 排名
+                            model,  # 模型名
+                            f"{stats.get('average_score', 0):.2f}",  # 平均分
+                            stats.get('total_score', 0),  # 总分
+                            stats.get('question_count', 0),  # 题目数
+                            f"{stats.get('consistency_score', 0):.2f}" if stats.get('consistency_score') else 'N/A'  # 一致性
+                        ])
+                    
+                    performance_df = pd.DataFrame(performance_data, 
+                                                columns=['排名', '模型名称', '平均评分', '总分', '题目数', '一致性评分'])
+                    performance_df.to_excel(writer, sheet_name='模型性能对比', index=False)
+                
+                # 工作表4: 分数分布统计
+                score_columns = [col for col in df.columns if '评分' in col]
+                if score_columns:
+                    models = [col.replace('_评分', '') for col in score_columns]
+                    distribution_data = []
+                    
+                    for score in range(6):  # 0-5分
+                        row = [f"{score}分"]
+                        for col in score_columns:
+                            count = (df[col] == score).sum()
+                            total = df[col].notna().sum()
+                            percentage = (count / total * 100) if total > 0 else 0
+                            row.append(f"{count} ({percentage:.1f}%)")
+                        distribution_data.append(row)
+                    
+                    distribution_df = pd.DataFrame(distribution_data, 
+                                                 columns=['分数'] + models)
+                    distribution_df.to_excel(writer, sheet_name='分数分布统计', index=False)
+            
+            mimetype = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+            
+        else:  # CSV格式
+            # 生成增强的CSV格式报告
+            report_filename = f"{base_name}_完整报告.csv"
+            temp_path = os.path.join(temp_dir, report_filename)
+            
+            # 创建增强的CSV报告
+            enhanced_data = []
+            
+            # 添加报告头信息
+            enhanced_data.append(['AI模型评测完整报告', '', '', ''])
+            enhanced_data.append(['文件名', filename, '', ''])
+            enhanced_data.append(['生成时间', datetime.now().strftime('%Y-%m-%d %H:%M:%S'), '', ''])
+            enhanced_data.append(['', '', '', ''])
+            
+            # 添加统计摘要
+            basic_stats = analysis_result.get('basic_stats', {})
+            enhanced_data.append(['基础统计信息', '', '', ''])
+            enhanced_data.append(['总题目数', basic_stats.get('total_questions', 0), '', ''])
+            enhanced_data.append(['参与模型数', basic_stats.get('total_models', 0), '', ''])
+            enhanced_data.append(['平均评分', f"{basic_stats.get('average_score', 0):.2f}", '', ''])
+            enhanced_data.append(['评测时长', basic_stats.get('evaluation_duration', '未知'), '', ''])
+            enhanced_data.append(['', '', '', ''])
+            
+            # 添加时间效率指标
+            time_analysis = analysis_result.get('time_analysis', {})
+            if time_analysis:
+                enhanced_data.append(['时间效率指标', '', '', ''])
+                enhanced_data.append(['总评测时长', time_analysis.get('total_duration', '未知'), '', ''])
+                enhanced_data.append(['平均每题时长', time_analysis.get('average_per_question', '未知'), '', ''])
+                enhanced_data.append(['效率评级', time_analysis.get('efficiency_rating', '未评级'), '', ''])
+                
+                data_source = time_analysis.get('data_source', 'unknown')
+                source_desc = {
+                    'estimated': '基于文件时间估算',
+                    'actual': '实际记录时间',
+                    'no_data': '无时间数据',
+                    'incomplete': '时间数据不完整',
+                    'error': '时间数据解析错误',
+                    'fallback': '备用数据源'
+                }.get(data_source, '未知')
+                enhanced_data.append(['数据来源', source_desc, '', ''])
+                enhanced_data.append(['', '', '', ''])
+            
+            # 添加原始数据表头
+            enhanced_data.append(['原始评测数据', '', '', ''])
+            enhanced_data.append(df.columns.tolist())
+            
+            # 添加原始数据
+            for _, row in df.iterrows():
+                enhanced_data.append([str(row[col]) if pd.notna(row[col]) else '' for col in df.columns])
+            
+            # 写入CSV文件
+            import csv
+            with open(temp_path, 'w', newline='', encoding='utf-8-sig') as f:
+                writer = csv.writer(f)
+                writer.writerows(enhanced_data)
+            
+            mimetype = 'text/csv; charset=utf-8'
+        
+        # 返回文件供下载
+        return send_file(
+            temp_path,
+            as_attachment=True,
+            download_name=report_filename,
+            mimetype=mimetype
+        )
+        
+    except Exception as e:
+        print(f"❌ 生成报告失败: {str(e)}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'error': f'生成报告失败: {str(e)}'}), 500
+
+@app.route('/api/export_filtered', methods=['POST'])
+def export_filtered_results():
+    """导出筛选结果API"""
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        filtered_data = data.get('filtered_data', [])
+        filters = data.get('filters', {})
+        
+        if not filename:
+            return jsonify({'error': '缺少文件名参数'}), 400
+        
+        if not filtered_data:
+            return jsonify({'error': '没有要导出的数据'}), 400
+        
+        # 创建DataFrame
+        df = pd.DataFrame(filtered_data)
+        
+        # 获取原文件名（不含扩展名）
+        base_name = os.path.splitext(filename)[0]
+        
+        # 生成筛选条件描述
+        filter_desc = []
+        if filters.get('search'):
+            filter_desc.append(f"搜索_{filters['search']}")
+        if filters.get('type'):
+            filter_desc.append(f"类型_{filters['type']}")
+        if filters.get('score_range'):
+            filter_desc.append(f"分数_{filters['score_range']}")
+        
+        filter_suffix = "_".join(filter_desc) if filter_desc else "筛选结果"
+        export_filename = f"{base_name}_{filter_suffix}.csv"
+        
+        # 创建临时文件
+        import tempfile
+        temp_dir = tempfile.gettempdir()
+        temp_path = os.path.join(temp_dir, export_filename)
+        
+        # 保存CSV文件
+        df.to_csv(temp_path, index=False, encoding='utf-8-sig')
+        
+        # 返回文件供下载
+        return send_file(
+            temp_path,
+            as_attachment=True,
+            download_name=export_filename,
+            mimetype='text/csv; charset=utf-8'
+        )
+        
+    except Exception as e:
+        print(f"❌ 导出筛选结果失败: {str(e)}")
+        return jsonify({'error': f'导出失败: {str(e)}'}), 500
 
 
 if __name__ == '__main__':

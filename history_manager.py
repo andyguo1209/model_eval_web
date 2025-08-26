@@ -91,7 +91,7 @@ class EvaluationHistoryManager:
             for result in results:
                 result['file_exists'] = os.path.exists(result['result_file'])
                 result['file_size'] = self._get_file_size(result['result_file'])
-                result['download_url'] = f"/download_history/{result['id']}"
+                result['download_url'] = f"/api/history/download/{result['id']}"
                 result['view_url'] = f"/view_history/{result['id']}"
                 result['annotation_url'] = f"/annotate/{result['id']}"
             
@@ -171,8 +171,8 @@ class EvaluationHistoryManager:
             
             # 从数据库删除（实际上标记为删除）
             with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
+                db_cursor = conn.cursor()
+                db_cursor.execute(
                     'UPDATE evaluation_results SET status = "deleted" WHERE id = ?',
                     (result_id,)
                 )
@@ -200,8 +200,8 @@ class EvaluationHistoryManager:
                     
                     # 更新数据库中的文件路径
                     with db._get_connection() as conn:
-                        cursor = conn.cursor()
-                        cursor.execute(
+                        db_cursor = conn.cursor()
+                        db_cursor.execute(
                             'UPDATE evaluation_results SET result_file = ? WHERE id = ?',
                             (archive_path, result['id'])
                         )
@@ -230,8 +230,8 @@ class EvaluationHistoryManager:
             
             # 更新数据库
             with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute(
+                db_cursor = conn.cursor()
+                db_cursor.execute(
                     'UPDATE evaluation_results SET tags = ? WHERE id = ?',
                     (json.dumps(list(new_tags)), result_id)
                 )
@@ -362,9 +362,9 @@ class EvaluationHistoryManager:
         # 简单实现：总是返回第一个项目或创建默认项目
         try:
             with db._get_connection() as conn:
-                cursor = conn.cursor()
-                cursor.execute('SELECT id FROM projects LIMIT 1')
-                result = cursor.fetchone()
+                db_cursor = conn.cursor()
+                db_cursor.execute('SELECT id FROM projects LIMIT 1')
+                result = db_cursor.fetchone()
                 
                 if result:
                     return result[0]

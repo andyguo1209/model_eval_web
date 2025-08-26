@@ -13,40 +13,50 @@
 
 ## 🚀 快速开始
 
+### 一键部署 (推荐)
+
+```bash
+# 下载并运行一键部署脚本
+curl -fsSL https://raw.githubusercontent.com/your-repo/model-evaluation-web/main/deploy.sh | bash
+```
+
+### 手动安装 (5分钟)
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/your-repo/model-evaluation-web.git
+cd model-evaluation-web
+
+# 2. 安装依赖
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
+
+# 3. 配置环境
+cp config.env.template .env
+nano .env  # 编辑API密钥
+
+# 4. 启动服务
+python3 app.py
+```
+
 ### 环境要求
 
 - Python 3.8+
 - Flask 2.3+
 - pandas, aiohttp 等依赖包
 
-### 安装步骤
+### 📚 详细文档
 
-1. **克隆项目**
-```bash
-cd /path/to/your/projects
-git clone <repository-url>
-cd model-evaluation-web
-```
+- [📖 详细部署指南](DEPLOYMENT.md) - 生产环境部署
+- [⚡ 快速开始指南](QUICK_START.md) - 5分钟快速上手  
+- [📋 更新日志](CHANGELOG.md) - 版本更新记录
+- [🔧 功能说明](FEATURE_SUMMARY.md) - 完整功能列表
 
-2. **安装依赖**
-```bash
-pip install -r requirements.txt
-```
+### 🌐 访问地址
 
-3. **配置API密钥**
-```bash
-# 设置环境变量
-export GOOGLE_API_KEY="your_google_api_key"
-export ARK_API_KEY_HKGAI="your_hkgai_api_key"
-```
-
-4. **启动服务**
-```bash
-python app.py
-```
-
-5. **访问系统**
-   打开浏览器访问：http://localhost:5000
+- **开发环境**: http://localhost:5001
+- **生产环境**: http://your-domain.com
 
 ## 📋 使用说明
 
