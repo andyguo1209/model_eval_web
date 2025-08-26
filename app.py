@@ -16,6 +16,23 @@ from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
 
+# 🔧 加载.env文件中的环境变量
+print("🔧 加载环境变量...")
+env_vars = env_manager.load_env()
+if env_vars:
+    # 设置环境变量到当前进程
+    for key, value in env_vars.items():
+        os.environ[key] = value
+    api_keys = [k for k in env_vars.keys() if 'API_KEY' in k]
+    if api_keys:
+        print(f"✅ 从.env文件加载了 {len(api_keys)} 个API密钥")
+        for key in api_keys:
+            print(f"   - {key}: ****")
+    else:
+        print(f"📄 从.env文件加载了 {len(env_vars)} 个配置项")
+else:
+    print("📄 未找到.env文件或文件为空，将使用系统环境变量")
+
 # 导入新的历史管理和标注模块
 try:
     from database import db

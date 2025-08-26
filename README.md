@@ -88,8 +88,17 @@ pip install -r requirements-optional.txt
 cp config.env.template .env
 nano .env  # 编辑API密钥配置
 
-# 启动服务
+# 安装 Gunicorn (推荐生产环境使用)
+pip install gunicorn
+
+# 启动服务 (开发模式)
 python start.py
+
+# 或使用 Gunicorn 启动 (推荐生产环境)
+gunicorn --workers 4 --bind 0.0.0.0:5001 app:app
+
+# 更推荐的配置（守护进程运行）
+gunicorn --workers 4 --bind 0.0.0.0:5001 --daemon app:app
 ```
 
 ##### 快速启动（一键脚本）
@@ -126,8 +135,17 @@ pip install -r requirements-optional.txt
 cp config.env.template .env
 nano .env  # 编辑API密钥配置
 
-# 启动服务
+# 安装 Gunicorn (推荐生产环境使用)
+pip install gunicorn
+
+# 启动服务 (开发模式)
 python start.py
+
+# 或使用 Gunicorn 启动 (推荐生产环境)
+gunicorn --workers 4 --bind 0.0.0.0:5001 app:app
+
+# 更推荐的配置（守护进程运行）
+gunicorn --workers 4 --bind 0.0.0.0:5001 --daemon app:app
 ```
 
 ### 📦 可选依赖说明
@@ -238,7 +256,14 @@ ARK_API_KEY_HKGAI_V2=your_hkgai_v2_key_here
 3. 启动系统
 
 #### 方法二：Web界面配置
-1. 启动系统：`python3 start.py`
+1. 启动系统：
+   ```bash
+   # 开发模式
+   python3 start.py
+   
+   # 或生产模式 (推荐)
+   gunicorn --workers 4 --bind 0.0.0.0:5001 app:app
+   ```
 2. 访问 http://localhost:5001
 3. 在页面上输入API密钥并保存
 
@@ -247,7 +272,94 @@ ARK_API_KEY_HKGAI_V2=your_hkgai_v2_key_here
 export GOOGLE_API_KEY="your_api_key"
 export ARK_API_KEY_HKGAI_V1="your_hkgai_v1_key"
 export ARK_API_KEY_HKGAI_V2="your_hkgai_v2_key"
+
+# 安装 Gunicorn (如果未安装)
+pip install gunicorn
+
+# 启动服务 (开发模式)
 python3 start.py
+
+# 或使用 Gunicorn 启动 (推荐生产环境)
+gunicorn --workers 4 --bind 0.0.0.0:5001 app:app
+
+# 更推荐的配置（守护进程运行）
+gunicorn --workers 4 --bind 0.0.0.0:5001 --daemon app:app
+```
+
+## 🚀 生产环境启动配置
+
+### Gunicorn 配置说明
+
+推荐在生产环境中使用 Gunicorn 作为 WSGI 服务器：
+
+#### 基础配置
+```bash
+# 安装 Gunicorn
+pip install gunicorn
+
+# 基本启动
+gunicorn --workers 4 --bind 0.0.0.0:5001 app:app
+```
+
+#### 推荐配置
+```bash
+# 守护进程模式（后台运行）
+gunicorn --workers 4 --bind 0.0.0.0:5001 --daemon app:app
+
+# 完整配置（推荐生产环境）
+gunicorn --workers 4 \
+         --worker-class gevent \
+         --worker-connections 1000 \
+         --bind 0.0.0.0:5001 \
+         --timeout 300 \
+         --keepalive 2 \
+         --max-requests 1000 \
+         --max-requests-jitter 100 \
+         --preload \
+         --daemon \
+         --pid /var/run/model-evaluation.pid \
+         --access-logfile /var/log/model-evaluation-access.log \
+         --error-logfile /var/log/model-evaluation-error.log \
+         app:app
+```
+
+#### 配置参数说明
+- `--workers 4`: 启动4个工作进程（建议为CPU核心数 × 2 + 1）
+- `--worker-class gevent`: 使用gevent异步工作模式（需要`pip install gevent`）
+- `--bind 0.0.0.0:5001`: 绑定到所有网络接口的5001端口
+- `--timeout 300`: 工作进程超时时间（秒）
+- `--daemon`: 后台守护进程模式
+- `--preload`: 预加载应用代码（提高性能）
+
+#### Systemd 服务配置
+创建系统服务文件 `/etc/systemd/system/model-evaluation.service`：
+
+```ini
+[Unit]
+Description=AI Model Evaluation Web Service
+After=network.target
+
+[Service]
+Type=forking
+User=www-data
+Group=www-data
+WorkingDirectory=/opt/model-evaluation-web
+Environment=PATH=/opt/model-evaluation-web/venv/bin
+ExecStart=/opt/model-evaluation-web/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:5001 --daemon --pid /var/run/model-evaluation.pid app:app
+ExecReload=/bin/kill -s HUP $MAINPID
+KillMode=mixed
+TimeoutStopSec=5
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
+```
+
+启用服务：
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable model-evaluation
+sudo systemctl start model-evaluation
 ```
 
 ## 🌐 访问系统
@@ -258,6 +370,364 @@ python3 start.py
 - **手动标注**: http://localhost:5001/annotate/[result_id]
 
 ### 生产环境
+
+#### Nginx配置
+
+如果您需要在生产环境中使用nginx作为反向代理，以下是完整的配置方法：
+
+##### 1. 安装nginx
+```bash
+# Ubuntu/Debian
+sudo apt update && sudo apt install nginx
+
+# CentOS/RHEL
+sudo yum install nginx
+
+# macOS
+brew install nginx
+```
+
+##### 2. 创建nginx配置文件
+```bash
+sudo nano /etc/nginx/sites-available/model-evaluation
+```
+
+##### 3. nginx配置内容
+
+**完整的nginx配置文件** (`/etc/nginx/sites-available/model-evaluation`):
+
+```nginx
+# AI模型评测系统 Nginx配置
+# 支持HTTP和HTTPS，包含WebSocket支持和性能优化
+
+# HTTP服务器配置 (可重定向到HTTPS)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name your-domain.com www.your-domain.com;  # 替换为您的域名
+    
+    # 可选：重定向所有HTTP请求到HTTPS
+    # 如果不使用HTTPS，请注释掉下面这行，并删除下面的HTTPS server块
+    return 301 https://$server_name$request_uri;
+}
+
+# HTTPS服务器配置 (推荐)
+server {
+    listen 443 ssl http2;
+    listen [::]:443 ssl http2;
+    server_name your-domain.com www.your-domain.com;  # 替换为您的域名
+    
+    # SSL证书配置 (使用Let's Encrypt或其他SSL证书)
+    ssl_certificate /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    
+    # SSL安全配置
+    ssl_protocols TLSv1.2 TLSv1.3;
+    ssl_ciphers ECDHE-RSA-AES128-GCM-SHA256:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-RSA-AES128-SHA256:ECDHE-RSA-AES256-SHA384;
+    ssl_prefer_server_ciphers off;
+    ssl_session_cache shared:SSL:10m;
+    ssl_session_timeout 10m;
+    ssl_stapling on;
+    ssl_stapling_verify on;
+    
+    # 安全headers
+    add_header Strict-Transport-Security "max-age=63072000; includeSubDomains; preload" always;
+    add_header X-Frame-Options DENY always;
+    add_header X-Content-Type-Options nosniff always;
+    add_header X-XSS-Protection "1; mode=block" always;
+    add_header Referrer-Policy "strict-origin-when-cross-origin" always;
+    add_header Content-Security-Policy "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:;" always;
+    
+    # 日志配置
+    access_log /var/log/nginx/model-evaluation.access.log combined;
+    error_log /var/log/nginx/model-evaluation.error.log warn;
+    
+    # 客户端配置
+    client_max_body_size 100M;
+    client_body_timeout 60s;
+    client_header_timeout 60s;
+    client_body_buffer_size 128k;
+    
+    # Gzip压缩配置
+    gzip on;
+    gzip_vary on;
+    gzip_min_length 1024;
+    gzip_comp_level 6;
+    gzip_types
+        text/plain
+        text/css
+        text/xml
+        text/javascript
+        application/json
+        application/javascript
+        application/xml+rss
+        application/atom+xml
+        image/svg+xml;
+    
+    # 静态文件处理
+    location /static/ {
+        alias /opt/model-evaluation-web/static/;  # 修改为您的实际路径
+        expires 30d;
+        add_header Cache-Control "public, immutable";
+        add_header Vary Accept-Encoding;
+        
+        # 安全配置
+        location ~* \.(js|css)$ {
+            add_header Content-Type "text/plain";
+        }
+    }
+    
+    # 上传文件处理
+    location /uploads/ {
+        alias /opt/model-evaluation-web/uploads/;  # 修改为您的实际路径
+        expires 1d;
+        add_header Cache-Control "private, no-cache";
+        
+        # 安全限制
+        location ~* \.(php|pl|py|jsp|asp|sh|cgi)$ {
+            return 403;
+        }
+    }
+    
+    # 结果文件处理
+    location /results/ {
+        alias /opt/model-evaluation-web/results/;  # 修改为您的实际路径
+        expires 1d;
+        add_header Cache-Control "private, no-cache";
+        
+        # 安全限制
+        location ~* \.(php|pl|py|jsp|asp|sh|cgi)$ {
+            return 403;
+        }
+    }
+    
+    # 评测接口 (支持WebSocket和长时间连接)
+    location /eval/ {
+        proxy_pass http://localhost:5001/;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $server_name;
+        
+        # 评测相关的长超时配置
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        proxy_buffering off;
+        proxy_cache_bypass $http_upgrade;
+    }
+    
+    # API接口特殊配置
+    location /api/ {
+        proxy_pass http://localhost:5001/api/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $server_name;
+        
+        # API长超时配置
+        proxy_connect_timeout 300s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        
+        # API限流配置 (可选)
+        # limit_req zone=api burst=10 nodelay;
+    }
+    
+    # 文件上传接口
+    location /upload {
+        proxy_pass http://localhost:5001/upload;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # 上传超时配置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 300s;
+        proxy_read_timeout 300s;
+        
+        # 禁用缓冲以支持大文件上传
+        proxy_request_buffering off;
+        proxy_buffering off;
+    }
+    
+    # WebSocket连接支持
+    location /ws/ {
+        proxy_pass http://localhost:5001/ws/;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        
+        # WebSocket特殊配置
+        proxy_cache_bypass $http_upgrade;
+        proxy_buffering off;
+        proxy_read_timeout 7d;
+        proxy_send_timeout 7d;
+    }
+    
+    # 主应用代理 (所有其他请求)
+    location / {
+        proxy_pass http://localhost:5001/;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_set_header X-Forwarded-Host $server_name;
+        
+        # 标准超时配置
+        proxy_connect_timeout 60s;
+        proxy_send_timeout 60s;
+        proxy_read_timeout 60s;
+        
+        # 缓存配置
+        proxy_cache_bypass $http_upgrade;
+        proxy_no_cache $cookie_nocache $arg_nocache;
+    }
+    
+    # 健康检查
+    location /health {
+        access_log off;
+        return 200 "healthy\n";
+        add_header Content-Type text/plain;
+    }
+    
+    # 监控端点
+    location /nginx_status {
+        stub_status on;
+        access_log off;
+        allow 127.0.0.1;
+        allow ::1;
+        deny all;
+    }
+    
+    # 安全配置 - 禁止访问敏感文件
+    location ~ /\. {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+    
+    location ~ \.(sql|log|conf)$ {
+        deny all;
+        access_log off;
+        log_not_found off;
+    }
+}
+
+# 仅HTTP配置 (如果不使用HTTPS，使用此配置替换上面的HTTPS配置)
+# server {
+#     listen 80;
+#     listen [::]:80;
+#     server_name your-domain.com www.your-domain.com;
+#     
+#     # 在这里复制上面HTTPS server块中除SSL相关配置外的所有内容
+# }
+```
+
+**额外的nginx主配置优化** (`/etc/nginx/nginx.conf`中的http块):
+
+```nginx
+# 在 http 块中添加以下配置
+
+# 限流配置
+limit_req_zone $binary_remote_addr zone=general:10m rate=10r/s;
+limit_req_zone $binary_remote_addr zone=api:10m rate=5r/s;
+limit_req_zone $binary_remote_addr zone=upload:10m rate=1r/s;
+
+# 连接限制
+limit_conn_zone $binary_remote_addr zone=addr:10m;
+
+# 缓存配置
+proxy_cache_path /var/cache/nginx levels=1:2 keys_zone=my_cache:10m max_size=10g 
+                 inactive=60m use_temp_path=off;
+
+# 性能优化
+sendfile on;
+tcp_nopush on;
+tcp_nodelay on;
+keepalive_timeout 65;
+types_hash_max_size 2048;
+server_tokens off;
+
+# 缓冲区大小
+proxy_buffering on;
+proxy_buffer_size 4k;
+proxy_buffers 8 4k;
+proxy_busy_buffers_size 8k;
+```
+
+##### 4. HTTPS配置 (可选但推荐)
+如果您需要HTTPS支持，可以使用Let's Encrypt免费证书：
+
+```bash
+# 安装Certbot
+sudo apt install certbot python3-certbot-nginx
+
+# 获取SSL证书
+sudo certbot --nginx -d your-domain.com
+
+# 设置自动续期
+sudo crontab -e
+# 添加以下行：
+# 0 12 * * * /usr/bin/certbot renew --quiet
+```
+
+##### 5. 启用配置并启动nginx
+```bash
+# 创建软链接启用站点
+sudo ln -s /etc/nginx/sites-available/model-evaluation /etc/nginx/sites-enabled/
+
+# 删除默认配置 (可选)
+sudo rm -f /etc/nginx/sites-enabled/default
+
+# 测试配置
+sudo nginx -t
+
+# 重启nginx
+sudo systemctl restart nginx
+
+# 设置开机自启
+sudo systemctl enable nginx
+```
+
+##### 6. 配置说明
+
+- **端口配置**: nginx监听80端口（HTTP）和443端口（HTTPS）
+- **文件上传**: 支持最大100MB文件上传
+- **静态文件**: 自动处理CSS、JS等静态资源，启用缓存
+- **代理设置**: 将请求转发到Flask应用（运行在5001端口）
+- **超时配置**: API请求有更长的超时时间（5分钟）
+- **安全headers**: 自动添加安全相关的HTTP头
+- **日志记录**: 记录访问和错误日志便于调试
+
+##### 7. 常用nginx管理命令
+```bash
+# 检查nginx状态
+sudo systemctl status nginx
+
+# 重启nginx
+sudo systemctl restart nginx
+
+# 重新加载配置
+sudo systemctl reload nginx
+
+# 查看错误日志
+sudo tail -f /var/log/nginx/error.log
+
+# 查看访问日志
+sudo tail -f /var/log/nginx/access.log
+```
+
 详细的生产环境部署请参考 [DEPLOYMENT.md](DEPLOYMENT.md)
 
 ## 📋 使用指南
