@@ -53,6 +53,18 @@ python3 -c "from database import EvaluationDatabase; EvaluationDatabase()"
 python3 start.py
 ```
 
+### 🛠️ 环境问题修复
+
+如果遇到部署问题（如numpy/pandas兼容性错误），使用自动修复脚本：
+
+```bash
+# 自动诊断和修复环境问题
+chmod +x fix_environment.sh
+./fix_environment.sh
+```
+
+常见问题解决方案请参考 [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
+
 ## 🔧 环境配置
 
 ### 系统要求

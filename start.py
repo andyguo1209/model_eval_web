@@ -63,13 +63,17 @@ def check_environment():
         print("⚠️  缺少以下API密钥:")
         for key in missing_keys:
             print(f"   - {key}")
-        print("\n请设置环境变量:")
+        print("\n🔧 配置方式 (任选其一):")
+        print("方式1 - 编辑.env文件:")
+        print("   nano .env")
+        print("   # 在文件中添加: GOOGLE_API_KEY='your_api_key_here'")
+        print("\n方式2 - 设置环境变量:")
         for key in missing_keys:
-            print(f"export {key}='your_api_key_here'")
-        print("\n或者在运行前临时设置:")
-        for key in missing_keys:
-            print(f"{key}='your_api_key_here' python start.py")
-        return False
+            print(f"   export {key}='your_api_key_here'")
+        print("\n方式3 - Web界面配置:")
+        print("   启动后访问 http://localhost:5001 在页面中配置")
+        print("\n💡 系统将继续启动，您可以稍后配置API密钥")
+        return True  # 改为True，允许系统继续启动
     
     print("✅ API密钥配置完成")
     return True

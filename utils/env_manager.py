@@ -34,6 +34,7 @@ class EnvManager:
         env_vars = {}
         
         if not self.env_path.exists():
+            print("💡 未找到.env文件，将使用环境变量或Web界面配置")
             return env_vars
             
         try:
