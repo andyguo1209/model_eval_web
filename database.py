@@ -635,6 +635,245 @@ class EvaluationDatabase:
         except Exception as e:
             print(f"❌ 创建默认管理员失败: {e}")
             return None
+    
+    # ========== 系统配置管理方法 ==========
+    
+    def get_system_config(self, config_key: str, default_value: str = None) -> str:
+        """获取系统配置值"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT config_value FROM system_configs WHERE config_key = ?', (config_key,))
+            result = cursor.fetchone()
+            return result[0] if result else default_value
+    
+    def set_system_config(self, config_key: str, config_value: str, config_type: str = 'string', 
+                         description: str = '', category: str = 'general', is_sensitive: bool = False,
+                         updated_by: str = 'system') -> bool:
+        """设置系统配置"""
+        config_id = f"config_{config_key}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO system_configs 
+                (id, config_key, config_value, config_type, description, category, is_sensitive, updated_at, updated_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                config_id, config_key, config_value, config_type, 
+                description, category, is_sensitive, datetime.now().isoformat(), updated_by
+            ))
+            conn.commit()
+            return True
+    
+    def get_all_system_configs(self, category: str = None) -> List[Dict]:
+        """获取所有系统配置"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if category:
+                cursor.execute('''
+                    SELECT config_key, config_value, config_type, description, category, is_sensitive, 
+                           created_at, updated_at, updated_by
+                    FROM system_configs WHERE category = ? ORDER BY config_key
+                ''', (category,))
+            else:
+                cursor.execute('''
+                    SELECT config_key, config_value, config_type, description, category, is_sensitive,
+                           created_at, updated_at, updated_by
+                    FROM system_configs ORDER BY category, config_key
+                ''')
+            
+            rows = cursor.fetchall()
+            return [
+                {
+                    'config_key': row[0],
+                    'config_value': row[1],
+                    'config_type': row[2],
+                    'description': row[3],
+                    'category': row[4],
+                    'is_sensitive': bool(row[5]),
+                    'created_at': row[6],
+                    'updated_at': row[7],
+                    'updated_by': row[8]
+                }
+                for row in rows
+            ]
+    
+    def delete_system_config(self, config_key: str) -> bool:
+        """删除系统配置"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM system_configs WHERE config_key = ?', (config_key,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    # ========== 评分标准管理方法 ==========
+    
+    def create_scoring_criteria(self, name: str, description: str, criteria_type: str,
+                              criteria_config: Dict, dataset_pattern: str = None,
+                              is_default: bool = False, created_by: str = 'system') -> str:
+        """创建评分标准"""
+        criteria_id = str(uuid.uuid4())
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT INTO scoring_criteria 
+                (id, name, description, criteria_type, criteria_config, dataset_pattern, 
+                 is_default, created_by)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                criteria_id, name, description, criteria_type, 
+                json.dumps(criteria_config), dataset_pattern, is_default, created_by
+            ))
+            conn.commit()
+            return criteria_id
+    
+    def get_scoring_criteria(self, criteria_id: str) -> Optional[Dict]:
+        """获取指定评分标准"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
+                       is_default, is_active, created_by, created_at, updated_at
+                FROM scoring_criteria WHERE id = ?
+            ''', (criteria_id,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'criteria_type': row[3],
+                    'criteria_config': json.loads(row[4]),
+                    'dataset_pattern': row[5],
+                    'is_default': bool(row[6]),
+                    'is_active': bool(row[7]),
+                    'created_by': row[8],
+                    'created_at': row[9],
+                    'updated_at': row[10]
+                }
+            return None
+    
+    def get_all_scoring_criteria(self, criteria_type: str = None, active_only: bool = True) -> List[Dict]:
+        """获取所有评分标准"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            query = '''
+                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
+                       is_default, is_active, created_by, created_at, updated_at
+                FROM scoring_criteria WHERE 1=1
+            '''
+            params = []
+            
+            if criteria_type:
+                query += ' AND criteria_type = ?'
+                params.append(criteria_type)
+            
+            if active_only:
+                query += ' AND is_active = 1'
+            
+            query += ' ORDER BY is_default DESC, created_at DESC'
+            
+            cursor.execute(query, params)
+            rows = cursor.fetchall()
+            
+            return [
+                {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'criteria_type': row[3],
+                    'criteria_config': json.loads(row[4]),
+                    'dataset_pattern': row[5],
+                    'is_default': bool(row[6]),
+                    'is_active': bool(row[7]),
+                    'created_by': row[8],
+                    'created_at': row[9],
+                    'updated_at': row[10]
+                }
+                for row in rows
+            ]
+    
+    def update_scoring_criteria(self, criteria_id: str, name: str = None, description: str = None,
+                              criteria_config: Dict = None, dataset_pattern: str = None,
+                              is_default: bool = None, is_active: bool = None) -> bool:
+        """更新评分标准"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # 构建动态更新语句
+            updates = []
+            params = []
+            
+            if name is not None:
+                updates.append('name = ?')
+                params.append(name)
+            if description is not None:
+                updates.append('description = ?')
+                params.append(description)
+            if criteria_config is not None:
+                updates.append('criteria_config = ?')
+                params.append(json.dumps(criteria_config))
+            if dataset_pattern is not None:
+                updates.append('dataset_pattern = ?')
+                params.append(dataset_pattern)
+            if is_default is not None:
+                updates.append('is_default = ?')
+                params.append(is_default)
+            if is_active is not None:
+                updates.append('is_active = ?')
+                params.append(is_active)
+            
+            if not updates:
+                return False
+            
+            updates.append('updated_at = ?')
+            params.append(datetime.now().isoformat())
+            params.append(criteria_id)
+            
+            query = f'UPDATE scoring_criteria SET {", ".join(updates)} WHERE id = ?'
+            cursor.execute(query, params)
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def delete_scoring_criteria(self, criteria_id: str) -> bool:
+        """删除评分标准"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM scoring_criteria WHERE id = ?', (criteria_id,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_default_scoring_criteria(self, criteria_type: str) -> Optional[Dict]:
+        """获取指定类型的默认评分标准"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
+                       is_default, is_active, created_by, created_at, updated_at
+                FROM scoring_criteria 
+                WHERE criteria_type = ? AND is_default = 1 AND is_active = 1
+                ORDER BY created_at DESC LIMIT 1
+            ''', (criteria_type,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'id': row[0],
+                    'name': row[1],
+                    'description': row[2],
+                    'criteria_type': row[3],
+                    'criteria_config': json.loads(row[4]),
+                    'dataset_pattern': row[5],
+                    'is_default': bool(row[6]),
+                    'is_active': bool(row[7]),
+                    'created_by': row[8],
+                    'created_at': row[9],
+                    'updated_at': row[10]
+                }
+            return None
 
 
 # 创建全局数据库实例

@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>系统配置管理 - AI模型评测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .config-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            margin-bottom: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .config-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(400px, 1fr));
+            gap: 20px;
+            margin-top: 20px;
+        }
+        
+        .config-item {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 10px;
+            padding: 20px;
+            transition: all 0.3s ease;
+        }
+        
+        .config-item:hover {
+            border-color: #007bff;
+            box-shadow: 0 2px 8px rgba(0, 123, 255, 0.1);
+        }
+        
+        .config-key {
+            font-weight: 600;
+            color: #495057;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .config-value {
+            font-family: 'Courier New', monospace;
+            background: white;
+            border: 1px solid #dee2e6;
+            border-radius: 5px;
+            padding: 8px 12px;
+            margin-bottom: 10px;
+            word-break: break-all;
+        }
+        
+        .config-description {
+            font-size: 14px;
+            color: #6c757d;
+            margin-bottom: 10px;
+        }
+        
+        .config-meta {
+            display: flex;
+            gap: 15px;
+            font-size: 12px;
+            color: #868e96;
+        }
+        
+        .config-category {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        
+        .category-api { background: #e3f2fd; color: #1976d2; }
+        .category-evaluation { background: #e8f5e8; color: #2e7d32; }
+        .category-ui { background: #fff3e0; color: #f57c00; }
+        .category-general { background: #f3e5f5; color: #7b1fa2; }
+        
+        .config-actions {
+            display: flex;
+            gap: 8px;
+            margin-top: 15px;
+        }
+        
+        .btn-edit {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .btn-edit:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+        
+        .btn-delete {
+            background: #dc3545;
+            color: white;
+            border: none;
+            padding: 6px 12px;
+            border-radius: 5px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.2s;
+        }
+        
+        .btn-delete:hover {
+            background: #c82333;
+            transform: translateY(-1px);
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 3% auto;
+            padding: 0;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 30px;
+            background: linear-gradient(135deg, #007bff 0%, #0056b3 100%);
+            color: white;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .modal-close {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group select,
+        .form-group textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus,
+        .form-group textarea:focus {
+            outline: none;
+            border-color: #007bff;
+            box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 15px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .checkbox-group {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 20px;
+        }
+        
+        .checkbox-group input[type="checkbox"] {
+            width: auto;
+            margin: 0;
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .btn-primary {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-primary:hover {
+            background: #0056b3;
+            transform: translateY(-1px);
+        }
+        
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.2s;
+        }
+        
+        .btn-secondary:hover {
+            background: #545b62;
+            transform: translateY(-1px);
+        }
+        
+        .category-filter {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        
+        .filter-btn {
+            padding: 8px 16px;
+            border: 2px solid #e9ecef;
+            background: white;
+            border-radius: 20px;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn.active {
+            background: #007bff;
+            color: white;
+            border-color: #007bff;
+        }
+        
+        .filter-btn:hover {
+            border-color: #007bff;
+        }
+        
+        .sensitive-value {
+            color: #dc3545;
+            font-style: italic;
+        }
+        
+        @media (max-width: 768px) {
+            .config-grid {
+                grid-template-columns: 1fr;
+            }
+            
+            .form-row {
+                flex-direction: column;
+            }
+            
+            .category-filter {
+                justify-content: center;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1><i class="fas fa-cogs"></i> 系统配置管理</h1>
+                    <p>管理系统全局配置参数</p>
+                </div>
+                <div class="header-actions">
+                    <a href="/admin" class="btn btn-outline">
+                        <i class="fas fa-arrow-left"></i> 返回管理
+                    </a>
+                    <a href="/" class="btn btn-outline">
+                        <i class="fas fa-home"></i> 返回首页
+                    </a>
+                    <button class="btn btn-danger" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="config-section">
+            <div class="section-header">
+                <h2><i class="fas fa-sliders-h"></i> 配置列表</h2>
+                <button class="btn btn-primary" onclick="openAddConfigModal()">
+                    <i class="fas fa-plus"></i> 添加配置
+                </button>
+            </div>
+            
+            <div class="category-filter">
+                <button class="filter-btn active" onclick="filterByCategory('all')">全部</button>
+                <button class="filter-btn" onclick="filterByCategory('api')">API配置</button>
+                <button class="filter-btn" onclick="filterByCategory('evaluation')">评测配置</button>
+                <button class="filter-btn" onclick="filterByCategory('ui')">界面配置</button>
+                <button class="filter-btn" onclick="filterByCategory('general')">通用配置</button>
+            </div>
+            
+            <div id="configsContainer">
+                <div class="config-grid" id="configsGrid">
+                    <!-- 配置项将通过JavaScript动态加载 -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑配置模态框 -->
+    <div id="configModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">添加配置</h3>
+                <button class="modal-close" onclick="closeConfigModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <form id="configForm">
+                    <input type="hidden" id="isEdit" value="false">
+                    <input type="hidden" id="originalKey" value="">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="configKey">配置键名 *</label>
+                            <input type="text" id="configKey" name="config_key" required 
+                                   placeholder="例: gemini_api_endpoint">
+                        </div>
+                        <div class="form-group">
+                            <label for="configType">数据类型</label>
+                            <select id="configType" name="config_type">
+                                <option value="string">字符串</option>
+                                <option value="number">数字</option>
+                                <option value="boolean">布尔值</option>
+                                <option value="json">JSON</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="configValue">配置值 *</label>
+                        <textarea id="configValue" name="config_value" rows="3" required 
+                                  placeholder="输入配置值"></textarea>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="description">描述</label>
+                        <input type="text" id="description" name="description" 
+                               placeholder="配置项的说明">
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="category">分类</label>
+                            <select id="category" name="category">
+                                <option value="general">通用配置</option>
+                                <option value="api">API配置</option>
+                                <option value="evaluation">评测配置</option>
+                                <option value="ui">界面配置</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <div class="checkbox-group">
+                                <input type="checkbox" id="isSensitive" name="is_sensitive">
+                                <label for="isSensitive">敏感信息（如密钥）</label>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> 保存
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeConfigModal()">
+                            取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentConfigs = [];
+        let currentFilter = 'all';
+        
+        // 页面加载时获取配置列表
+        document.addEventListener('DOMContentLoaded', function() {
+            loadConfigs();
+        });
+        
+        // 加载配置列表
+        async function loadConfigs() {
+            try {
+                const response = await fetch('/admin/configs');
+                if (response.ok) {
+                    currentConfigs = (await response.json()).configs;
+                    renderConfigs();
+                } else {
+                    showAlert('获取配置列表失败', 'danger');
+                }
+            } catch (error) {
+                console.error('获取配置列表错误:', error);
+                showAlert('获取配置列表时发生错误', 'danger');
+            }
+        }
+        
+        // 渲染配置列表
+        function renderConfigs() {
+            const grid = document.getElementById('configsGrid');
+            grid.innerHTML = '';
+            
+            const filteredConfigs = currentFilter === 'all' 
+                ? currentConfigs 
+                : currentConfigs.filter(config => config.category === currentFilter);
+            
+            if (filteredConfigs.length === 0) {
+                grid.innerHTML = '<div style="text-align: center; color: #6c757d; padding: 40px;">暂无配置项</div>';
+                return;
+            }
+            
+            filteredConfigs.forEach(config => {
+                const configItem = document.createElement('div');
+                configItem.className = 'config-item';
+                configItem.innerHTML = `
+                    <div class="config-key">
+                        <i class="fas fa-key"></i>
+                        ${config.config_key}
+                        <span class="config-category category-${config.category}">${config.category}</span>
+                    </div>
+                    <div class="config-value ${config.is_sensitive ? 'sensitive-value' : ''}">
+                        ${config.is_sensitive ? '****' : config.config_value}
+                    </div>
+                    <div class="config-description">${config.description || '无描述'}</div>
+                    <div class="config-meta">
+                        <span><i class="fas fa-user"></i> ${config.updated_by}</span>
+                        <span><i class="fas fa-clock"></i> ${formatDateTime(config.updated_at)}</span>
+                        <span><i class="fas fa-database"></i> ${config.config_type}</span>
+                    </div>
+                    <div class="config-actions">
+                        <button class="btn-edit" onclick="editConfig('${config.config_key}')" title="编辑配置">
+                            <i class="fas fa-edit"></i> 编辑
+                        </button>
+                        <button class="btn-delete" onclick="deleteConfig('${config.config_key}')" title="删除配置">
+                            <i class="fas fa-trash"></i> 删除
+                        </button>
+                    </div>
+                `;
+                grid.appendChild(configItem);
+            });
+        }
+        
+        // 分类筛选
+        function filterByCategory(category) {
+            currentFilter = category;
+            
+            // 更新按钮状态
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+            
+            renderConfigs();
+        }
+        
+        // 打开添加配置模态框
+        function openAddConfigModal() {
+            document.getElementById('modalTitle').textContent = '添加配置';
+            document.getElementById('configForm').reset();
+            document.getElementById('isEdit').value = 'false';
+            document.getElementById('originalKey').value = '';
+            document.getElementById('configKey').disabled = false;
+            document.getElementById('configModal').style.display = 'block';
+        }
+        
+        // 编辑配置
+        function editConfig(configKey) {
+            const config = currentConfigs.find(c => c.config_key === configKey);
+            if (!config) return;
+            
+            document.getElementById('modalTitle').textContent = '编辑配置';
+            document.getElementById('isEdit').value = 'true';
+            document.getElementById('originalKey').value = configKey;
+            document.getElementById('configKey').value = config.config_key;
+            document.getElementById('configKey').disabled = true;
+            document.getElementById('configType').value = config.config_type;
+            document.getElementById('configValue').value = config.config_value;
+            document.getElementById('description').value = config.description || '';
+            document.getElementById('category').value = config.category;
+            document.getElementById('isSensitive').checked = config.is_sensitive;
+            document.getElementById('configModal').style.display = 'block';
+        }
+        
+        // 关闭配置模态框
+        function closeConfigModal() {
+            document.getElementById('configModal').style.display = 'none';
+        }
+        
+        // 提交配置表单
+        document.getElementById('configForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const configData = Object.fromEntries(formData);
+            const isEdit = document.getElementById('isEdit').value === 'true';
+            const originalKey = document.getElementById('originalKey').value;
+            
+            // 处理布尔值
+            configData.is_sensitive = document.getElementById('isSensitive').checked;
+            
+            try {
+                let url, method;
+                if (isEdit) {
+                    url = `/admin/configs/${originalKey}`;
+                    method = 'PUT';
+                } else {
+                    url = '/admin/configs';
+                    method = 'POST';
+                }
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(configData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert(isEdit ? '配置更新成功' : '配置创建成功', 'success');
+                    closeConfigModal();
+                    loadConfigs();
+                } else {
+                    showAlert(result.message || '操作失败', 'danger');
+                }
+            } catch (error) {
+                console.error('配置操作错误:', error);
+                showAlert('操作过程中发生错误', 'danger');
+            }
+        });
+        
+        // 删除配置
+        async function deleteConfig(configKey) {
+            if (!confirm(`确定要删除配置项 "${configKey}" 吗？`)) return;
+            
+            try {
+                const response = await fetch(`/admin/configs/${configKey}`, {
+                    method: 'DELETE'
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert('配置删除成功', 'success');
+                    loadConfigs();
+                } else {
+                    showAlert(result.message || '删除失败', 'danger');
+                }
+            } catch (error) {
+                console.error('删除配置错误:', error);
+                showAlert('删除过程中发生错误', 'danger');
+            }
+        }
+        
+        // 退出登录
+        async function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                try {
+                    const response = await fetch('/logout', { method: 'POST' });
+                    const data = await response.json();
+                    window.location.href = data.redirect || '/login';
+                } catch (error) {
+                    console.error('退出登录错误:', error);
+                    window.location.href = '/login';
+                }
+            }
+        }
+        
+        // 格式化日期时间
+        function formatDateTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN');
+        }
+        
+        // 显示提示信息
+        function showAlert(message, type) {
+            // 可以在这里添加更好的提示框实现
+            if (type === 'success') {
+                alert('✅ ' + message);
+            } else {
+                alert('❌ ' + message);
+            }
+        }
+        
+        // 点击模态框外部关闭
+        window.onclick = function(event) {
+            const modal = document.getElementById('configModal');
+            if (event.target === modal) {
+                closeConfigModal();
+            }
+        }
+    </script>
+</body>
+</html>

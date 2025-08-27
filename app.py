@@ -229,15 +229,27 @@ def parse_json_str(s: str) -> Dict[str, Any]:
 
 
 async def query_gemini_model(prompt: str, api_key: str = None) -> str:
-    """查询Gemini模型 使用 curl 方式"""
+    """查询Gemini模型 使用数据库配置的端点"""
+    from database import db
+    
     # 使用传入的API密钥或默认密钥
     actual_api_key = api_key or GOOGLE_API_KEY
     
     if not actual_api_key:
         return "Gemini模型调用失败: 未配置GOOGLE_API_KEY"
     
+    # 从数据库获取配置
+    api_endpoint = db.get_system_config('gemini_api_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models')
+    model_name = db.get_system_config('gemini_model_name', MODEL_NAME)
+    timeout_str = db.get_system_config('gemini_api_timeout', '60')
+    
+    try:
+        timeout = int(timeout_str)
+    except (ValueError, TypeError):
+        timeout = 60
+    
     # 构建 API 请求
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{MODEL_NAME}:generateContent"
+    url = f"{api_endpoint}/{model_name}:generateContent"
     headers = {
         "x-goog-api-key": actual_api_key,
         "Content-Type": "application/json"
@@ -260,7 +272,7 @@ async def query_gemini_model(prompt: str, api_key: str = None) -> str:
     
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=60) as response:
+            async with session.post(url, headers=headers, json=data, timeout=timeout) as response:
                 if response.status == 200:
                     result = await response.json()
                     
@@ -1813,6 +1825,20 @@ def admin():
     current_user = db.get_user_by_id(session['user_id'])
     return render_template('admin.html', current_user=current_user)
 
+@app.route('/admin/configs')
+@admin_required
+def admin_configs_page():
+    """系统配置管理页面"""
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('admin_configs.html', current_user=current_user)
+
+@app.route('/admin/scoring')
+@admin_required
+def admin_scoring_page():
+    """评分标准管理页面"""
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('admin_scoring.html', current_user=current_user)
+
 
 @app.route('/admin/users', methods=['GET'])
 @admin_required
@@ -1962,6 +1988,353 @@ def change_user_password(user_id):
         return jsonify({
             'success': False,
             'message': '修改密码失败'
+        }), 500
+
+
+# ========== 系统配置管理路由 ==========
+
+@app.route('/admin/configs', methods=['GET'])
+@admin_required
+def get_system_configs():
+    """获取系统配置列表"""
+    try:
+        category = request.args.get('category', None)
+        configs = db.get_all_system_configs(category)
+        
+        # 隐藏敏感配置的值
+        for config in configs:
+            if config.get('is_sensitive'):
+                config['config_value'] = '****'
+        
+        return jsonify({
+            'success': True,
+            'configs': configs
+        })
+    except Exception as e:
+        print(f"❌ 获取系统配置错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '获取系统配置失败'
+        }), 500
+
+@app.route('/admin/configs', methods=['POST'])
+@admin_required
+def create_system_config():
+    """创建系统配置"""
+    try:
+        data = request.get_json()
+        config_key = data.get('config_key', '').strip()
+        config_value = data.get('config_value', '').strip()
+        config_type = data.get('config_type', 'string')
+        description = data.get('description', '')
+        category = data.get('category', 'general')
+        is_sensitive = data.get('is_sensitive', False)
+        
+        if not config_key or not config_value:
+            return jsonify({
+                'success': False,
+                'message': '配置项键名和值不能为空'
+            }), 400
+        
+        # 获取当前用户
+        current_user = db.get_user_by_id(session['user_id'])
+        updated_by = current_user['username'] if current_user else 'admin'
+        
+        success = db.set_system_config(
+            config_key, config_value, config_type, 
+            description, category, is_sensitive, updated_by
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '配置项创建成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '配置项创建失败'
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ 创建系统配置错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '创建配置项失败'
+        }), 500
+
+@app.route('/admin/configs/<config_key>', methods=['PUT'])
+@admin_required
+def update_system_config(config_key):
+    """更新系统配置"""
+    try:
+        data = request.get_json()
+        config_value = data.get('config_value', '').strip()
+        config_type = data.get('config_type', 'string')
+        description = data.get('description', '')
+        category = data.get('category', 'general')
+        is_sensitive = data.get('is_sensitive', False)
+        
+        if not config_value:
+            return jsonify({
+                'success': False,
+                'message': '配置值不能为空'
+            }), 400
+        
+        # 获取当前用户
+        current_user = db.get_user_by_id(session['user_id'])
+        updated_by = current_user['username'] if current_user else 'admin'
+        
+        success = db.set_system_config(
+            config_key, config_value, config_type, 
+            description, category, is_sensitive, updated_by
+        )
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '配置项更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '配置项更新失败'
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ 更新系统配置错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '更新配置项失败'
+        }), 500
+
+@app.route('/admin/configs/<config_key>', methods=['DELETE'])
+@admin_required
+def delete_system_config(config_key):
+    """删除系统配置"""
+    try:
+        success = db.delete_system_config(config_key)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '配置项删除成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '配置项不存在或删除失败'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 删除系统配置错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '删除配置项失败'
+        }), 500
+
+# ========== 评分标准管理路由 ==========
+
+@app.route('/admin/scoring-criteria', methods=['GET'])
+@admin_required
+def get_scoring_criteria():
+    """获取评分标准列表"""
+    try:
+        criteria_type = request.args.get('type', None)
+        active_only = request.args.get('active_only', 'true').lower() == 'true'
+        
+        criteria_list = db.get_all_scoring_criteria(criteria_type, active_only)
+        
+        return jsonify({
+            'success': True,
+            'criteria': criteria_list
+        })
+    except Exception as e:
+        print(f"❌ 获取评分标准错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '获取评分标准失败'
+        }), 500
+
+@app.route('/admin/scoring-criteria', methods=['POST'])
+@admin_required
+def create_scoring_criteria():
+    """创建评分标准"""
+    try:
+        data = request.get_json()
+        name = data.get('name', '').strip()
+        description = data.get('description', '')
+        criteria_type = data.get('criteria_type', 'subjective')
+        criteria_config = data.get('criteria_config', {})
+        dataset_pattern = data.get('dataset_pattern', None)
+        is_default = data.get('is_default', False)
+        
+        if not name or not criteria_config:
+            return jsonify({
+                'success': False,
+                'message': '评分标准名称和配置不能为空'
+            }), 400
+        
+        # 获取当前用户
+        current_user = db.get_user_by_id(session['user_id'])
+        created_by = current_user['username'] if current_user else 'admin'
+        
+        criteria_id = db.create_scoring_criteria(
+            name, description, criteria_type, criteria_config,
+            dataset_pattern, is_default, created_by
+        )
+        
+        if criteria_id:
+            return jsonify({
+                'success': True,
+                'message': '评分标准创建成功',
+                'criteria_id': criteria_id
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '评分标准创建失败'
+            }), 500
+            
+    except Exception as e:
+        print(f"❌ 创建评分标准错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '创建评分标准失败'
+        }), 500
+
+@app.route('/admin/scoring-criteria/<criteria_id>', methods=['GET'])
+@admin_required
+def get_scoring_criteria_detail(criteria_id):
+    """获取评分标准详情"""
+    try:
+        criteria = db.get_scoring_criteria(criteria_id)
+        
+        if criteria:
+            return jsonify({
+                'success': True,
+                'criteria': criteria
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '评分标准不存在'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 获取评分标准详情错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '获取评分标准详情失败'
+        }), 500
+
+@app.route('/admin/scoring-criteria/<criteria_id>', methods=['PUT'])
+@admin_required
+def update_scoring_criteria(criteria_id):
+    """更新评分标准"""
+    try:
+        data = request.get_json()
+        
+        update_fields = {}
+        for field in ['name', 'description', 'criteria_config', 'dataset_pattern', 'is_default', 'is_active']:
+            if field in data:
+                update_fields[field] = data[field]
+        
+        if not update_fields:
+            return jsonify({
+                'success': False,
+                'message': '没有提供要更新的字段'
+            }), 400
+        
+        success = db.update_scoring_criteria(criteria_id, **update_fields)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '评分标准更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '评分标准不存在或更新失败'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 更新评分标准错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '更新评分标准失败'
+        }), 500
+
+@app.route('/admin/scoring-criteria/<criteria_id>', methods=['DELETE'])
+@admin_required
+def delete_scoring_criteria(criteria_id):
+    """删除评分标准"""
+    try:
+        success = db.delete_scoring_criteria(criteria_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '评分标准删除成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '评分标准不存在或删除失败'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 删除评分标准错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '删除评分标准失败'
+        }), 500
+
+# ========== 普通用户可访问的评分标准查看路由 ==========
+
+@app.route('/api/scoring-criteria', methods=['GET'])
+@login_required
+def get_public_scoring_criteria():
+    """获取可用的评分标准（所有用户可访问）"""
+    try:
+        criteria_type = request.args.get('type', None)
+        criteria_list = db.get_all_scoring_criteria(criteria_type, active_only=True)
+        
+        return jsonify({
+            'success': True,
+            'criteria': criteria_list
+        })
+    except Exception as e:
+        print(f"❌ 获取评分标准错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '获取评分标准失败'
+        }), 500
+
+@app.route('/api/scoring-criteria/<criteria_id>', methods=['GET'])
+@login_required
+def get_public_scoring_criteria_detail(criteria_id):
+    """获取评分标准详情（所有用户可访问）"""
+    try:
+        criteria = db.get_scoring_criteria(criteria_id)
+        
+        if criteria and criteria['is_active']:
+            return jsonify({
+                'success': True,
+                'criteria': criteria
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '评分标准不存在或已禁用'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 获取评分标准详情错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '获取评分标准详情失败'
         }), 500
 
 
