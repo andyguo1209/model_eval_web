@@ -973,46 +973,101 @@ def view_results(filename):
         
         # 获取高级分析结果
         advanced_stats = None
+        print(f"🔍 [view_results] 正在为文件 {filename} 生成统计分析...")
+        print(f"📊 [view_results] Analytics 模块状态: {'可用' if analytics else '不可用'}")
+        
         if analytics:
-            # 尝试从task_status获取时间数据
-            evaluation_data = None
-            for task_id, task in task_status.items():
-                if (hasattr(task, 'result_file') and 
-                    task.result_file == filename and
-                    hasattr(task, 'start_time') and hasattr(task, 'end_time')):
-                    evaluation_data = {
-                        'start_time': task.start_time.isoformat() if task.start_time else None,
-                        'end_time': task.end_time.isoformat() if task.end_time else None,
-                        'question_count': len(df)
-                    }
-                    break
+            try:
+                # 尝试从task_status获取时间数据
+                evaluation_data = None
+                for task_id, task in task_status.items():
+                    if (hasattr(task, 'result_file') and 
+                        task.result_file == filename and
+                        hasattr(task, 'start_time') and hasattr(task, 'end_time')):
+                        evaluation_data = {
+                            'start_time': task.start_time.isoformat() if task.start_time else None,
+                            'end_time': task.end_time.isoformat() if task.end_time else None,
+                            'question_count': len(df)
+                        }
+                        print(f"✅ [view_results] 从任务状态获取到时间数据")
+                        break
+                
+                # 如果没有找到时间数据，使用文件的创建和修改时间作为估算
+                if not evaluation_data or not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
+                    try:
+                        file_stat = os.stat(filepath)
+                        # 估算：假设每题需要30秒处理时间
+                        estimated_duration = len(df) * 30
+                        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                        estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+                        
+                        evaluation_data = {
+                            'start_time': estimated_start.isoformat(),
+                            'end_time': file_mtime.isoformat(), 
+                            'question_count': len(df),
+                            'is_estimated': True
+                        }
+                        print(f"⏰ [view_results] 使用估算时间数据")
+                    except Exception as e:
+                        print(f"⚠️ [view_results] 获取文件时间失败: {e}")
+                        evaluation_data = {'question_count': len(df)}
+                
+                print(f"🔄 [view_results] 开始分析评测结果...")
+                analysis_result = analytics.analyze_evaluation_results(
+                    result_file=filepath,
+                    evaluation_data=evaluation_data
+                )
+                
+                if analysis_result.get('success'):
+                    advanced_stats = analysis_result['analysis']
+                    print(f"✅ [view_results] 成功生成高级统计分析")
+                else:
+                    print(f"❌ [view_results] 分析失败: {analysis_result.get('error', '未知错误')}")
             
-            # 如果没有找到时间数据，使用文件的创建和修改时间作为估算
-            if not evaluation_data or not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
-                try:
-                    file_stat = os.stat(filepath)
-                    # 估算：假设每题需要30秒处理时间
-                    estimated_duration = len(df) * 30
-                    file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
-                    estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+            except Exception as e:
+                print(f"❌ [view_results] 分析过程出错: {e}")
+                advanced_stats = None
+        
+        # 如果没有高级统计，也要确保有基础的统计数据用于前端显示
+        if not advanced_stats:
+            print(f"📝 [view_results] 生成基础统计数据作为后备方案")
+            # 创建基础统计数据，确保前端能显示基本的图表
+            try:
+                # 简单的分数统计
+                score_columns = [col for col in df.columns if '评分' in col or 'score' in col.lower()]
+                if score_columns:
+                    basic_stats = {
+                        'basic_stats': {
+                            'total_questions': len(df),
+                            'response_rate': 100.0
+                        },
+                        'score_analysis': {
+                            'model_performance': {},
+                            'score_distribution': {}
+                        },
+                        'performance_metrics': {
+                            'estimated_time_per_question': '30秒 (估算)',
+                            'throughput': 120  # 每小时120题
+                        }
+                    }
                     
-                    evaluation_data = {
-                        'start_time': estimated_start.isoformat(),
-                        'end_time': file_mtime.isoformat(), 
-                        'question_count': len(df),
-                        'is_estimated': True
-                    }
-                except Exception as e:
-                    pass  # 静默处理文件时间获取错误
-                    evaluation_data = {'question_count': len(df)}
-            
-            analysis_result = analytics.analyze_evaluation_results(
-                result_file=filepath,
-                evaluation_data=evaluation_data
-            )
-            
-            if analysis_result.get('success'):
-                advanced_stats = analysis_result['analysis']
+                    # 为每个模型计算基础统计
+                    model_columns = [col for col in df.columns if col not in ['问题', '标准答案', '问题类型']]
+                    for col in model_columns:
+                        if '评分' in col:
+                            model_name = col.replace('评分', '').strip()
+                            scores = pd.to_numeric(df[col], errors='coerce').dropna()
+                            if len(scores) > 0:
+                                basic_stats['score_analysis']['model_performance'][model_name] = {
+                                    'avg_score': float(scores.mean()),
+                                    'total_score': float(scores.sum()),
+                                    'question_count': len(scores)
+                                }
+                    
+                    advanced_stats = basic_stats
+                    print(f"✅ [view_results] 生成基础统计数据成功")
+            except Exception as e:
+                print(f"⚠️ [view_results] 生成基础统计数据失败: {e}")
         
         current_user = db.get_user_by_id(session['user_id'])
         return render_template('results.html', 

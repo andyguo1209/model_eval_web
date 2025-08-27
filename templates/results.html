@@ -698,6 +698,9 @@
             
             // 获取高级统计信息
             const advancedStats = {{ advanced_stats | tojson if advanced_stats else 'null' }};
+            // 将统计数据设为全局变量，供其他函数使用
+            window.advancedStats = advancedStats;
+            console.log('📊 [前端] 加载统计数据:', advancedStats);
             
             let stats = {};
             
@@ -748,6 +751,8 @@
         
         // 生成高级分析展示
         function generateAdvancedAnalysis(stats) {
+            console.log('🔄 [前端] 开始生成高级分析展示...', stats);
+            
             const container = document.createElement('div');
             container.className = 'advanced-analysis';
             container.innerHTML = `
@@ -770,10 +775,42 @@
             // 插入到统计信息后面
             const statsContainer = document.getElementById('stats-container');
             statsContainer.parentNode.insertBefore(container, statsContainer.nextSibling);
+            console.log('✅ [前端] 高级分析展示生成完成');
         }
         
         function generateModelComparison(comparison) {
-            if (!comparison || !comparison.ranking) return '<p>暂无对比数据</p>';
+            // 兼容新的数据结构
+            if (!comparison) {
+                // 尝试从全局 advanced_stats 中获取数据
+                if (window.advancedStats && window.advancedStats.score_analysis && window.advancedStats.score_analysis.model_performance) {
+                    const performance = window.advancedStats.score_analysis.model_performance;
+                    const models = Object.keys(performance);
+                    if (models.length > 0) {
+                        // 根据平均分排序
+                        const sortedModels = models
+                            .map(name => ({
+                                model: name,
+                                avg_score: performance[name].avg_score,
+                                completion_rate: 100.0 // 默认完成率
+                            }))
+                            .sort((a, b) => b.avg_score - a.avg_score);
+                        
+                        console.log('📊 [前端] 使用基础统计数据生成模型对比:', sortedModels);
+                        
+                        return sortedModels.map((model, index) => `
+                            <div class="model-rank-item">
+                                <span class="rank-number">#${index + 1}</span>
+                                <span class="model-name">${model.model}</span>
+                                <span class="model-score">${model.avg_score.toFixed(2)}分</span>
+                                <div class="completion-rate">完成率: ${model.completion_rate.toFixed(1)}%</div>
+                            </div>
+                        `).join('');
+                    }
+                }
+                return '<p>暂无对比数据</p>';
+            }
+            
+            if (!comparison.ranking) return '<p>暂无对比数据</p>';
             
             return comparison.ranking.map((model, index) => `
                 <div class="model-rank-item">
