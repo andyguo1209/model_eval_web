@@ -1411,15 +1411,23 @@
             const newScore = parseInt(document.getElementById('new-score').value);
             const reason = document.getElementById('edit-reason').value;
             
-            if (newScore < 0 || newScore > 5) {
-                alert('评分必须在0-5分之间');
+            if (isNaN(newScore) || newScore < 0 || newScore > 5) {
+                alert('⚠️ 评分必须在0-5分之间的整数');
                 return;
             }
             
             if (!reason.trim()) {
-                alert('请输入评分理由');
+                alert('⚠️ 请输入评分理由');
                 return;
             }
+            
+            // 显示保存状态
+            const saveButton = document.querySelector('.save-btn');
+            const originalText = saveButton.innerHTML;
+            saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+            saveButton.disabled = true;
+            
+            console.log(`📝 [保存评分] 开始保存: 文件=${currentEditData.filename || '{{ filename }}'}, 行=${currentEditData.rowIndex}, 评分=${newScore}`);
             
             // 发送到后端保存
             fetch('/api/update_score', {
@@ -1451,19 +1459,51 @@
                     console.log(`📝 [保存评分] 更新数据 - 行:${rowIndex}, 评分列:${scoreColumn}, 理由列:${reasonColumn}`);
                     console.log(`📝 [保存评分] 新评分:${updatedScore}, 新理由:${updatedReason?.substring(0, 50)}...`);
                     
-                    // 更新originalData和filteredData
-                    if (originalData[rowIndex] && filteredData[rowIndex]) {
-                        originalData[rowIndex][scoreColumn] = updatedScore;
-                        filteredData[rowIndex][scoreColumn] = updatedScore;
-                        
-                        if (reasonColumn && updatedReason) {
-                            originalData[rowIndex][reasonColumn] = updatedReason;
-                            filteredData[rowIndex][reasonColumn] = updatedReason;
+                    // 更新originalData和filteredData中的对应行
+                    // 注意：这里需要找到filteredData中对应的行
+                    let actualRowIndex = -1;
+                    
+                    // 在filteredData中查找对应的行（通过序号或其他唯一标识）
+                    for (let i = 0; i < filteredData.length; i++) {
+                        if (filteredData[i]['序号'] && parseInt(filteredData[i]['序号']) === (rowIndex + 1)) {
+                            actualRowIndex = i;
+                            break;
                         }
-                        
-                        console.log(`✅ [保存评分] 本地数据已同步更新`);
-                    } else {
-                        console.error(`❌ [保存评分] 行索引${rowIndex}超出数据范围`);
+                    }
+                    
+                    // 如果没找到，尝试直接使用rowIndex（假设数据没有被过滤）
+                    if (actualRowIndex === -1 && rowIndex < filteredData.length) {
+                        actualRowIndex = rowIndex;
+                    }
+                    
+                    // 同时更新originalData（通过序号查找）
+                    let originalRowIndex = -1;
+                    for (let i = 0; i < originalData.length; i++) {
+                        if (originalData[i]['序号'] && parseInt(originalData[i]['序号']) === (rowIndex + 1)) {
+                            originalRowIndex = i;
+                            break;
+                        }
+                    }
+                    
+                    if (originalRowIndex === -1 && rowIndex < originalData.length) {
+                        originalRowIndex = rowIndex;
+                    }
+                    
+                    // 更新数据
+                    if (actualRowIndex >= 0 && actualRowIndex < filteredData.length) {
+                        filteredData[actualRowIndex][scoreColumn] = updatedScore;
+                        if (reasonColumn && updatedReason) {
+                            filteredData[actualRowIndex][reasonColumn] = updatedReason;
+                        }
+                        console.log(`✅ [保存评分] filteredData已更新，行索引: ${actualRowIndex}`);
+                    }
+                    
+                    if (originalRowIndex >= 0 && originalRowIndex < originalData.length) {
+                        originalData[originalRowIndex][scoreColumn] = updatedScore;
+                        if (reasonColumn && updatedReason) {
+                            originalData[originalRowIndex][reasonColumn] = updatedReason;
+                        }
+                        console.log(`✅ [保存评分] originalData已更新，行索引: ${originalRowIndex}`);
                     }
                     
                     // 重新渲染表格以显示更新
@@ -1475,19 +1515,33 @@
                     // 关闭模态框
                     closeScoreEditModal();
                     
-                    // 显示成功消息并提供数据同步选项
-                    if (confirm('✅ 评分和理由修改成功！\n\n为确保数据一致性，建议重新加载页面。\n是否现在刷新？')) {
-                        window.location.reload();
-                    }
+                    // 显示成功消息
+                    alert('✅ 评分和理由修改成功！数据已保存到服务器。');
                     
                 } else {
                     console.error(`❌ [保存评分] 服务器返回错误:`, data);
-                    alert('保存失败: ' + data.error);
+                    alert('❌ 保存失败: ' + (data.error || '未知错误'));
                 }
             })
             .catch(error => {
-                console.error('Error:', error);
-                alert('保存失败，请稍后重试');
+                console.error('❌ [保存评分] 网络错误:', error);
+                
+                // 提供详细的错误信息
+                let errorMessage = '网络连接失败，请检查：\n';
+                errorMessage += '• 网络连接是否正常\n';
+                errorMessage += '• 服务器是否运行正常\n';
+                errorMessage += '• 是否需要重新登录\n\n';
+                errorMessage += '具体错误: ' + error.message;
+                
+                alert('❌ ' + errorMessage);
+            })
+            .finally(() => {
+                // 恢复按钮状态
+                const saveButton = document.querySelector('.save-btn');
+                if (saveButton) {
+                    saveButton.innerHTML = '<i class="fas fa-save"></i> 保存';
+                    saveButton.disabled = false;
+                }
             });
         }
         

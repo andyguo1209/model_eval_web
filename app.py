@@ -1404,6 +1404,63 @@ def delete_history_result(result_id):
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
+@app.route('/api/debug_score_update', methods=['POST'])
+@login_required
+def debug_score_update():
+    """调试评分更新功能 - 返回详细的文件和数据库状态"""
+    try:
+        data = request.get_json()
+        filename = data.get('filename')
+        
+        print(f"\n🔍 [调试] 开始调试文件: {filename}")
+        
+        # 检查文件状态
+        filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+        file_exists = os.path.exists(filepath)
+        
+        debug_info = {
+            'filename': filename,
+            'filepath': filepath,
+            'file_exists': file_exists,
+            'results_folder': app.config['RESULTS_FOLDER']
+        }
+        
+        if file_exists:
+            # 读取文件信息
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+            debug_info.update({
+                'file_rows': len(df),
+                'file_columns': list(df.columns),
+                'score_columns': [col for col in df.columns if '评分' in col],
+                'reason_columns': [col for col in df.columns if '理由' in col]
+            })
+        
+        # 检查数据库状态
+        if db:
+            result_id = db.get_result_id_by_filename(filename)
+            debug_info.update({
+                'database_connected': True,
+                'database_result_id': result_id
+            })
+        else:
+            debug_info.update({
+                'database_connected': False,
+                'database_result_id': None
+            })
+        
+        print(f"🔍 [调试] 调试信息: {debug_info}")
+        
+        return jsonify({
+            'success': True,
+            'debug_info': debug_info
+        })
+        
+    except Exception as e:
+        print(f"❌ [调试] 调试失败: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/update_score', methods=['POST'])
 @login_required
 def update_score():
@@ -1429,10 +1486,14 @@ def update_score():
         reason_column = score_column.replace('评分', '理由')
         
         # 首先尝试更新数据库
+        print(f"🔍 [数据库] 开始查找文件 {filename} 对应的数据库记录...")
+        result_id = None
         if db:
             try:
                 # 根据文件名查找result_id
                 result_id = db.get_result_id_by_filename(filename)
+                print(f"🔍 [数据库] 查找结果: result_id = {result_id}")
+                
                 if result_id:
                     # 根据评分列确定评分类型
                     if '评分' in score_column:
@@ -1443,6 +1504,8 @@ def update_score():
                             score_type = 'safety'
                         elif '创意' in score_column or '创造' in score_column:
                             score_type = 'creativity'
+                    
+                    print(f"📝 [数据库] 准备更新: result_id={result_id}, 行={row_index}, 模型={model_name}, 类型={score_type}, 评分={new_score}")
                     
                     # 更新数据库中的评分
                     success = db.update_annotation_score(
@@ -1459,71 +1522,121 @@ def update_score():
                         print(f"✅ 数据库评分已更新: {filename} 第{row_index+1}行 {model_name} -> {new_score}分")
                     else:
                         print(f"⚠️ 数据库更新失败，继续更新CSV文件")
+                else:
+                    print(f"⚠️ 数据库中未找到文件 {filename} 的记录，跳过数据库更新")
             except Exception as e:
                 print(f"⚠️ 数据库更新异常: {e}")
+                import traceback
+                traceback.print_exc()
         
         # 同时更新CSV文件以保持兼容性
         filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+        print(f"📁 [CSV文件] 目标文件路径: {filepath}")
+        print(f"📁 [CSV文件] 文件是否存在: {os.path.exists(filepath)}")
+        
         if os.path.exists(filepath):
+            print(f"📖 [CSV文件] 开始读取文件...")
             # 读取CSV文件
             df = pd.read_csv(filepath, encoding='utf-8-sig')
+            print(f"📊 [CSV文件] 文件行数: {len(df)}, 列数: {len(df.columns)}")
+            print(f"📊 [CSV文件] 列名: {list(df.columns)}")
             
             # 验证行索引
             if row_index < 0 or row_index >= len(df):
+                print(f"❌ [CSV文件] 行索引 {row_index} 超出范围 [0, {len(df)-1}]")
                 return jsonify({'success': False, 'error': '行索引超出范围'}), 400
             
             # 验证列名
             if score_column not in df.columns:
+                print(f"❌ [CSV文件] 评分列 '{score_column}' 不存在")
+                print(f"📊 [CSV文件] 可用的列: {list(df.columns)}")
                 return jsonify({'success': False, 'error': f'列 {score_column} 不存在'}), 400
+            
+            print(f"📝 [CSV文件] 准备更新第 {row_index} 行的 '{score_column}' 列")
+            print(f"📝 [CSV文件] 原值: {df.loc[row_index, score_column]} -> 新值: {new_score}")
             
             # 更新评分
             df.loc[row_index, score_column] = new_score
             
             # 如果有理由列，也更新理由
             if reason_column in df.columns and reason:
-                # 根据用户需求：直接覆盖原有的评分理由，而不是追加
-                print(f"📝 [更新评分] 覆盖评分理由: {reason_column} -> {reason[:50]}...")
+                print(f"📝 [CSV文件] 更新理由列 '{reason_column}'")
+                print(f"📝 [CSV文件] 原理由: {str(df.loc[row_index, reason_column])[:50]}...")
+                print(f"📝 [CSV文件] 新理由: {reason[:50]}...")
                 df.loc[row_index, reason_column] = reason
+            elif reason:
+                print(f"⚠️ [CSV文件] 理由列 '{reason_column}' 不存在，跳过理由更新")
+            else:
+                print(f"ℹ️ [CSV文件] 没有提供理由，跳过理由更新")
             
             # 保存文件前先备份
             backup_path = filepath + '.backup'
+            print(f"💾 [备份] 准备备份原文件...")
             if os.path.exists(filepath):
                 import shutil
                 shutil.copy2(filepath, backup_path)
-                print(f"📁 [更新评分] 已创建文件备份: {backup_path}")
+                print(f"✅ [备份] 已创建文件备份: {backup_path}")
             
             # 保存文件
-            df.to_csv(filepath, index=False, encoding='utf-8-sig')
-            print(f"✅ CSV文件评分已更新: {filename} 第{row_index+1}行 {score_column} -> {new_score}分")
+            print(f"💾 [保存] 开始保存CSV文件到: {filepath}")
+            try:
+                df.to_csv(filepath, index=False, encoding='utf-8-sig')
+                print(f"✅ [保存] CSV文件保存完成")
+            except Exception as save_error:
+                print(f"❌ [保存] CSV文件保存失败: {save_error}")
+                return jsonify({'success': False, 'error': f'文件保存失败: {str(save_error)}'}), 500
             
             # 验证保存是否成功
+            print(f"🔍 [验证] 开始验证文件保存结果...")
             if os.path.exists(filepath):
-                # 重新读取文件验证更新
-                verify_df = pd.read_csv(filepath, encoding='utf-8-sig')
-                if row_index < len(verify_df):
-                    saved_score = verify_df.loc[row_index, score_column]
-                    saved_reason = verify_df.loc[row_index, reason_column] if reason_column in verify_df.columns else None
-                    print(f"🔍 [验证] 文件中的评分: {saved_score}, 理由: {saved_reason[:50] if saved_reason else 'None'}...")
+                try:
+                    # 重新读取文件验证更新
+                    verify_df = pd.read_csv(filepath, encoding='utf-8-sig')
+                    print(f"🔍 [验证] 重新读取文件成功，行数: {len(verify_df)}")
                     
-                    if str(saved_score) == str(new_score):
-                        print(f"✅ [验证] 评分保存成功")
-                    else:
-                        print(f"⚠️ [验证] 评分可能保存失败: 期望{new_score}, 实际{saved_score}")
+                    if row_index < len(verify_df):
+                        saved_score = verify_df.loc[row_index, score_column]
+                        saved_reason = verify_df.loc[row_index, reason_column] if reason_column in verify_df.columns else None
                         
-                    if reason and saved_reason and str(saved_reason) == str(reason):
-                        print(f"✅ [验证] 理由保存成功")
-                    elif reason:
-                        print(f"⚠️ [验证] 理由可能保存失败")
-                else:
-                    print(f"⚠️ [验证] 行索引超出文件范围")
+                        print(f"🔍 [验证] 文件中第{row_index}行的数据:")
+                        print(f"   评分列 '{score_column}': {saved_score} (期望: {new_score})")
+                        if reason_column in verify_df.columns:
+                            print(f"   理由列 '{reason_column}': {str(saved_reason)[:100]}...")
+                        
+                        score_match = str(saved_score) == str(new_score)
+                        reason_match = (not reason) or (saved_reason and str(saved_reason) == str(reason))
+                        
+                        if score_match:
+                            print(f"✅ [验证] 评分保存成功: {saved_score}")
+                        else:
+                            print(f"❌ [验证] 评分保存失败: 期望 {new_score}, 实际 {saved_score}")
+                            
+                        if reason and reason_column in verify_df.columns:
+                            if reason_match:
+                                print(f"✅ [验证] 理由保存成功")
+                            else:
+                                print(f"❌ [验证] 理由保存失败")
+                                print(f"   期望: {reason}")
+                                print(f"   实际: {saved_reason}")
+                        
+                        if not (score_match and reason_match):
+                            print(f"⚠️ [验证] 数据保存验证失败，但继续返回成功状态")
+                            
+                    else:
+                        print(f"❌ [验证] 行索引 {row_index} 超出验证文件范围 [0, {len(verify_df)-1}]")
+                        
+                except Exception as verify_error:
+                    print(f"❌ [验证] 文件验证失败: {verify_error}")
             else:
-                print(f"❌ [验证] 文件保存失败，文件不存在")
+                print(f"❌ [验证] 文件保存失败，文件不存在: {filepath}")
         else:
             # 如果CSV文件不存在但数据库操作成功，仍然返回成功
             if db and result_id:
                 print(f"⚠️ CSV文件不存在，但数据库更新成功")
             else:
                 return jsonify({'success': False, 'error': '文件不存在且数据库中无记录'}), 404
+        
+        print(f"🎉 [完成] 评分更新操作完成，准备返回结果")
         
         return jsonify({
             'success': True,
@@ -1532,14 +1645,40 @@ def update_score():
             'updated_reason': reason,
             'score_column': score_column,
             'reason_column': reason_column,
-            'row_index': row_index
+            'row_index': row_index,  # 这是CSV文件中的实际行索引（从0开始）
+            'debug_info': {
+                'filename': filename,
+                'filepath': filepath,
+                'file_exists': os.path.exists(filepath),
+                'database_result_id': result_id,
+                'model_name': model_name,
+                'csv_row_updated': True,
+                'database_updated': result_id is not None
+            }
         })
         
     except Exception as e:
         print(f"❌ 更新评分失败: {e}")
         import traceback
         traceback.print_exc()
-        return jsonify({'success': False, 'error': f'更新失败: {str(e)}'}), 500
+        
+        # 提供更详细的错误信息用于调试
+        error_details = {
+            'error_type': type(e).__name__,
+            'error_message': str(e),
+            'filename': data.get('filename', 'unknown'),
+            'row_index': data.get('row_index', 'unknown'),
+            'score_column': data.get('score_column', 'unknown'),
+            'model_name': data.get('model_name', 'unknown')
+        }
+        
+        print(f"🔍 [错误详情] {error_details}")
+        
+        return jsonify({
+            'success': False, 
+            'error': f'更新失败: {str(e)}',
+            'debug_info': error_details
+        }), 500
 
 @app.route('/api/generate_report/<path:filename>')
 @app.route('/api/generate_report/<path:filename>/<format_type>')
