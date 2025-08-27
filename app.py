@@ -14,7 +14,7 @@ from werkzeug.utils import secure_filename
 from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
-from config import GEMINI_CONCURRENT_REQUESTS
+from config import GEMINI_CONCURRENT_REQUESTS, GEMINI_MAX_OUTPUT_TOKENS
 
 # 🔧 加载.env文件中的环境变量
 print("🔧 加载环境变量...")
@@ -414,7 +414,7 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
             "temperature": 0.1,  # 降低随机性，提高JSON格式一致性
             "topK": 40,
             "topP": 0.95,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,  # 使用配置的输出token限制
         }
     }
     
@@ -442,14 +442,39 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
                         if "candidates" in result and len(result["candidates"]) > 0:
                             candidate = result["candidates"][0]
                             
+                            # 检查完成原因
+                            finish_reason = candidate.get("finishReason", "")
+                            
                             # 检查是否有安全过滤
-                            if "finishReason" in candidate and candidate["finishReason"] == "SAFETY":
+                            if finish_reason == "SAFETY":
                                 print(f"⚠️ Gemini响应被安全过滤器阻止")
                                 if attempt < retry_count - 1:
                                     # 稍微修改提示词重试
                                     data["contents"][0]["parts"][0]["text"] = prompt + "\n\n请严格按照JSON格式输出评测结果。"
                                     continue
                                 return "Gemini模型调用失败: 内容被安全过滤器阻止"
+                            
+                            # 检查是否达到最大token限制
+                            elif finish_reason == "MAX_TOKENS":
+                                print(f"⚠️ Gemini响应达到最大token限制，尝试增加限制并重试")
+                                if attempt < retry_count - 1:
+                                    # 增加maxOutputTokens并重试
+                                    current_max_tokens = data["generationConfig"].get("maxOutputTokens", 2048)
+                                    new_max_tokens = min(current_max_tokens * 2, 8192)  # 最大不超过8192
+                                    data["generationConfig"]["maxOutputTokens"] = new_max_tokens
+                                    print(f"🔄 增加maxOutputTokens从 {current_max_tokens} 到 {new_max_tokens}")
+                                    continue
+                                
+                                # 如果重试次数用完，尝试提取部分内容
+                                if "content" in candidate and "parts" in candidate.get("content", {}):
+                                    parts = candidate["content"]["parts"]
+                                    if len(parts) > 0 and "text" in parts[0]:
+                                        partial_text = parts[0]["text"]
+                                        if partial_text.strip():
+                                            print(f"⚠️ 内容被截断，但找到部分文本: {len(partial_text)} 字符")
+                                            return partial_text
+                                
+                                return "Gemini模型调用失败: 生成内容超过最大长度限制"
                             
                             if "content" in candidate and "parts" in candidate["content"]:
                                 parts = candidate["content"]["parts"]
@@ -474,8 +499,24 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
                                     print(f"✅ Gemini评测成功，返回长度: {len(text_result)}")
                                     return text_result
                         
-                        # 如果到这里，说明响应格式异常
-                        print(f"⚠️ Gemini返回格式异常: {result}")
+                        # 如果到这里，说明响应格式异常，提供详细调试信息
+                        print(f"⚠️ Gemini返回格式异常")
+                        print(f"📊 调试信息:")
+                        if "candidates" in result:
+                            print(f"   - candidates数量: {len(result['candidates'])}")
+                            if len(result['candidates']) > 0:
+                                candidate = result['candidates'][0]
+                                print(f"   - finishReason: {candidate.get('finishReason', '未知')}")
+                                if 'content' in candidate:
+                                    content = candidate['content']
+                                    print(f"   - content keys: {list(content.keys())}")
+                                    if 'parts' in content:
+                                        print(f"   - parts数量: {len(content['parts'])}")
+                                else:
+                                    print(f"   - content字段缺失")
+                        else:
+                            print(f"   - candidates字段缺失")
+                        print(f"   - 完整响应: {result}")
                         
                         # 检查是否有错误信息
                         if "error" in result:
