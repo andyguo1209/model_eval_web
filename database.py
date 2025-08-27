@@ -706,175 +706,40 @@ class EvaluationDatabase:
             conn.commit()
             return cursor.rowcount > 0
     
-    # ========== 评分标准管理方法 ==========
+    # ========== 评分标准管理方法 (已废弃) ==========
+    # 注意: 以下方法已废弃，系统已简化为只使用文件提示词功能
     
-    def create_scoring_criteria(self, name: str, description: str, criteria_type: str,
-                              criteria_config: Dict, dataset_pattern: str = None,
+    def create_scoring_criteria(self, name: str = None, description: str = None, criteria_type: str = None,
+                              criteria_config: Dict = None, dataset_pattern: str = None,
                               is_default: bool = False, created_by: str = 'system') -> str:
-        """创建评分标准"""
-        criteria_id = str(uuid.uuid4())
-        
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                INSERT INTO scoring_criteria 
-                (id, name, description, criteria_type, criteria_config, dataset_pattern, 
-                 is_default, created_by)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                criteria_id, name, description, criteria_type, 
-                json.dumps(criteria_config), dataset_pattern, is_default, created_by
-            ))
-            conn.commit()
-            return criteria_id
+        """创建评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] create_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return None
     
     def get_scoring_criteria(self, criteria_id: str) -> Optional[Dict]:
-        """获取指定评分标准"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
-                       is_default, is_active, created_by, created_at, updated_at
-                FROM scoring_criteria WHERE id = ?
-            ''', (criteria_id,))
-            
-            row = cursor.fetchone()
-            if row:
-                return {
-                    'id': row[0],
-                    'name': row[1],
-                    'description': row[2],
-                    'criteria_type': row[3],
-                    'criteria_config': json.loads(row[4]),
-                    'dataset_pattern': row[5],
-                    'is_default': bool(row[6]),
-                    'is_active': bool(row[7]),
-                    'created_by': row[8],
-                    'created_at': row[9],
-                    'updated_at': row[10]
-                }
-            return None
+        """获取指定评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] get_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return None
     
     def get_all_scoring_criteria(self, criteria_type: str = None, active_only: bool = True) -> List[Dict]:
-        """获取所有评分标准"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            query = '''
-                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
-                       is_default, is_active, created_by, created_at, updated_at
-                FROM scoring_criteria WHERE 1=1
-            '''
-            params = []
-            
-            if criteria_type:
-                query += ' AND criteria_type = ?'
-                params.append(criteria_type)
-            
-            if active_only:
-                query += ' AND is_active = 1'
-            
-            query += ' ORDER BY is_default DESC, created_at DESC'
-            
-            cursor.execute(query, params)
-            rows = cursor.fetchall()
-            
-            return [
-                {
-                    'id': row[0],
-                    'name': row[1],
-                    'description': row[2],
-                    'criteria_type': row[3],
-                    'criteria_config': json.loads(row[4]),
-                    'dataset_pattern': row[5],
-                    'is_default': bool(row[6]),
-                    'is_active': bool(row[7]),
-                    'created_by': row[8],
-                    'created_at': row[9],
-                    'updated_at': row[10]
-                }
-                for row in rows
-            ]
+        """获取所有评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] get_all_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return []
     
-    def update_scoring_criteria(self, criteria_id: str, name: str = None, description: str = None,
-                              criteria_config: Dict = None, dataset_pattern: str = None,
-                              is_default: bool = None, is_active: bool = None) -> bool:
-        """更新评分标准"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            
-            # 构建动态更新语句
-            updates = []
-            params = []
-            
-            if name is not None:
-                updates.append('name = ?')
-                params.append(name)
-            if description is not None:
-                updates.append('description = ?')
-                params.append(description)
-            if criteria_config is not None:
-                updates.append('criteria_config = ?')
-                params.append(json.dumps(criteria_config))
-            if dataset_pattern is not None:
-                updates.append('dataset_pattern = ?')
-                params.append(dataset_pattern)
-            if is_default is not None:
-                updates.append('is_default = ?')
-                params.append(is_default)
-            if is_active is not None:
-                updates.append('is_active = ?')
-                params.append(is_active)
-            
-            if not updates:
-                return False
-            
-            updates.append('updated_at = ?')
-            params.append(datetime.now().isoformat())
-            params.append(criteria_id)
-            
-            query = f'UPDATE scoring_criteria SET {", ".join(updates)} WHERE id = ?'
-            cursor.execute(query, params)
-            conn.commit()
-            return cursor.rowcount > 0
+    def update_scoring_criteria(self, criteria_id: str, **kwargs) -> bool:
+        """更新评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] update_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return False
     
     def delete_scoring_criteria(self, criteria_id: str) -> bool:
-        """删除评分标准"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('DELETE FROM scoring_criteria WHERE id = ?', (criteria_id,))
-            conn.commit()
-            return cursor.rowcount > 0
+        """删除评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] delete_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return False
     
     def get_default_scoring_criteria(self, criteria_type: str) -> Optional[Dict]:
-        """获取指定类型的默认评分标准"""
-        with sqlite3.connect(self.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute('''
-                SELECT id, name, description, criteria_type, criteria_config, dataset_pattern,
-                       is_default, is_active, created_by, created_at, updated_at
-                FROM scoring_criteria 
-                WHERE criteria_type = ? AND is_default = 1 AND is_active = 1
-                ORDER BY created_at DESC LIMIT 1
-            ''', (criteria_type,))
-            
-            row = cursor.fetchone()
-            if row:
-                return {
-                    'id': row[0],
-                    'name': row[1],
-                    'description': row[2],
-                    'criteria_type': row[3],
-                    'criteria_config': json.loads(row[4]),
-                    'dataset_pattern': row[5],
-                    'is_default': bool(row[6]),
-                    'is_active': bool(row[7]),
-                    'created_by': row[8],
-                    'created_at': row[9],
-                    'updated_at': row[10]
-                }
-            return None
-    
+        """获取默认评分标准 - 已废弃，请使用文件提示词功能"""
+        print("⚠️ [废弃警告] get_default_scoring_criteria方法已废弃，请使用文件提示词功能")
+        return None
     # ========== 文件提示词管理方法 ==========
     
     def get_file_prompt(self, filename: str) -> Optional[str]:

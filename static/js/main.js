@@ -230,22 +230,23 @@ function displayFileInfo(info) {
             <h4 style="margin: 0 0 15px 0; color: #495057;">
                 <i class="fas fa-cogs"></i> 配置测评参数
             </h4>
-            <div class="action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;">
-                <button class="btn btn-info" onclick="editFilePrompt('${info.filename}')" style="flex: 1; min-width: 200px;">
-                    <i class="fas fa-edit"></i> 编辑提示词
+            <div class="action-buttons" style="display: flex; gap: 15px; flex-wrap: wrap; justify-content: center; margin-bottom: 20px;">
+                <button class="btn btn-info btn-lg" onclick="editFilePrompt('${info.filename}')" style="flex: 1; min-width: 250px; max-width: 350px; padding: 12px 20px;">
+                    <i class="fas fa-edit"></i> 查看/编辑评测提示词
                 </button>
-                <button class="btn btn-secondary" onclick="showScoringCriteria()" style="flex: 1; min-width: 200px;">
-                    <i class="fas fa-star"></i> 查看评分标准
-                </button>
-            </div>
-            <div style="margin-top: 15px; text-align: center;">
-                <button class="btn btn-primary btn-lg" onclick="nextStep()" style="padding: 12px 30px; font-size: 16px;">
-                    <i class="fas fa-arrow-right"></i> 下一步：选择模型
+                <button class="btn btn-primary btn-lg" onclick="nextStep()" style="flex: 1; min-width: 250px; max-width: 350px; padding: 12px 20px;">
+                    <i class="fas fa-cogs"></i> 配置模型和开始评测
                 </button>
             </div>
-            <p style="margin: 10px 0 0 0; text-align: center; color: #6c757d; font-size: 14px;">
-                💡 建议先编辑提示词以获得更准确的评测结果
-            </p>
+            <div style="background: #f8f9fa; border-left: 4px solid #28a745; padding: 15px; border-radius: 8px; margin-top: 10px;">
+                <p style="margin: 0 0 8px 0; color: #28a745; font-size: 14px; font-weight: 600;">
+                    💡 个性化评测提示
+                </p>
+                <p style="margin: 0; color: #6c757d; font-size: 13px; line-height: 1.4;">
+                    点击"查看/编辑评测提示词"可以自定义评分标准、权重和详细要求，<br>
+                    获得更贴近您需求的专业评测结果
+                </p>
+            </div>
         </div>
     `;
 
@@ -1278,150 +1279,13 @@ function hideUserInfo() {
     document.getElementById('adminLink').style.display = 'none';
 }
 
-// 显示评分标准
-async function showScoringCriteria() {
-    try {
-        const response = await fetch('/api/scoring-criteria');
-        if (!response.ok) {
-            showAlert('获取评分标准失败', 'error');
-            return;
-        }
-        
-        const data = await response.json();
-        const criteria = data.criteria;
-        
-        if (!criteria || criteria.length === 0) {
-            showAlert('暂无可用的评分标准', 'info');
-            return;
-        }
-        
-        // 创建模态框显示评分标准
-        const modalHtml = `
-            <div id="scoring-criteria-modal" style="
-                position: fixed; 
-                top: 0; left: 0; 
-                width: 100%; height: 100%; 
-                background: rgba(0,0,0,0.5); 
-                z-index: 1000; 
-                display: flex; 
-                align-items: center; 
-                justify-content: center;
-            ">
-                <div style="
-                    background: white; 
-                    border-radius: 20px; 
-                    max-width: 800px; 
-                    max-height: 80vh; 
-                    width: 90%; 
-                    overflow: hidden; 
-                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
-                ">
-                    <div style="
-                        background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
-                        color: white; 
-                        padding: 25px 30px; 
-                        display: flex; 
-                        justify-content: space-between; 
-                        align-items: center;
-                    ">
-                        <h3 style="margin: 0; font-size: 20px; font-weight: 600;">
-                            <i class="fas fa-star"></i> 评分标准
-                        </h3>
-                        <button onclick="closeScoringCriteriaModal()" style="
-                            background: rgba(255,255,255,0.2); 
-                            border: none; 
-                            color: white; 
-                            width: 35px; height: 35px; 
-                            border-radius: 50%; 
-                            cursor: pointer; 
-                            font-size: 20px;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                        ">&times;</button>
-                    </div>
-                    <div style="padding: 30px; max-height: 60vh; overflow-y: auto;">
-                        ${criteria.map(criterion => `
-                            <div style="
-                                background: #f8f9fa; 
-                                border: 1px solid #e9ecef; 
-                                border-radius: 12px; 
-                                padding: 20px; 
-                                margin-bottom: 20px;
-                            ">
-                                <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 15px;">
-                                    <div>
-                                        <h4 style="margin: 0 0 8px 0; color: #495057; font-size: 18px;">${criterion.name}</h4>
-                                        <span style="
-                                            background: ${criterion.criteria_type === 'subjective' ? '#e3f2fd' : '#e8f5e8'}; 
-                                            color: ${criterion.criteria_type === 'subjective' ? '#1976d2' : '#2e7d32'}; 
-                                            padding: 3px 8px; 
-                                            border-radius: 12px; 
-                                            font-size: 11px; 
-                                            font-weight: 500; 
-                                            text-transform: uppercase;
-                                        ">${criterion.criteria_type}</span>
-                                        ${criterion.is_default ? '<span style="background: #28a745; color: white; padding: 3px 8px; border-radius: 12px; font-size: 10px; font-weight: 500; margin-left: 8px;">默认</span>' : ''}
-                                    </div>
-                                </div>
-                                
-                                <p style="color: #6c757d; margin-bottom: 15px; line-height: 1.4;">
-                                    ${criterion.description || '无描述'}
-                                </p>
-                                
-                                <div style="background: white; border: 1px solid #dee2e6; border-radius: 8px; padding: 15px;">
-                                    <h5 style="margin: 0 0 10px 0; color: #495057;">评分维度:</h5>
-                                    ${(criterion.criteria_config.dimensions || []).map(dim => `
-                                        <div style="display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #f0f0f0;">
-                                            <div>
-                                                <strong>${dim.display_name || dim.name}</strong>
-                                                <br><small style="color: #6c757d;">${dim.description || ''}</small>
-                                            </div>
-                                            <div style="text-align: right;">
-                                                <div style="background: #e9ecef; padding: 2px 8px; border-radius: 4px; font-size: 12px; margin-bottom: 2px;">
-                                                    权重: ${dim.weight || 1.0}
-                                                </div>
-                                                ${dim.scale ? `<div style="color: #6c757d; font-size: 11px;">范围: ${dim.scale[0]} - ${dim.scale[dim.scale.length - 1]}</div>` : ''}
-                                            </div>
-                                        </div>
-                                    `).join('')}
-                                </div>
-                                
-                                <div style="margin-top: 15px; font-size: 12px; color: #868e96;">
-                                    <span><i class="fas fa-user"></i> 创建者: ${criterion.created_by}</span>
-                                    <span style="margin-left: 15px;"><i class="fas fa-clock"></i> 创建时间: ${new Date(criterion.created_at).toLocaleString('zh-CN')}</span>
-                                </div>
-                            </div>
-                        `).join('')}
-                    </div>
-                </div>
-            </div>
-        `;
-        
-        // 添加模态框到页面
-        document.body.insertAdjacentHTML('beforeend', modalHtml);
-        
-    } catch (error) {
-        console.error('获取评分标准错误:', error);
-        showAlert('获取评分标准时发生错误', 'error');
-    }
-}
+// ========== 已移除查看评分标准功能 ==========
+// 简化为只保留"编辑提示词"功能，用户可以在编辑提示词时直接查看和修改评分标准
 
-// 关闭评分标准模态框
-function closeScoringCriteriaModal() {
-    const modal = document.getElementById('scoring-criteria-modal');
-    if (modal) {
-        modal.remove();
-    }
-}
+
 
 // 点击模态框外部关闭
 document.addEventListener('click', function(event) {
-    const modal = document.getElementById('scoring-criteria-modal');
-    if (modal && event.target === modal) {
-        closeScoringCriteriaModal();
-    }
-    
     // 处理文件提示词编辑模态框
     const promptModal = document.getElementById('file-prompt-modal');
     if (promptModal && event.target === promptModal) {
@@ -1434,13 +1298,19 @@ document.addEventListener('click', function(event) {
 // 编辑文件提示词
 async function editFilePrompt(filename) {
     try {
+        console.log(`👆 [前端] 用户点击编辑文件 ${filename} 的提示词`);
+        
         // 获取当前提示词
+        console.log(`🔄 [前端] 正在获取文件 ${filename} 的当前提示词...`);
         const response = await fetch(`/api/file-prompt/${encodeURIComponent(filename)}`);
         if (!response.ok) {
+            console.log(`❌ [前端] 获取提示词失败: ${response.status} ${response.statusText}`);
             throw new Error('获取提示词失败');
         }
         
         const data = await response.json();
+        console.log(`✅ [前端] 成功获取提示词，长度: ${data.custom_prompt.length} 字符`);
+        console.log(`📊 [前端] 提示词更新信息: ${data.updated_at} by ${data.updated_by}`);
         
         // 创建编辑模态框
         const modalHtml = `
@@ -1472,7 +1342,7 @@ async function editFilePrompt(filename) {
                         align-items: center;
                     ">
                         <h3 style="margin: 0; font-size: 20px; font-weight: 600;">
-                            <i class="fas fa-edit"></i> 编辑提示词
+                            <i class="fas fa-edit"></i> 编辑评测提示词 (${filename})
                         </h3>
                         <button onclick="closeFilePromptModal()" style="
                             background: rgba(255,255,255,0.2); 
@@ -1558,10 +1428,12 @@ async function editFilePrompt(filename) {
         `;
         
         // 添加模态框到页面
+        console.log(`🖼️ [前端] 正在显示提示词编辑模态框...`);
         document.body.insertAdjacentHTML('beforeend', modalHtml);
+        console.log(`✅ [前端] 提示词编辑界面已打开，用户可以开始编辑`);
         
     } catch (error) {
-        console.error('编辑提示词错误:', error);
+        console.error(`❌ [前端] 编辑提示词错误:`, error);
         showAlert('获取提示词失败: ' + error.message, 'error');
     }
 }
@@ -1571,7 +1443,10 @@ async function saveFilePrompt(filename) {
     try {
         const promptText = document.getElementById('prompt-editor').value.trim();
         
+        console.log(`✏️ [前端] 用户开始保存文件 ${filename} 的提示词，长度: ${promptText.length} 字符`);
+        
         if (!promptText) {
+            console.log(`⚠️ [前端] 提示词为空，停止保存操作`);
             showAlert('提示词不能为空', 'error');
             return;
         }
@@ -1586,23 +1461,29 @@ async function saveFilePrompt(filename) {
             })
         });
         
+        console.log(`🔄 [前端] 正在发送保存请求到服务器...`);
+        
         if (!response.ok) {
+            console.log(`❌ [前端] 服务器响应错误: ${response.status} ${response.statusText}`);
             throw new Error('保存失败');
         }
         
         const result = await response.json();
+        console.log(`📝 [前端] 服务器响应:`, result);
         
         if (result.success) {
-            showAlert('提示词保存成功', 'success');
+            console.log(`✅ [前端] 提示词保存成功，文件: ${filename}`);
+            showAlert('提示词保存成功！您的自定义评测标准已生效', 'success');
             closeFilePromptModal();
-            // 刷新文件列表
+            // 刷新文件列表以显示更新时间
             loadHistoryFiles();
         } else {
+            console.log(`❌ [前端] 保存失败，错误信息: ${result.error}`);
             throw new Error(result.error || '保存失败');
         }
         
     } catch (error) {
-        console.error('保存提示词错误:', error);
+        console.error(`❌ [前端] 保存提示词错误:`, error);
         showAlert('保存提示词失败: ' + error.message, 'error');
     }
 }

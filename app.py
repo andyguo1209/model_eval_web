@@ -329,12 +329,18 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 评测要求：请保持客观中立，重点关注内容的准确性、逻辑性、完整性、实用性，以及语言本地化程度。"""
     
     if filename:
+        print(f"🔍 [评测引擎] 正在检查文件 {filename} 是否有自定义提示词...")
         try:
             file_prompt = db.get_file_prompt(filename)
             if file_prompt:
+                prompt_length = len(file_prompt)
+                print(f"✅ [评测引擎] 使用文件 {filename} 的自定义提示词，长度: {prompt_length} 字符")
                 custom_prompt = file_prompt
+            else:
+                print(f"📝 [评测引擎] 文件 {filename} 未设置自定义提示词，使用系统默认提示词")
         except Exception as e:
-            print(f"⚠️ 获取文件 {filename} 的自定义提示词失败: {e}")
+            print(f"⚠️ [评测引擎] 获取文件 {filename} 的自定义提示词失败: {e}")
+            print(f"🔄 [评测引擎] 回退到使用系统默认提示词")
     
     return f"""
 {custom_prompt}
@@ -2062,20 +2068,29 @@ def get_file_prompt(filename):
     try:
         filename = secure_filename(filename)
         
+        # 获取当前用户信息
+        current_user = db.get_user_by_id(session['user_id'])
+        username = current_user['username'] if current_user else 'unknown'
+        
+        print(f"📝 [提示词查看] 用户 {username} 正在查看文件 {filename} 的提示词")
+        
         # 确保文件存在
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         if not os.path.exists(filepath):
+            print(f"⚠️ [提示词查看] 文件不存在: {filename}")
             return jsonify({'error': '文件不存在'}), 404
         
         # 确保文件有提示词记录
-        current_user = db.get_user_by_id(session['user_id'])
-        created_by = current_user['username'] if current_user else 'system'
+        created_by = username if current_user else 'system'
         db.create_file_prompt_if_not_exists(filename, created_by=created_by)
         
         # 获取提示词信息
         prompt_info = db.get_file_prompt_info(filename)
         
         if prompt_info:
+            prompt_length = len(prompt_info['custom_prompt'])
+            print(f"✅ [提示词查看] 成功获取文件 {filename} 的提示词，长度: {prompt_length} 字符")
+            
             return jsonify({
                 'success': True,
                 'filename': prompt_info['filename'],
@@ -2084,10 +2099,11 @@ def get_file_prompt(filename):
                 'updated_by': prompt_info['updated_by']
             })
         else:
+            print(f"❌ [提示词查看] 获取文件 {filename} 的提示词失败")
             return jsonify({'error': '获取提示词失败'}), 500
             
     except Exception as e:
-        print(f"❌ 获取文件提示词错误: {e}")
+        print(f"❌ [提示词查看] 获取文件提示词错误: {e}")
         return jsonify({'error': f'获取提示词失败: {str(e)}'}), 500
 
 @app.route('/api/file-prompt/<filename>', methods=['POST'])
@@ -2099,22 +2115,38 @@ def set_file_prompt(filename):
         data = request.get_json()
         custom_prompt = data.get('custom_prompt', '').strip()
         
+        # 获取当前用户信息
+        current_user = db.get_user_by_id(session['user_id'])
+        username = current_user['username'] if current_user else 'unknown'
+        
+        print(f"✏️ [提示词编辑] 用户 {username} 正在编辑文件 {filename} 的提示词")
+        
         if not custom_prompt:
+            print(f"⚠️ [提示词编辑] 提示词为空，用户: {username}, 文件: {filename}")
             return jsonify({'error': '提示词不能为空'}), 400
+        
+        prompt_length = len(custom_prompt)
+        print(f"📊 [提示词编辑] 新提示词长度: {prompt_length} 字符")
         
         # 确保文件存在
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         if not os.path.exists(filepath):
+            print(f"⚠️ [提示词编辑] 文件不存在: {filename}")
             return jsonify({'error': '文件不存在'}), 404
         
-        # 获取当前用户
-        current_user = db.get_user_by_id(session['user_id'])
-        updated_by = current_user['username'] if current_user else 'system'
+        # 获取旧提示词进行对比
+        old_prompt_info = db.get_file_prompt_info(filename)
+        old_prompt = old_prompt_info['custom_prompt'] if old_prompt_info else ''
+        old_length = len(old_prompt)
         
         # 保存提示词
+        updated_by = username if current_user else 'system'
         success = db.set_file_prompt(filename, custom_prompt, updated_by)
         
         if success:
+            print(f"✅ [提示词编辑] 成功保存文件 {filename} 的提示词")
+            print(f"📈 [提示词编辑] 长度变化: {old_length} → {prompt_length} 字符 (变化: {prompt_length - old_length:+d})")
+            
             return jsonify({
                 'success': True,
                 'message': '提示词保存成功',
@@ -2122,10 +2154,11 @@ def set_file_prompt(filename):
                 'custom_prompt': custom_prompt
             })
         else:
+            print(f"❌ [提示词编辑] 保存文件 {filename} 的提示词失败")
             return jsonify({'error': '保存提示词失败'}), 500
             
     except Exception as e:
-        print(f"❌ 设置文件提示词错误: {e}")
+        print(f"❌ [提示词编辑] 设置文件提示词错误: {e}")
         return jsonify({'error': f'保存提示词失败: {str(e)}'}), 500
 
 @app.route('/api/file-prompts', methods=['GET'])
@@ -2443,51 +2476,8 @@ def delete_scoring_criteria(criteria_id):
             'message': '删除评分标准失败'
         }), 500
 
-# ========== 普通用户可访问的评分标准查看路由 ==========
-
-@app.route('/api/scoring-criteria', methods=['GET'])
-@login_required
-def get_public_scoring_criteria():
-    """获取可用的评分标准（所有用户可访问）"""
-    try:
-        criteria_type = request.args.get('type', None)
-        criteria_list = db.get_all_scoring_criteria(criteria_type, active_only=True)
-        
-        return jsonify({
-            'success': True,
-            'criteria': criteria_list
-        })
-    except Exception as e:
-        print(f"❌ 获取评分标准错误: {e}")
-        return jsonify({
-            'success': False,
-            'message': '获取评分标准失败'
-        }), 500
-
-@app.route('/api/scoring-criteria/<criteria_id>', methods=['GET'])
-@login_required
-def get_public_scoring_criteria_detail(criteria_id):
-    """获取评分标准详情（所有用户可访问）"""
-    try:
-        criteria = db.get_scoring_criteria(criteria_id)
-        
-        if criteria and criteria['is_active']:
-            return jsonify({
-                'success': True,
-                'criteria': criteria
-            })
-        else:
-            return jsonify({
-                'success': False,
-                'message': '评分标准不存在或已禁用'
-            }), 404
-            
-    except Exception as e:
-        print(f"❌ 获取评分标准详情错误: {e}")
-        return jsonify({
-            'success': False,
-            'message': '获取评分标准详情失败'
-        }), 500
+# ========== 移除了普通用户的评分标准查看功能 ==========
+# 已简化为只保留"编辑提示词"功能，评分标准现在只能通过提示词编辑查看
 
 
 # 初始化默认管理员账户
