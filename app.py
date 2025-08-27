@@ -2962,9 +2962,11 @@ except Exception as e:
 
 if __name__ == '__main__':
     print("🚀 模型评测Web系统启动中...")
-    print("📋 请确保设置以下环境变量:")
-    print("   - GOOGLE_API_KEY: Gemini评测API密钥")
-    print("   - ARK_API_KEY_HKGAI_V1: HKGAI-V1模型API密钥")
-    print("   - ARK_API_KEY_HKGAI_V2: HKGAI-V2模型API密钥")
-    print("🌐 访问地址: http://localhost:8080")
+    
+    # 显示配置状态
+    from config import print_configuration_status
+    print_configuration_status()
+    
+    print("\n🌐 访问地址: http://localhost:8080")
+    print("📖 配置帮助: python3 test_config.py")
     app.run(debug=True, host='0.0.0.0', port=8080)
