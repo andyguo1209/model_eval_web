@@ -94,7 +94,7 @@ async function uploadFile(file, overwrite = false) {
             console.log('📤 上传成功，调用displayFileInfo');
             displayFileInfo(result);
             showSuccess('文件上传成功！');
-            loadHistoryFiles(); // 刷新历史文件列表
+            loadHistoryFiles(); // 刷新测试集列表
         } else if (result.error === 'file_exists') {
             // 文件已存在，询问是否覆盖
             showFileExistsDialog(result.filename, file);
@@ -225,6 +225,28 @@ function displayFileInfo(info) {
         </div>
         ${typeCountsHtml}
         ${previewHtml}
+        
+        <div class="file-actions-section" style="margin-top: 20px; padding: 20px; background: #f8f9fa; border-radius: 10px;">
+            <h4 style="margin: 0 0 15px 0; color: #495057;">
+                <i class="fas fa-cogs"></i> 配置测评参数
+            </h4>
+            <div class="action-buttons" style="display: flex; gap: 10px; flex-wrap: wrap;">
+                <button class="btn btn-info" onclick="editFilePrompt('${info.filename}')" style="flex: 1; min-width: 200px;">
+                    <i class="fas fa-edit"></i> 编辑提示词
+                </button>
+                <button class="btn btn-secondary" onclick="showScoringCriteria()" style="flex: 1; min-width: 200px;">
+                    <i class="fas fa-star"></i> 查看评分标准
+                </button>
+            </div>
+            <div style="margin-top: 15px; text-align: center;">
+                <button class="btn btn-primary btn-lg" onclick="nextStep()" style="padding: 12px 30px; font-size: 16px;">
+                    <i class="fas fa-arrow-right"></i> 下一步：选择模型
+                </button>
+            </div>
+            <p style="margin: 10px 0 0 0; text-align: center; color: #6c757d; font-size: 14px;">
+                💡 建议先编辑提示词以获得更准确的评测结果
+            </p>
+        </div>
     `;
 
     fileInfoDiv.style.display = 'block';
@@ -233,8 +255,7 @@ function displayFileInfo(info) {
     console.log('🔄 文件信息显示完成，更新按钮状态');
     updateStartButton();
     
-    // 自动进入下一步
-    nextStep();
+    // 不再自动进入下一步，让用户手动选择
 }
 
 // 加载可用模型
@@ -444,7 +465,7 @@ function switchUploadTab(tabName) {
     
     // 找到点击的按钮并激活
     const clickedBtn = Array.from(document.querySelectorAll('.tab-btn')).find(btn => 
-        btn.textContent.includes(tabName === 'new' ? '上传新文件' : '选择历史文件')
+        btn.textContent.includes(tabName === 'new' ? '上传新文件' : '选择测试集')
     );
     if (clickedBtn) {
         clickedBtn.classList.add('active');
@@ -454,13 +475,13 @@ function switchUploadTab(tabName) {
     document.querySelectorAll('.upload-tab-content').forEach(content => content.classList.remove('active'));
     document.getElementById(`${tabName}-upload-tab`).classList.add('active');
     
-    // 如果切换到历史文件，加载文件列表
+    // 如果切换到测试集，加载文件列表
     if (tabName === 'history') {
         loadHistoryFiles();
     }
 }
 
-// 加载历史文件列表
+// 加载测试集列表
 async function loadHistoryFiles() {
     const historyList = document.getElementById('history-files-list');
     
@@ -478,7 +499,7 @@ async function loadHistoryFiles() {
     }
 }
 
-// 显示历史文件列表
+// 显示测试集列表
 function displayHistoryFiles(files) {
     const historyList = document.getElementById('history-files-list');
     
@@ -486,7 +507,7 @@ function displayHistoryFiles(files) {
         historyList.innerHTML = `
             <div class="no-files">
                 <i class="fas fa-folder-open"></i>
-                <p>暂无历史文件</p>
+                <p>暂无测试集</p>
                 <small>上传文件后将显示在这里</small>
             </div>
         `;
@@ -545,7 +566,7 @@ function getFileIcon(filename) {
     }
 }
 
-// 选择历史文件
+// 选择测试集文件
 async function selectHistoryFile(filename) {
     showLoading('正在加载文件...');
     
@@ -564,14 +585,14 @@ async function selectHistoryFile(filename) {
         const result = await response.json();
         
         if (result.success) {
-            console.log('✅ 历史文件加载成功，调用displayFileInfo');
+            console.log('✅ 测试集文件加载成功，调用displayFileInfo');
             displayFileInfo(result);
             showSuccess(`已选择文件: ${filename}`);
             
             // 切换回文件上传选项卡显示结果
             switchUploadTab('new');
         } else {
-            console.error('❌ 历史文件加载失败:', result.error);
+            console.error('❌ 测试集文件加载失败:', result.error);
             showError(result.error || '选择文件失败');
         }
     } catch (error) {
@@ -581,12 +602,12 @@ async function selectHistoryFile(filename) {
     }
 }
 
-// 下载历史文件
+// 下载测试集文件
 function downloadHistoryFile(filename) {
     window.open(`/download_uploaded_file/${encodeURIComponent(filename)}`, '_blank');
 }
 
-// 删除历史文件
+// 删除测试集文件
 async function deleteHistoryFile(filename) {
     if (!confirm(`确定要删除文件 "${filename}" 吗？\n此操作不可撤销。`)) {
         return;
@@ -616,7 +637,7 @@ async function deleteHistoryFile(filename) {
     }
 }
 
-// 刷新历史文件
+// 刷新测试集
 function refreshHistoryFiles() {
     loadHistoryFiles();
 }

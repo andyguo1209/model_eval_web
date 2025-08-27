@@ -458,15 +458,40 @@
         let currentConfigs = [];
         let currentFilter = 'all';
         
+        // 系统默认配置列表
+        const systemDefaultConfigs = [
+            'gemini_api_endpoint',
+            'gemini_model_name', 
+            'gemini_api_timeout'
+        ];
+        
+        // 配置项帮助信息
+        const configHelpTexts = {
+            'gemini_api_endpoint': '设置Gemini API的基础端点地址，默认为Google官方API地址',
+            'gemini_model_name': '指定使用的Gemini模型版本，如 gemini-2.5-flash',
+            'gemini_api_timeout': '设置API请求超时时间（秒），建议60-120秒'
+        };
+        
+        // 判断是否为系统默认配置
+        function isSystemDefaultConfig(configKey) {
+            return systemDefaultConfigs.includes(configKey);
+        }
+        
+        // 获取配置帮助信息
+        function getConfigHelp(configKey) {
+            return configHelpTexts[configKey] || null;
+        }
+        
         // 页面加载时获取配置列表
         document.addEventListener('DOMContentLoaded', function() {
             loadConfigs();
+            initializeDefaultConfigs();
         });
         
         // 加载配置列表
         async function loadConfigs() {
             try {
-                const response = await fetch('/admin/configs');
+                const response = await fetch('/admin/api/configs');
                 if (response.ok) {
                     currentConfigs = (await response.json()).configs;
                     renderConfigs();
@@ -496,16 +521,25 @@
             filteredConfigs.forEach(config => {
                 const configItem = document.createElement('div');
                 configItem.className = 'config-item';
+                
+                // 获取配置项的详细说明
+                const configHelp = getConfigHelp(config.config_key);
+                const isDefaultConfig = isSystemDefaultConfig(config.config_key);
+                
                 configItem.innerHTML = `
                     <div class="config-key">
                         <i class="fas fa-key"></i>
                         ${config.config_key}
                         <span class="config-category category-${config.category}">${config.category}</span>
+                        ${isDefaultConfig ? '<span style="background: #28a745; color: white; padding: 2px 6px; border-radius: 3px; font-size: 10px; margin-left: 8px;">系统默认</span>' : ''}
                     </div>
                     <div class="config-value ${config.is_sensitive ? 'sensitive-value' : ''}">
                         ${config.is_sensitive ? '****' : config.config_value}
                     </div>
-                    <div class="config-description">${config.description || '无描述'}</div>
+                    <div class="config-description">
+                        ${config.description || '无描述'}
+                        ${configHelp ? `<br><small style="color: #28a745;"><i class="fas fa-info-circle"></i> ${configHelp}</small>` : ''}
+                    </div>
                     <div class="config-meta">
                         <span><i class="fas fa-user"></i> ${config.updated_by}</span>
                         <span><i class="fas fa-clock"></i> ${formatDateTime(config.updated_at)}</span>
@@ -515,9 +549,15 @@
                         <button class="btn-edit" onclick="editConfig('${config.config_key}')" title="编辑配置">
                             <i class="fas fa-edit"></i> 编辑
                         </button>
-                        <button class="btn-delete" onclick="deleteConfig('${config.config_key}')" title="删除配置">
-                            <i class="fas fa-trash"></i> 删除
-                        </button>
+                        ${!isDefaultConfig ? `
+                            <button class="btn-delete" onclick="deleteConfig('${config.config_key}')" title="删除配置">
+                                <i class="fas fa-trash"></i> 删除
+                            </button>
+                        ` : `
+                            <button class="btn-delete" disabled title="系统默认配置不可删除" style="opacity: 0.5; cursor: not-allowed;">
+                                <i class="fas fa-shield-alt"></i> 保护
+                            </button>
+                        `}
                     </div>
                 `;
                 grid.appendChild(configItem);
@@ -585,10 +625,10 @@
             try {
                 let url, method;
                 if (isEdit) {
-                    url = `/admin/configs/${originalKey}`;
+                    url = `/admin/api/configs/${originalKey}`;
                     method = 'PUT';
                 } else {
-                    url = '/admin/configs';
+                    url = '/admin/api/configs';
                     method = 'POST';
                 }
                 
@@ -615,12 +655,85 @@
             }
         });
         
+        // 初始化默认配置
+        async function initializeDefaultConfigs() {
+            try {
+                const defaultConfigs = [
+                    {
+                        config_key: 'gemini_api_endpoint',
+                        config_value: 'https://generativelanguage.googleapis.com/v1beta/models',
+                        config_type: 'string',
+                        description: 'Gemini API基础端点地址',
+                        category: 'api',
+                        is_sensitive: false
+                    },
+                    {
+                        config_key: 'gemini_model_name',
+                        config_value: 'gemini-2.5-flash',
+                        config_type: 'string',
+                        description: 'Gemini模型版本名称',
+                        category: 'api',
+                        is_sensitive: false
+                    },
+                    {
+                        config_key: 'gemini_api_timeout',
+                        config_value: '60',
+                        config_type: 'number',
+                        description: 'API请求超时时间（秒）',
+                        category: 'api',
+                        is_sensitive: false
+                    }
+                ];
+                
+                // 检查并创建缺失的默认配置
+                for (const config of defaultConfigs) {
+                    const exists = currentConfigs.some(c => c.config_key === config.config_key);
+                    if (!exists) {
+                        console.log(`创建默认配置: ${config.config_key}`);
+                        await createDefaultConfig(config);
+                    }
+                }
+                
+                // 重新加载配置列表以显示新创建的默认配置
+                setTimeout(() => {
+                    loadConfigs();
+                }, 1000);
+            } catch (error) {
+                console.error('初始化默认配置错误:', error);
+            }
+        }
+        
+        // 创建默认配置
+        async function createDefaultConfig(config) {
+            try {
+                const response = await fetch('/admin/api/configs', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(config)
+                });
+                
+                if (response.ok) {
+                    console.log(`默认配置 ${config.config_key} 创建成功`);
+                }
+            } catch (error) {
+                console.error(`创建默认配置 ${config.config_key} 失败:`, error);
+            }
+        }
+        
         // 删除配置
         async function deleteConfig(configKey) {
+            // 阻止删除系统默认配置
+            if (isSystemDefaultConfig(configKey)) {
+                showAlert('系统默认配置不能删除，只能修改！', 'danger');
+                return;
+            }
+            
             if (!confirm(`确定要删除配置项 "${configKey}" 吗？`)) return;
             
             try {
-                const response = await fetch(`/admin/configs/${configKey}`, {
+                const response = await fetch(`/admin/api/configs/${configKey}`, {
                     method: 'DELETE'
                 });
                 

@@ -309,7 +309,17 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
     json_format = {f"模型{i+1}": {"评分": "0-5", "理由": "评分理由"} for i in range(len(model_keys))}
     
     # 获取自定义提示词
-    custom_prompt = "评分标准:\n- 5分: 回答优秀，逻辑清晰，内容丰富\n- 4分: 回答良好，基本符合要求\n- 3分: 回答一般，有一定价值\n- 2分: 回答较差，价值有限\n- 1分: 回答很差，几乎无价值\n- 0分: 无回答或完全无关"
+    custom_prompt = """你是一位专业的大模型测评工程师，请根据以下标准对模型回答进行客观、公正的评测：
+
+评分标准：
+- 5分：回答优秀 - 逻辑清晰、内容准确、表述完整、有深度见解
+- 4分：回答良好 - 基本正确、逻辑合理、表述清楚、符合要求  
+- 3分：回答一般 - 内容基础、有一定价值、但深度不够或略有瑕疵
+- 2分：回答较差 - 价值有限、逻辑混乱或有明显错误，但仍有部分可取之处
+- 1分：回答很差 - 几乎无价值、严重错误或偏离主题，但尚有一定相关性
+- 0分：无回答或完全无关 - 拒绝回答、无意义内容或完全偏离问题
+
+评测要求：请保持客观中立，重点关注内容的准确性、逻辑性、完整性和实用性。"""
     
     if filename:
         try:
@@ -320,15 +330,20 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
             print(f"⚠️ 获取文件 {filename} 的自定义提示词失败: {e}")
     
     return f"""
-请对以下AI模型回答进行主观质量评分（0-5分，整数）。
-
-{type_context}问题: {query}
-
-{models_text}
-
 {custom_prompt}
 
-只输出JSON格式，不要其他文字: {json.dumps(json_format, ensure_ascii=False)}
+=== 评测任务 ===
+{type_context}问题: {query}
+
+=== 模型回答 ===
+{models_text}
+
+=== 评测要求 ===
+1. 请为每个模型的回答打分（0-5分，整数）
+2. 提供详细的评分理由
+3. 确保评分客观公正，基于事实和逻辑
+
+请严格按照以下JSON格式输出，不要包含其他任何文字: {json.dumps(json_format, ensure_ascii=False)}
 """
 
 def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[str, str], question_type: str = "") -> str:
@@ -343,22 +358,35 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
     json_format = {f"模型{i+1}": {"评分": "0-5", "准确性": "正确/部分正确/错误", "理由": "评分理由"} for i in range(len(model_keys))}
     
     return f"""
-请对照标准答案为AI模型回答评分（0-5分，整数）。
+你是一位专业的大模型测评工程师，请根据标准答案对模型回答进行客观、精确的评测。
 
+=== 评分标准 ===
+- 5分：完全正确 - 答案准确无误，表述清晰完整，逻辑严密、语言跟随、指令跟随
+- 4分：基本正确 - 核心内容正确，表述清楚，仅有轻微瑕疵或表达不够完美
+- 3分：部分正确 - 包含正确要素，但存在遗漏、错误或表述不清
+- 2分：大部分错误 - 主要内容错误，但仍有部分正确元素或相关信息
+- 1分：完全错误但相关 - 答案错误但与问题相关，显示了一定理解
+- 0分：完全错误或无关 - 答案完全错误、无关或拒绝回答
+
+=== 准确性评估标准 ===
+- 正确：答案与标准答案一致、等价或在合理范围内
+- 部分正确：答案包含标准答案的部分要素但不完整
+- 错误：答案与标准答案相悖、无关或存在重大错误
+
+=== 评测任务 ===
 {type_context}问题: {query}
 标准答案: {standard_answer}
 
+=== 模型回答 ===
 {models_text}
 
-评分标准:
-- 5分: 完全正确，表述清晰
-- 4分: 基本正确，略有瑕疵
-- 3分: 部分正确
-- 2分: 大部分错误但有正确元素
-- 1分: 完全错误但相关
-- 0分: 完全错误或无关
+=== 评测要求 ===
+1. 严格对照标准答案进行评分
+2. 重点评估内容的准确性和完整性  
+3. 提供详细的评分依据和理由
+4. 客观公正，基于事实判断
 
-只输出JSON格式: {json.dumps(json_format, ensure_ascii=False)}
+请严格按照以下JSON格式输出，不要包含其他任何文字: {json.dumps(json_format, ensure_ascii=False)}
 """
 
 def flatten_json(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
@@ -2103,7 +2131,7 @@ def list_file_prompts():
 
 # ========== 系统配置管理路由 ==========
 
-@app.route('/admin/configs', methods=['GET'])
+@app.route('/admin/api/configs', methods=['GET'])
 @admin_required
 def get_system_configs():
     """获取系统配置列表"""
@@ -2127,7 +2155,7 @@ def get_system_configs():
             'message': '获取系统配置失败'
         }), 500
 
-@app.route('/admin/configs', methods=['POST'])
+@app.route('/admin/api/configs', methods=['POST'])
 @admin_required
 def create_system_config():
     """创建系统配置"""
@@ -2173,7 +2201,7 @@ def create_system_config():
             'message': '创建配置项失败'
         }), 500
 
-@app.route('/admin/configs/<config_key>', methods=['PUT'])
+@app.route('/admin/api/configs/<config_key>', methods=['PUT'])
 @admin_required
 def update_system_config(config_key):
     """更新系统配置"""
@@ -2218,7 +2246,7 @@ def update_system_config(config_key):
             'message': '更新配置项失败'
         }), 500
 
-@app.route('/admin/configs/<config_key>', methods=['DELETE'])
+@app.route('/admin/api/configs/<config_key>', methods=['DELETE'])
 @admin_required
 def delete_system_config(config_key):
     """删除系统配置"""

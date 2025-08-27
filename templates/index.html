@@ -92,7 +92,7 @@
                                 <i class="fas fa-upload"></i> 上传新文件
                             </button>
                             <button class="tab-btn" onclick="switchUploadTab('history')">
-                                <i class="fas fa-history"></i> 选择历史文件
+                                <i class="fas fa-database"></i> 选择测试集
                             </button>
                         </div>
                     </div>
@@ -112,11 +112,11 @@
                         </div>
                     </div>
 
-                    <!-- 历史文件选择 -->
+                    <!-- 测试集选择 -->
                     <div class="upload-tab-content" id="history-upload-tab">
                         <div class="history-files-container">
                             <div class="history-files-header">
-                                <h4><i class="fas fa-folder-open"></i> 历史文件</h4>
+                                <h4><i class="fas fa-database"></i> 测试集</h4>
                                 <button class="btn btn-sm btn-secondary" onclick="refreshHistoryFiles()">
                                     <i class="fas fa-sync-alt"></i> 刷新
                                 </button>
@@ -153,7 +153,7 @@
                 <div class="card" id="file-info" style="display: none;">
                     <h3><i class="fas fa-info-circle"></i> 文件信息</h3>
                     <div id="file-preview"></div>
-                    <button class="btn btn-primary" onclick="nextStep()">下一步：选择模型</button>
+                    <!-- 按钮现在通过JavaScript动态生成 -->
                 </div>
             </section>
 
