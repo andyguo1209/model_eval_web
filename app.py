@@ -1479,11 +1479,9 @@ def update_score():
             # 如果有理由列，也更新理由
             reason_column = score_column.replace('评分', '理由')
             if reason_column in df.columns and reason:
-                current_reason = df.loc[row_index, reason_column] or ''
-                # 添加修改记录
-                timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-                modification_note = f"\n[{timestamp}] 手动修改为{new_score}分: {reason}"
-                df.loc[row_index, reason_column] = current_reason + modification_note
+                # 根据用户需求：直接覆盖原有的评分理由，而不是追加
+                print(f"📝 [更新评分] 覆盖评分理由: {reason_column} -> {reason[:50]}...")
+                df.loc[row_index, reason_column] = reason
             
             # 保存文件
             df.to_csv(filepath, index=False, encoding='utf-8-sig')
