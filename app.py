@@ -57,7 +57,9 @@ for folder in [app.config['UPLOAD_FOLDER'], app.config['RESULTS_FOLDER'], app.co
 
 # 支持的模型配置
 SUPPORTED_MODELS = {
+    # === 现有模型（Legacy接口）===
     "HKGAI-V1": {
+        "type": "legacy",
         "url": "https://chat.hkchat.app/goapi/v1/chat/stream",
         "model": "HKGAI-V1",
         "token_env": "ARK_API_KEY_HKGAI_V1",
@@ -67,6 +69,7 @@ SUPPORTED_MODELS = {
         }
     },
     "HKGAI-V2": {
+        "type": "legacy",
         "url": "https://test.hkchat.app/goapi/v1/chat/stream",
         "model": "HKGAI-V2", 
         "token_env": "ARK_API_KEY_HKGAI_V2",
@@ -74,8 +77,129 @@ SUPPORTED_MODELS = {
             "Accept": "text/event-stream",
             "Content-Type": "application/json"
         }
+    },
+    
+    # === 新的Copilot接口模型 ===
+    "HKGAI-V1-PROD": {
+        "type": "copilot",
+        "url": "https://copilot.hkgai.org/copilot/api/instruction/completion",
+        "model": "HKGAI-V1",
+        "cookie_env": "COPILOT_COOKIE_PROD",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
+    },
+    "HKGAI-V1-Thinking-PROD": {
+        "type": "copilot",
+        "url": "https://copilot.hkgai.org/copilot/api/instruction/completion",
+        "model": "HKGAI-V1-Thinking",
+        "cookie_env": "COPILOT_COOKIE_PROD",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
+    },
+    "HKGAI-V1-TEST": {
+        "type": "copilot",
+        "url": "https://copilot-test.hkgai.org/copilot/api/instruction/completion",
+        "model": "HKGAI-V1",
+        "cookie_env": "COPILOT_COOKIE_TEST",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
+    },
+    "HKGAI-V1-Thinking-TEST": {
+        "type": "copilot",
+        "url": "https://copilot-test.hkgai.org/copilot/api/instruction/completion",
+        "model": "HKGAI-V1-Thinking",
+        "cookie_env": "COPILOT_COOKIE_TEST",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
+    },
+    "HKGAI-V1-NET": {
+        "type": "copilot",
+        "url": "https://copilot.hkgai.net/copilot/api/instruction/completion",
+        "model": "HKGAI-V1",
+        "cookie_env": "COPILOT_COOKIE_NET",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
+    },
+    "HKGAI-V1-Thinking-NET": {
+        "type": "copilot",
+        "url": "https://copilot.hkgai.net/copilot/api/instruction/completion",
+        "model": "HKGAI-V1-Thinking",
+        "cookie_env": "COPILOT_COOKIE_NET",
+        "headers_template": {
+            "Content-Type": "application/json",
+            "X-App-Id": "2"
+        },
+        "request_config": {
+            "key": "common_writing",
+            "stream": True,
+            "parameters_template": {
+                "user_instruction": "{prompt}",
+                "uploaded_rel": "",
+                "with_search": "false",
+                "files": "[]"
+            }
+        }
     }
-    # 可以在这里添加更多模型
 }
 
 # Google API配置
@@ -131,8 +255,117 @@ def extract_stream_content(stream) -> str:
 
     return "".join(buffer)
 
-async def fetch_model_answer(session: aiohttp.ClientSession, query: str, model_config: dict, idx: int, sem_model: asyncio.Semaphore, task_id: str, request_headers: dict = None) -> str:
-    """获取单个模型的答案"""
+def extract_copilot_stream_content(stream) -> str:
+    """提取Copilot流式响应的内容"""
+    buffer = []
+    current_event = None
+
+    for raw_line in stream:
+        line = raw_line.strip()
+        if not line:
+            continue
+
+        if line.startswith("event:"):
+            current_event = line[len("event:"):].strip()
+            continue
+
+        if line.startswith("data:") and current_event == "APPEND":
+            json_part = line[len("data:"):].strip()
+            try:
+                payload = json.loads(json_part)
+                
+                # 提取choices[0].delta.content
+                choices = payload.get("choices", [])
+                if choices and len(choices) > 0:
+                    delta = choices[0].get("delta", {})
+                    content = delta.get("content", "")
+                    if content:
+                        buffer.append(content)
+                        
+            except json.JSONDecodeError as e:
+                print(f"⚠️ JSON解析失败: {e}, 内容: {json_part[:100]}...")
+                continue
+            except (KeyError, IndexError, TypeError) as e:
+                print(f"⚠️ 数据结构解析失败: {e}")
+                continue
+
+        elif line.startswith("data:") and current_event == "FINISH":
+            # 响应结束，可以在这里做一些清理工作
+            break
+
+    result = "".join(buffer)
+    print(f"✅ Copilot响应解析完成，总长度: {len(result)} 字符")
+    return result
+
+def extract_stream_content_unified(stream, model_config) -> str:
+    """统一的流式响应内容提取"""
+    model_type = model_config.get("type", "legacy")
+    
+    if model_type == "copilot":
+        return extract_copilot_stream_content(stream)
+    else:
+        # 使用现有的解析逻辑
+        return extract_stream_content(stream)
+
+async def fetch_copilot_model_answer(session: aiohttp.ClientSession, query: str, model_config: dict, idx: int, sem_model: asyncio.Semaphore, task_id: str) -> str:
+    """处理Copilot接口的请求"""
+    
+    # 获取Cookie认证
+    cookie = os.getenv(model_config["cookie_env"])
+    if not cookie:
+        return f"错误：未配置 {model_config['cookie_env']} Cookie"
+    
+    # 构建请求头
+    headers = model_config["headers_template"].copy()
+    headers["Cookie"] = cookie
+    
+    # 构建请求体
+    request_config = model_config["request_config"]
+    parameters = []
+    
+    for param_key, param_template in request_config["parameters_template"].items():
+        if param_template == "{prompt}":
+            value = query  # 用户的prompt直接作为user_instruction
+        else:
+            value = param_template  # 其他参数使用固定值
+        
+        parameters.append({
+            "key": param_key,
+            "value": value
+        })
+    
+    payload = {
+        "key": request_config["key"],
+        "parameters": parameters,
+        "model": model_config["model"],
+        "stream": request_config["stream"]
+    }
+    
+    # 发送请求并解析响应
+    async with sem_model:
+        try:
+            async with session.post(model_config["url"], headers=headers, json=payload, timeout=60) as resp:
+                if resp.status == 200:
+                    raw = await resp.text()
+                    # 使用新的Copilot响应解析函数
+                    content = extract_copilot_stream_content(raw.splitlines())
+                    
+                    # 更新进度
+                    if task_id in task_status:
+                        task_status[task_id].progress += 1
+                        task_status[task_id].current_step = f"已完成 {task_status[task_id].progress}/{task_status[task_id].total} 个查询"
+                    
+                    return content if content.strip() else "无有效内容返回"
+                else:
+                    error_text = await resp.text()
+                    print(f"❌ Copilot请求失败: HTTP {resp.status} - {error_text[:200]}...")
+                    return f"请求失败: HTTP {resp.status}"
+        except Exception as e:
+            print(f"❌ Copilot请求异常: {e}")
+            return f"请求异常: {str(e)}"
+
+async def fetch_legacy_model_answer(session: aiohttp.ClientSession, query: str, model_config: dict, idx: int, sem_model: asyncio.Semaphore, task_id: str, request_headers: dict = None) -> str:
+    """处理Legacy接口的请求（原有逻辑）"""
     # 先从环境变量获取，如果没有则从请求头获取
     token = os.getenv(model_config["token_env"])
     if not token and request_headers:
@@ -169,6 +402,20 @@ async def fetch_model_answer(session: aiohttp.ClientSession, query: str, model_c
                     return f"请求失败: HTTP {resp.status}"
         except Exception as e:
             return f"请求异常: {str(e)}"
+
+async def fetch_model_answer(session: aiohttp.ClientSession, query: str, model_config: dict, idx: int, sem_model: asyncio.Semaphore, task_id: str, request_headers: dict = None) -> str:
+    """统一的模型答案获取入口"""
+    
+    model_type = model_config.get("type", "legacy")
+    
+    if model_type == "copilot":
+        # 使用新的Copilot处理逻辑
+        return await fetch_copilot_model_answer(session, query, model_config, idx, sem_model, task_id)
+    elif model_type == "legacy":
+        # 使用现有的Legacy处理逻辑
+        return await fetch_legacy_model_answer(session, query, model_config, idx, sem_model, task_id, request_headers)
+    else:
+        return f"不支持的模型类型: {model_type}"
 
 async def get_multiple_model_answers(queries: List[str], selected_models: List[str], task_id: str, request_headers: dict = None) -> Dict[str, List[str]]:
     """获取多个模型的答案"""
@@ -1056,12 +1303,25 @@ def get_available_models():
     """获取可用模型列表"""
     models = []
     for model_name, config in SUPPORTED_MODELS.items():
-        # 先检查环境变量，再检查HTTP头部
-        token = os.getenv(config["token_env"]) or request.headers.get(f'X-{model_name.replace("-", "-")}-Key')
+        model_type = config.get("type", "legacy")
+        
+        if model_type == "legacy":
+            # Legacy模型检查token_env
+            auth_key = os.getenv(config["token_env"]) or request.headers.get(f'X-{model_name.replace("-", "-")}-Key')
+            auth_env = config["token_env"]
+        elif model_type == "copilot":
+            # Copilot模型检查cookie_env
+            auth_key = os.getenv(config["cookie_env"])
+            auth_env = config["cookie_env"]
+        else:
+            auth_key = None
+            auth_env = "unknown"
+            
         models.append({
             'name': model_name,
-            'available': bool(token),
-            'token_env': config["token_env"]
+            'type': model_type,
+            'available': bool(auth_key),
+            'auth_env': auth_env
         })
     
     # 检查Google API密钥
@@ -1095,9 +1355,21 @@ def start_evaluation():
         if model_name not in SUPPORTED_MODELS:
             return jsonify({'error': f'不支持的模型: {model_name}'}), 400
         
-        token_env = SUPPORTED_MODELS[model_name]["token_env"]
-        if not os.getenv(token_env):
-            return jsonify({'error': f'模型 {model_name} 缺少环境变量: {token_env}'}), 400
+        model_config = SUPPORTED_MODELS[model_name]
+        model_type = model_config.get("type", "legacy")
+        
+        if model_type == "legacy":
+            # Legacy模型检查token_env
+            auth_env = model_config["token_env"]
+            if not os.getenv(auth_env):
+                return jsonify({'error': f'模型 {model_name} 缺少环境变量: {auth_env}'}), 400
+        elif model_type == "copilot":
+            # Copilot模型检查cookie_env
+            auth_env = model_config["cookie_env"]
+            if not os.getenv(auth_env):
+                return jsonify({'error': f'模型 {model_name} 缺少环境变量: {auth_env}'}), 400
+        else:
+            return jsonify({'error': f'模型 {model_name} 类型不支持: {model_type}'}), 400
     
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     if not os.path.exists(filepath):
