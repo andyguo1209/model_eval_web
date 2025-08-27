@@ -26,6 +26,7 @@ UPLOAD_TIMEOUT = int(os.getenv("UPLOAD_TIMEOUT", 300))  # 5分钟
 
 # 并发配置
 MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", 10))
+GEMINI_CONCURRENT_REQUESTS = int(os.getenv("GEMINI_CONCURRENT_REQUESTS", 5))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 60))
 
 def check_api_keys():

@@ -14,6 +14,7 @@ from werkzeug.utils import secure_filename
 from typing import Dict, Any, List, Optional
 import threading
 from utils.env_manager import env_manager
+from config import GEMINI_CONCURRENT_REQUESTS
 
 # 🔧 加载.env文件中的环境变量
 print("🔧 加载环境变量...")
@@ -384,7 +385,7 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
         return "Gemini模型调用失败: 未配置GOOGLE_API_KEY"
     
     # 从数据库获取配置
-    api_endpoint = db.get_system_config('gemini_api_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models')
+    api_endpoint = db.get_system_config('gemini_api_endpoint', 'https://gemini-proxy.hkgai.net/v1beta/models')
     model_name = db.get_system_config('gemini_model_name', MODEL_NAME)
     timeout_str = db.get_system_config('gemini_api_timeout', '60')
     
@@ -706,8 +707,46 @@ def flatten_json(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
             flat_data[new_key] = value
     return flat_data
 
+async def evaluate_single_question(i: int, row: Dict, mode: str, model_results: Dict[str, List[str]], 
+                                  model_names: List[str], google_api_key: str, filename: str, 
+                                  sem_gemini: asyncio.Semaphore, task_id: str) -> tuple:
+    """评测单个问题"""
+    query = str(row.get("query", ""))
+    question_type = str(row.get("type", "未分类"))
+    standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
+    
+    # 获取各模型的答案
+    current_answers = {}
+    for model_name in model_names:
+        if i < len(model_results[model_name]):
+            current_answers[model_name] = model_results[model_name][i]
+        else:
+            current_answers[model_name] = "获取答案失败"
+    
+    # 构建评测提示
+    if mode == 'objective':
+        prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type)
+    else:
+        prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
+    
+    async with sem_gemini:
+        try:
+            print(f"🔄 开始评测第{i+1}题...")
+            gem_raw = await query_gemini_model(prompt, google_api_key)
+            result_json = parse_json_str(gem_raw)
+        except Exception as e:
+            print(f"❌ 评测第{i+1}题时出错: {e}")
+            result_json = {}
+        
+        # 更新进度
+        if task_id in task_status:
+            task_status[task_id].progress += 1
+            task_status[task_id].current_step = f"已评测 {task_status[task_id].progress}/{task_status[task_id].total} 题"
+    
+    return i, query, question_type, standard_answer, current_answers, result_json
+
 async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, List[str]], task_id: str, google_api_key: str = None, filename: str = None) -> str:
-    """评测模型表现"""
+    """评测模型表现 - 并发版本"""
     if task_id in task_status:
         task_status[task_id].status = "评测中"
         task_status[task_id].total = len(data)
@@ -736,37 +775,30 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
     
     headers = base_headers + eval_headers
     
+    # 创建并发控制信号量
+    sem_gemini = asyncio.Semaphore(GEMINI_CONCURRENT_REQUESTS)
+    
+    # 创建所有评测任务
+    tasks = []
+    for i, row in enumerate(data):
+        task = evaluate_single_question(i, row, mode, model_results, model_names, 
+                                       google_api_key, filename, sem_gemini, task_id)
+        tasks.append(task)
+    
+    print(f"🚀 开始并发评测 {len(tasks)} 个问题，并发数: {GEMINI_CONCURRENT_REQUESTS}")
+    
+    # 并发执行所有评测任务
+    results = await asyncio.gather(*tasks)
+    
+    # 按序号排序结果
+    results.sort(key=lambda x: x[0])
+    
+    # 写入CSV文件
     with open(output_file, 'w', encoding='utf-8-sig', newline='') as f:
         writer = csv.writer(f)
         writer.writerow(headers)
         
-        for i, row in enumerate(data):
-            query = str(row.get("query", ""))
-            question_type = str(row.get("type", "未分类"))
-            standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
-            
-            # 获取各模型的答案
-            current_answers = {}
-            for model_name in model_names:
-                if i < len(model_results[model_name]):
-                    current_answers[model_name] = model_results[model_name][i]
-                else:
-                    current_answers[model_name] = "获取答案失败"
-            
-            # 构建评测提示
-            if mode == 'objective':
-                prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type)
-            else:
-                prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
-            
-            try:
-                print(f"🔄 开始评测第{i+1}题...")
-                gem_raw = await query_gemini_model(prompt, google_api_key)
-                result_json = parse_json_str(gem_raw)
-            except Exception as e:
-                print(f"❌ 评测第{i+1}题时出错: {e}")
-                result_json = {}
-            
+        for i, query, question_type, standard_answer, current_answers, result_json in results:
             # 构造CSV行数据
             row_data = [i+1, question_type, query]
             if mode == 'objective':
@@ -788,12 +820,8 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
                         row_data.append("")  # 准确性
             
             writer.writerow(row_data)
-            
-            # 更新进度
-            if task_id in task_status:
-                task_status[task_id].progress += 1
-                task_status[task_id].current_step = f"已评测 {task_status[task_id].progress}/{task_status[task_id].total} 题"
 
+    print(f"✅ 并发评测完成，结果保存至: {output_file}")
     return output_file
 
 def run_async_task(func, *args):
