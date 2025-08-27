@@ -512,6 +512,10 @@ function displayHistoryFiles(files) {
                         title="选择此文件">
                     <i class="fas fa-check"></i>
                 </button>
+                <button class="btn btn-sm btn-info" onclick="editFilePrompt('${file.filename}')" 
+                        title="编辑提示词">
+                    <i class="fas fa-edit"></i>
+                </button>
                 <button class="btn btn-sm btn-secondary" onclick="downloadHistoryFile('${file.filename}')" 
                         title="下载文件">
                     <i class="fas fa-download"></i>
@@ -1396,4 +1400,196 @@ document.addEventListener('click', function(event) {
     if (modal && event.target === modal) {
         closeScoringCriteriaModal();
     }
+    
+    // 处理文件提示词编辑模态框
+    const promptModal = document.getElementById('file-prompt-modal');
+    if (promptModal && event.target === promptModal) {
+        closeFilePromptModal();
+    }
 });
+
+// ========== 文件提示词管理功能 ==========
+
+// 编辑文件提示词
+async function editFilePrompt(filename) {
+    try {
+        // 获取当前提示词
+        const response = await fetch(`/api/file-prompt/${encodeURIComponent(filename)}`);
+        if (!response.ok) {
+            throw new Error('获取提示词失败');
+        }
+        
+        const data = await response.json();
+        
+        // 创建编辑模态框
+        const modalHtml = `
+            <div id="file-prompt-modal" style="
+                position: fixed; 
+                top: 0; left: 0; 
+                width: 100%; height: 100%; 
+                background: rgba(0,0,0,0.5); 
+                z-index: 1000; 
+                display: flex; 
+                align-items: center; 
+                justify-content: center;
+            ">
+                <div style="
+                    background: white; 
+                    border-radius: 20px; 
+                    max-width: 800px; 
+                    max-height: 80vh; 
+                    width: 90%; 
+                    overflow: hidden; 
+                    box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+                ">
+                    <div style="
+                        background: linear-gradient(135deg, #17a2b8 0%, #138496 100%); 
+                        color: white; 
+                        padding: 25px 30px; 
+                        display: flex; 
+                        justify-content: space-between; 
+                        align-items: center;
+                    ">
+                        <h3 style="margin: 0; font-size: 20px; font-weight: 600;">
+                            <i class="fas fa-edit"></i> 编辑提示词
+                        </h3>
+                        <button onclick="closeFilePromptModal()" style="
+                            background: rgba(255,255,255,0.2); 
+                            border: none; 
+                            color: white; 
+                            width: 35px; height: 35px; 
+                            border-radius: 50%; 
+                            cursor: pointer; 
+                            font-size: 20px;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                        ">&times;</button>
+                    </div>
+                    <div style="padding: 30px;">
+                        <div style="margin-bottom: 20px;">
+                            <div style="
+                                background: #f8f9fa; 
+                                border: 1px solid #e9ecef; 
+                                border-radius: 8px; 
+                                padding: 15px; 
+                                margin-bottom: 15px;
+                            ">
+                                <h4 style="margin: 0 0 8px 0; color: #495057;">
+                                    <i class="fas fa-file"></i> 文件: ${filename}
+                                </h4>
+                                <small style="color: #6c757d;">
+                                    最后更新: ${new Date(data.updated_at).toLocaleString('zh-CN')} 
+                                    (${data.updated_by})
+                                </small>
+                            </div>
+                            
+                            <label style="
+                                display: block; 
+                                margin-bottom: 8px; 
+                                color: #333; 
+                                font-weight: 600;
+                            ">自定义提示词:</label>
+                            <textarea id="prompt-editor" style="
+                                width: 100%; 
+                                height: 300px; 
+                                padding: 15px; 
+                                border: 2px solid #e1e5e9; 
+                                border-radius: 10px; 
+                                font-size: 14px; 
+                                font-family: 'Courier New', monospace;
+                                resize: vertical;
+                                box-sizing: border-box;
+                            " placeholder="输入自定义提示词...">${data.custom_prompt}</textarea>
+                            
+                            <div style="margin-top: 15px; padding: 10px; background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 5px;">
+                                <small style="color: #856404;">
+                                    <i class="fas fa-info-circle"></i> 
+                                    提示词将在评测时替换默认的评分标准。支持任意文本内容，无需特殊格式。
+                                </small>
+                            </div>
+                        </div>
+                        
+                        <div style="text-align: right; margin-top: 20px;">
+                            <button onclick="closeFilePromptModal()" style="
+                                background: #6c757d; 
+                                color: white; 
+                                border: none; 
+                                padding: 10px 20px; 
+                                border-radius: 5px; 
+                                cursor: pointer; 
+                                margin-right: 10px;
+                            ">取消</button>
+                            <button onclick="saveFilePrompt('${filename}')" style="
+                                background: #17a2b8; 
+                                color: white; 
+                                border: none; 
+                                padding: 10px 20px; 
+                                border-radius: 5px; 
+                                cursor: pointer;
+                            ">
+                                <i class="fas fa-save"></i> 保存
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `;
+        
+        // 添加模态框到页面
+        document.body.insertAdjacentHTML('beforeend', modalHtml);
+        
+    } catch (error) {
+        console.error('编辑提示词错误:', error);
+        showAlert('获取提示词失败: ' + error.message, 'error');
+    }
+}
+
+// 保存文件提示词
+async function saveFilePrompt(filename) {
+    try {
+        const promptText = document.getElementById('prompt-editor').value.trim();
+        
+        if (!promptText) {
+            showAlert('提示词不能为空', 'error');
+            return;
+        }
+        
+        const response = await fetch(`/api/file-prompt/${encodeURIComponent(filename)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                custom_prompt: promptText
+            })
+        });
+        
+        if (!response.ok) {
+            throw new Error('保存失败');
+        }
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showAlert('提示词保存成功', 'success');
+            closeFilePromptModal();
+            // 刷新文件列表
+            loadHistoryFiles();
+        } else {
+            throw new Error(result.error || '保存失败');
+        }
+        
+    } catch (error) {
+        console.error('保存提示词错误:', error);
+        showAlert('保存提示词失败: ' + error.message, 'error');
+    }
+}
+
+// 关闭文件提示词编辑模态框
+function closeFilePromptModal() {
+    const modal = document.getElementById('file-prompt-modal');
+    if (modal) {
+        modal.remove();
+    }
+}

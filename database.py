@@ -874,6 +874,106 @@ class EvaluationDatabase:
                     'updated_at': row[10]
                 }
             return None
+    
+    # ========== 文件提示词管理方法 ==========
+    
+    def get_file_prompt(self, filename: str) -> Optional[str]:
+        """获取文件的自定义提示词"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT custom_prompt FROM file_prompts WHERE filename = ?', (filename,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+    
+    def set_file_prompt(self, filename: str, custom_prompt: str, updated_by: str = 'system') -> bool:
+        """设置文件的自定义提示词"""
+        prompt_id = f"prompt_{filename}_{int(datetime.now().timestamp())}"
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                INSERT OR REPLACE INTO file_prompts 
+                (id, filename, custom_prompt, updated_at, updated_by)
+                VALUES (?, ?, ?, ?, ?)
+            ''', (prompt_id, filename, custom_prompt, datetime.now().isoformat(), updated_by))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def get_file_prompt_info(self, filename: str) -> Optional[Dict]:
+        """获取文件提示词的完整信息"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT filename, custom_prompt, created_at, updated_at, created_by, updated_by
+                FROM file_prompts WHERE filename = ?
+            ''', (filename,))
+            
+            row = cursor.fetchone()
+            if row:
+                return {
+                    'filename': row[0],
+                    'custom_prompt': row[1],
+                    'created_at': row[2],
+                    'updated_at': row[3],
+                    'created_by': row[4],
+                    'updated_by': row[5]
+                }
+            return None
+    
+    def create_file_prompt_if_not_exists(self, filename: str, default_prompt: str = None, created_by: str = 'system') -> bool:
+        """如果文件提示词不存在则创建默认的"""
+        if self.get_file_prompt(filename) is None:
+            if default_prompt is None:
+                default_prompt = """评分标准:
+- 5分: 回答优秀，逻辑清晰，内容丰富
+- 4分: 回答良好，基本符合要求
+- 3分: 回答一般，有一定价值
+- 2分: 回答较差，价值有限
+- 1分: 回答很差，几乎无价值
+- 0分: 无回答或完全无关"""
+            
+            prompt_id = f"prompt_{filename}_{int(datetime.now().timestamp())}"
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO file_prompts 
+                    (id, filename, custom_prompt, created_by, updated_by)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (prompt_id, filename, default_prompt, created_by, created_by))
+                conn.commit()
+                return cursor.rowcount > 0
+        return False
+    
+    def delete_file_prompt(self, filename: str) -> bool:
+        """删除文件的提示词记录"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('DELETE FROM file_prompts WHERE filename = ?', (filename,))
+            conn.commit()
+            return cursor.rowcount > 0
+    
+    def list_all_file_prompts(self) -> List[Dict]:
+        """获取所有文件提示词列表"""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('''
+                SELECT filename, custom_prompt, created_at, updated_at, created_by, updated_by
+                FROM file_prompts ORDER BY updated_at DESC
+            ''')
+            
+            rows = cursor.fetchall()
+            return [
+                {
+                    'filename': row[0],
+                    'custom_prompt': row[1],
+                    'created_at': row[2],
+                    'updated_at': row[3],
+                    'created_by': row[4],
+                    'updated_by': row[5]
+                }
+                for row in rows
+            ]
 
 
 # 创建全局数据库实例

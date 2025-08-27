@@ -297,7 +297,7 @@ async def query_gemini_model(prompt: str, api_key: str = None) -> str:
         print(f"❌ Gemini评测失败: {e}")
         return f"Gemini模型调用失败: {str(e)}"
 
-def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_type: str = "") -> str:
+def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_type: str = "", filename: str = None) -> str:
     """构建主观题评测提示"""
     type_context = f"问题类型: {question_type}\n" if question_type else ""
     
@@ -308,6 +308,17 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
     model_keys = list(answers.keys())
     json_format = {f"模型{i+1}": {"评分": "0-5", "理由": "评分理由"} for i in range(len(model_keys))}
     
+    # 获取自定义提示词
+    custom_prompt = "评分标准:\n- 5分: 回答优秀，逻辑清晰，内容丰富\n- 4分: 回答良好，基本符合要求\n- 3分: 回答一般，有一定价值\n- 2分: 回答较差，价值有限\n- 1分: 回答很差，几乎无价值\n- 0分: 无回答或完全无关"
+    
+    if filename:
+        try:
+            file_prompt = db.get_file_prompt(filename)
+            if file_prompt:
+                custom_prompt = file_prompt
+        except Exception as e:
+            print(f"⚠️ 获取文件 {filename} 的自定义提示词失败: {e}")
+    
     return f"""
 请对以下AI模型回答进行主观质量评分（0-5分，整数）。
 
@@ -315,13 +326,7 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 
 {models_text}
 
-评分标准:
-- 5分: 回答优秀，逻辑清晰，内容丰富
-- 4分: 回答良好，基本符合要求
-- 3分: 回答一般，有一定价值
-- 2分: 回答较差，价值有限
-- 1分: 回答很差，几乎无价值
-- 0分: 无回答或完全无关
+{custom_prompt}
 
 只输出JSON格式，不要其他文字: {json.dumps(json_format, ensure_ascii=False)}
 """
@@ -369,7 +374,7 @@ def flatten_json(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
             flat_data[new_key] = value
     return flat_data
 
-async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, List[str]], task_id: str, google_api_key: str = None) -> str:
+async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, List[str]], task_id: str, google_api_key: str = None, filename: str = None) -> str:
     """评测模型表现"""
     if task_id in task_status:
         task_status[task_id].status = "评测中"
@@ -420,7 +425,7 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
             if mode == 'objective':
                 prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type)
             else:
-                prompt = build_subjective_eval_prompt(query, current_answers, question_type)
+                prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
             
             try:
                 print(f"🔄 开始评测第{i+1}题...")
@@ -538,11 +543,21 @@ def get_uploaded_files():
                 if filename.endswith(('.xlsx', '.xls', '.csv')):
                     filepath = os.path.join(upload_folder, filename)
                     stat = os.stat(filepath)
+                    
+                    # 确保文件有提示词记录
+                    db.create_file_prompt_if_not_exists(filename)
+                    
+                    # 获取提示词信息
+                    prompt_info = db.get_file_prompt_info(filename)
+                    has_custom_prompt = prompt_info is not None
+                    
                     files.append({
                         'filename': filename,
                         'size': stat.st_size,
                         'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                        'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB"
+                        'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
+                        'has_custom_prompt': has_custom_prompt,
+                        'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None
                     })
         
         # 按上传时间倒序排列
@@ -639,6 +654,11 @@ def upload_file():
             # 统计信息
             total_count = len(df)
             type_counts = df['type'].value_counts().to_dict() if 'type' in df.columns else {'未分类': total_count}
+            
+            # 为新上传的文件创建默认提示词记录
+            current_user = db.get_user_by_id(session['user_id'])
+            created_by = current_user['username'] if current_user else 'system'
+            db.create_file_prompt_if_not_exists(filename, created_by=created_by)
             
             return jsonify({
                 'success': True,
@@ -794,7 +814,7 @@ def start_evaluation():
                 model_results = run_async_task(get_multiple_model_answers, queries, selected_models, task_id, headers_dict)
                 
                 # 第二步：评测
-                output_file = run_async_task(evaluate_models, data_list, mode, model_results, task_id, google_api_key)
+                output_file = run_async_task(evaluate_models, data_list, mode, model_results, task_id, google_api_key, filename)
                 
                 task_status[task_id].status = "完成"
                 task_status[task_id].result_file = os.path.basename(output_file)
@@ -1991,6 +2011,96 @@ def change_user_password(user_id):
         }), 500
 
 
+# ========== 文件提示词管理路由 ==========
+
+@app.route('/api/file-prompt/<filename>', methods=['GET'])
+@login_required
+def get_file_prompt(filename):
+    """获取文件的自定义提示词"""
+    try:
+        filename = secure_filename(filename)
+        
+        # 确保文件存在
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if not os.path.exists(filepath):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        # 确保文件有提示词记录
+        current_user = db.get_user_by_id(session['user_id'])
+        created_by = current_user['username'] if current_user else 'system'
+        db.create_file_prompt_if_not_exists(filename, created_by=created_by)
+        
+        # 获取提示词信息
+        prompt_info = db.get_file_prompt_info(filename)
+        
+        if prompt_info:
+            return jsonify({
+                'success': True,
+                'filename': prompt_info['filename'],
+                'custom_prompt': prompt_info['custom_prompt'],
+                'updated_at': prompt_info['updated_at'],
+                'updated_by': prompt_info['updated_by']
+            })
+        else:
+            return jsonify({'error': '获取提示词失败'}), 500
+            
+    except Exception as e:
+        print(f"❌ 获取文件提示词错误: {e}")
+        return jsonify({'error': f'获取提示词失败: {str(e)}'}), 500
+
+@app.route('/api/file-prompt/<filename>', methods=['POST'])
+@login_required
+def set_file_prompt(filename):
+    """设置文件的自定义提示词"""
+    try:
+        filename = secure_filename(filename)
+        data = request.get_json()
+        custom_prompt = data.get('custom_prompt', '').strip()
+        
+        if not custom_prompt:
+            return jsonify({'error': '提示词不能为空'}), 400
+        
+        # 确保文件存在
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        if not os.path.exists(filepath):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        # 获取当前用户
+        current_user = db.get_user_by_id(session['user_id'])
+        updated_by = current_user['username'] if current_user else 'system'
+        
+        # 保存提示词
+        success = db.set_file_prompt(filename, custom_prompt, updated_by)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '提示词保存成功',
+                'filename': filename,
+                'custom_prompt': custom_prompt
+            })
+        else:
+            return jsonify({'error': '保存提示词失败'}), 500
+            
+    except Exception as e:
+        print(f"❌ 设置文件提示词错误: {e}")
+        return jsonify({'error': f'保存提示词失败: {str(e)}'}), 500
+
+@app.route('/api/file-prompts', methods=['GET'])
+@login_required
+def list_file_prompts():
+    """获取所有文件提示词列表（仅管理员或查看用途）"""
+    try:
+        prompts = db.list_all_file_prompts()
+        return jsonify({
+            'success': True,
+            'prompts': prompts
+        })
+    except Exception as e:
+        print(f"❌ 获取文件提示词列表错误: {e}")
+        return jsonify({'error': f'获取提示词列表失败: {str(e)}'}), 500
+
+
 # ========== 系统配置管理路由 ==========
 
 @app.route('/admin/configs', methods=['GET'])
@@ -2352,5 +2462,5 @@ if __name__ == '__main__':
     print("   - GOOGLE_API_KEY: Gemini评测API密钥")
     print("   - ARK_API_KEY_HKGAI_V1: HKGAI-V1模型API密钥")
     print("   - ARK_API_KEY_HKGAI_V2: HKGAI-V2模型API密钥")
-    print("🌐 访问地址: http://localhost:5001")
-    app.run(debug=True, host='0.0.0.0', port=5001)
+    print("🌐 访问地址: http://localhost:8080")
+    app.run(debug=True, host='0.0.0.0', port=8080)
