@@ -1439,20 +1439,34 @@
             .then(response => response.json())
             .then(data => {
                 if (data.success) {
-                    console.log(`✅ [保存评分] 成功更新评分和理由`);
+                    console.log(`✅ [保存评分] 服务器确认更新成功:`, data);
                     
-                    // 更新本地数据：评分和理由
-                    originalData[currentEditData.rowIndex][currentEditData.scoreColumn] = newScore;
-                    filteredData[currentEditData.rowIndex][currentEditData.scoreColumn] = newScore;
+                    // 使用服务器返回的确切数据更新本地数据
+                    const rowIndex = data.row_index;
+                    const scoreColumn = data.score_column;
+                    const reasonColumn = data.reason_column;
+                    const updatedScore = data.updated_score;
+                    const updatedReason = data.updated_reason;
                     
-                    // 同时更新评分理由
-                    if (currentEditData.reasonColumn) {
-                        originalData[currentEditData.rowIndex][currentEditData.reasonColumn] = reason;
-                        filteredData[currentEditData.rowIndex][currentEditData.reasonColumn] = reason;
-                        console.log(`📝 [保存评分] 已更新理由列: ${currentEditData.reasonColumn}`);
+                    console.log(`📝 [保存评分] 更新数据 - 行:${rowIndex}, 评分列:${scoreColumn}, 理由列:${reasonColumn}`);
+                    console.log(`📝 [保存评分] 新评分:${updatedScore}, 新理由:${updatedReason?.substring(0, 50)}...`);
+                    
+                    // 更新originalData和filteredData
+                    if (originalData[rowIndex] && filteredData[rowIndex]) {
+                        originalData[rowIndex][scoreColumn] = updatedScore;
+                        filteredData[rowIndex][scoreColumn] = updatedScore;
+                        
+                        if (reasonColumn && updatedReason) {
+                            originalData[rowIndex][reasonColumn] = updatedReason;
+                            filteredData[rowIndex][reasonColumn] = updatedReason;
+                        }
+                        
+                        console.log(`✅ [保存评分] 本地数据已同步更新`);
+                    } else {
+                        console.error(`❌ [保存评分] 行索引${rowIndex}超出数据范围`);
                     }
                     
-                    // 重新渲染表格
+                    // 重新渲染表格以显示更新
                     renderTable();
                     
                     // 重新生成所有统计分析
@@ -1461,8 +1475,13 @@
                     // 关闭模态框
                     closeScoreEditModal();
                     
-                    alert('评分和理由修改成功！');
+                    // 显示成功消息并提供数据同步选项
+                    if (confirm('✅ 评分和理由修改成功！\n\n为确保数据一致性，建议重新加载页面。\n是否现在刷新？')) {
+                        window.location.reload();
+                    }
+                    
                 } else {
+                    console.error(`❌ [保存评分] 服务器返回错误:`, data);
                     alert('保存失败: ' + data.error);
                 }
             })

@@ -1483,9 +1483,39 @@ def update_score():
                 print(f"📝 [更新评分] 覆盖评分理由: {reason_column} -> {reason[:50]}...")
                 df.loc[row_index, reason_column] = reason
             
+            # 保存文件前先备份
+            backup_path = filepath + '.backup'
+            if os.path.exists(filepath):
+                import shutil
+                shutil.copy2(filepath, backup_path)
+                print(f"📁 [更新评分] 已创建文件备份: {backup_path}")
+            
             # 保存文件
             df.to_csv(filepath, index=False, encoding='utf-8-sig')
             print(f"✅ CSV文件评分已更新: {filename} 第{row_index+1}行 {score_column} -> {new_score}分")
+            
+            # 验证保存是否成功
+            if os.path.exists(filepath):
+                # 重新读取文件验证更新
+                verify_df = pd.read_csv(filepath, encoding='utf-8-sig')
+                if row_index < len(verify_df):
+                    saved_score = verify_df.loc[row_index, score_column]
+                    saved_reason = verify_df.loc[row_index, reason_column] if reason_column in verify_df.columns else None
+                    print(f"🔍 [验证] 文件中的评分: {saved_score}, 理由: {saved_reason[:50] if saved_reason else 'None'}...")
+                    
+                    if str(saved_score) == str(new_score):
+                        print(f"✅ [验证] 评分保存成功")
+                    else:
+                        print(f"⚠️ [验证] 评分可能保存失败: 期望{new_score}, 实际{saved_score}")
+                        
+                    if reason and saved_reason and str(saved_reason) == str(reason):
+                        print(f"✅ [验证] 理由保存成功")
+                    elif reason:
+                        print(f"⚠️ [验证] 理由可能保存失败")
+                else:
+                    print(f"⚠️ [验证] 行索引超出文件范围")
+            else:
+                print(f"❌ [验证] 文件保存失败，文件不存在")
         else:
             # 如果CSV文件不存在但数据库操作成功，仍然返回成功
             if db and result_id:
@@ -1495,7 +1525,12 @@ def update_score():
         
         return jsonify({
             'success': True,
-            'message': f'{model_name} 的评分已更新为 {new_score} 分'
+            'message': f'{model_name} 的评分已更新为 {new_score} 分',
+            'updated_score': new_score,
+            'updated_reason': reason,
+            'score_column': score_column,
+            'reason_column': reason_column,
+            'row_index': row_index
         })
         
     except Exception as e:
