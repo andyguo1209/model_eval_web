@@ -1425,6 +1425,9 @@ def update_score():
         if not isinstance(new_score, int) or new_score < 0 or new_score > 5:
             return jsonify({'success': False, 'error': '评分必须在0-5分之间'}), 400
         
+        # 计算理由列名（确保在所有执行路径中都定义）
+        reason_column = score_column.replace('评分', '理由')
+        
         # 首先尝试更新数据库
         if db:
             try:
@@ -1477,7 +1480,6 @@ def update_score():
             df.loc[row_index, score_column] = new_score
             
             # 如果有理由列，也更新理由
-            reason_column = score_column.replace('评分', '理由')
             if reason_column in df.columns and reason:
                 # 根据用户需求：直接覆盖原有的评分理由，而不是追加
                 print(f"📝 [更新评分] 覆盖评分理由: {reason_column} -> {reason[:50]}...")
