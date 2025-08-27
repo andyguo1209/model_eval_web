@@ -1,5 +1,49 @@
 # 📋 更新日志
 
+## v2.2.0 - 配置系统完善与新模型集成 (2025-08-27)
+
+### 🚀 新模型支持
+- ✅ **6个Copilot模型集成**
+  - HKGAI-V1-PROD / HKGAI-V1-Thinking-PROD (生产环境)
+  - HKGAI-V1-TEST / HKGAI-V1-Thinking-TEST (测试环境)
+  - HKGAI-V1-NET / HKGAI-V1-Thinking-NET (备用环境)
+  - 支持Cookie认证和SSE流式响应
+
+### 🔧 配置系统升级
+- ✅ **完善的配置管理**
+  - 新增Copilot模型配置项（COPILOT_COOKIE_*）
+  - Gemini API优化配置（并发数、输出token限制）
+  - 智能配置检查和验证功能
+
+- ✅ **配置状态监控**
+  - `check_api_keys()`: 检查必需API密钥
+  - `check_copilot_models()`: 检查Copilot模型状态
+  - `get_model_availability()`: 获取所有模型可用性
+  - `print_configuration_status()`: 完整配置状态显示
+
+### 🏗️ 架构重构
+- ✅ **模块化设计**
+  - 模型客户端分离 (Legacy / Copilot)
+  - 统一的模型工厂管理
+  - 清晰的代码组织结构
+
+### 🎯 用户体验改进
+- ✅ **启动体验优化**
+  - 应用启动时自动显示配置状态
+  - 清晰的必需/可选配置区分
+  - 详细的配置建议和提示
+
+- ✅ **文档完善**
+  - 更新配置模板和说明
+  - 新增Copilot模型配置指南
+  - 完善环境变量文档
+
+### 🐛 错误处理改进
+- ✅ **Gemini API增强**
+  - 更好的MAX_TOKENS处理
+  - 智能重试机制
+  - 详细的错误诊断信息
+
 ## v2.1.1 - 报告格式优化 (2025-08-26)
 
 ### 🔄 功能改进
