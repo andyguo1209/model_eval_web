@@ -224,7 +224,6 @@ def parse_json_str(s: str) -> Dict[str, Any]:
         return result
     except json.JSONDecodeError as e:
         print(f"❌ JSON解析失败: {e}")
-        print(f"📝 原始响应内容: {s[:500]}...")
         return {}
 
 
@@ -414,11 +413,7 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
             try:
                 print(f"🔄 开始评测第{i+1}题...")
                 gem_raw = await query_gemini_model(prompt, google_api_key)
-                print(f"📥 Gemini原始响应长度: {len(gem_raw)}")
-                print(f"📝 Gemini响应内容预览: {gem_raw[:200]}...")
-                
                 result_json = parse_json_str(gem_raw)
-                print(f"📊 解析结果: {len(result_json)} 个模型评分")
             except Exception as e:
                 print(f"❌ 评测第{i+1}题时出错: {e}")
                 result_json = {}
@@ -927,9 +922,8 @@ def view_results(filename):
                         'question_count': len(df),
                         'is_estimated': True
                     }
-                    print(f"⚠️ 使用估算时间数据: {estimated_start} -> {file_mtime}")
                 except Exception as e:
-                    print(f"❌ 无法获取文件时间: {e}")
+                    pass  # 静默处理文件时间获取错误
                     evaluation_data = {'question_count': len(df)}
             
             analysis_result = analytics.analyze_evaluation_results(
@@ -1239,9 +1233,8 @@ def view_history(result_id):
                     'end_time': file_mtime.isoformat(),
                     'is_estimated': True
                 })
-                print(f"⚠️ 历史记录使用估算时间数据: {estimated_start} -> {file_mtime}")
             except Exception as e:
-                print(f"❌ 无法获取历史文件时间: {e}")
+                pass  # 静默处理文件时间获取错误
         
         analysis_result = analytics.analyze_evaluation_results(
             result_file=filepath,
@@ -1471,9 +1464,8 @@ def generate_complete_report(filename, format_type='excel'):
                     'evaluation_mode': 'estimated',
                     'is_estimated': True
                 }
-                print(f"📊 使用估算的evaluation_data: {estimated_duration}秒")
             except Exception as e:
-                print(f"⚠️ 无法估算evaluation_data: {e}")
+                pass  # 静默处理估算错误
                 evaluation_data = {
                     'start_time': None,
                     'end_time': None,

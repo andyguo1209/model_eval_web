@@ -174,8 +174,6 @@ class AdvancedAnalytics:
             start_time = evaluation_data.get('start_time')
             end_time = evaluation_data.get('end_time')
             
-            print(f"🕒 时间数据调试: start_time={start_time}, end_time={end_time}")
-            
             if start_time and end_time:
                 try:
                     # 处理多种时间格式
@@ -196,14 +194,11 @@ class AdvancedAnalytics:
                         end_dt = end_time
                     
                     total_time = (end_dt - start_dt).total_seconds()
-                    print(f"⏱️ 计算得到总时间: {total_time}秒")
                     
                     if total_time > 0:
                         time_per_question = total_time / len(df)
                         metrics['estimated_time_per_question'] = f"{time_per_question:.1f}秒"
                         metrics['throughput'] = 3600 / time_per_question  # 每小时处理题数
-                        
-                        print(f"📊 时间指标: 每题{time_per_question:.1f}秒, 吞吐量{metrics['throughput']:.1f}题/小时")
                         
                         # 效率评分 (基于处理速度)
                         if time_per_question < 10:
@@ -214,19 +209,9 @@ class AdvancedAnalytics:
                             metrics['efficiency_score'] = 65
                         else:
                             metrics['efficiency_score'] = 40
-                        
-                        print(f"🎯 效率评分: {metrics['efficiency_score']}")
-                    else:
-                        print("⚠️ 计算的总时间<=0")
                             
                 except Exception as e:
-                    print(f"❌ 时间计算错误: {e}")
-                    import traceback
-                    traceback.print_exc()
-            else:
-                print("⚠️ 缺少时间数据: start_time或end_time为空")
-        else:
-            print("⚠️ evaluation_data为空，无法计算时间指标")
+                    pass  # 静默处理时间计算错误
         
         # 一致性评分
         if len(score_columns) > 1:
