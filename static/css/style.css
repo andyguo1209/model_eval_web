@@ -1165,3 +1165,62 @@ body {
         width: 100%;
     }
 }
+
+/* ===== 用户认证相关样式 ===== */
+.user-display {
+    color: white;
+    margin-right: 15px;
+    font-size: 14px;
+}
+
+.btn-secondary {
+    background-color: #6c757d;
+    color: white;
+    border: 2px solid #6c757d;
+}
+
+.btn-secondary:hover {
+    background-color: #5a6268;
+    border-color: #545b62;
+}
+
+.btn-success {
+    background-color: #28a745;
+    color: white;
+    border: 2px solid #28a745;
+}
+
+.btn-success:hover {
+    background-color: #218838;
+    border-color: #1e7e34;
+}
+
+/* 管理员页面样式 */
+.btn-sm {
+    padding: 4px 8px;
+    font-size: 12px;
+    margin: 0 2px;
+}
+
+.table-responsive {
+    overflow-x: auto;
+}
+
+/* 登录页面额外样式调整 */
+@media (max-width: 768px) {
+    .header-actions {
+        flex-wrap: wrap;
+        justify-content: center;
+        gap: 10px;
+    }
+    
+    .user-display {
+        text-align: center;
+        margin: 0 0 10px 0;
+    }
+    
+    #userInfo {
+        flex-direction: column;
+        text-align: center;
+    }
+}

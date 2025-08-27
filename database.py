@@ -126,17 +126,21 @@ class EvaluationDatabase:
                 )
             ''')
             
-            # 6. 用户表（简化版本）
+            # 6. 用户表（包含登录认证）
             db_cursor.execute('''
                 CREATE TABLE IF NOT EXISTS users (
                     id TEXT PRIMARY KEY,
                     username TEXT UNIQUE NOT NULL,
+                    password_hash TEXT NOT NULL,
                     display_name TEXT,
                     role TEXT DEFAULT 'annotator', -- 'admin', 'reviewer', 'annotator', 'viewer'
                     email TEXT,
+                    is_active BOOLEAN DEFAULT 1,
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     last_active TIMESTAMP,
-                    preferences TEXT -- JSON格式存储用户偏好设置
+                    last_login TIMESTAMP,
+                    preferences TEXT, -- JSON格式存储用户偏好设置
+                    created_by TEXT
                 )
             ''')
             
@@ -447,6 +451,190 @@ class EvaluationDatabase:
             stats['recent_evaluations'] = db_cursor.fetchone()[0]
             
             return stats
+    
+    # ===== 用户管理方法 =====
+    def create_user(self, username: str, password: str, role: str = 'annotator', 
+                   display_name: str = None, email: str = None, created_by: str = 'system') -> str:
+        """创建新用户"""
+        import hashlib
+        user_id = str(uuid.uuid4())
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        display_name = display_name or username
+        
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            try:
+                db_cursor.execute('''
+                    INSERT INTO users (id, username, password_hash, display_name, role, email, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)
+                ''', (user_id, username, password_hash, display_name, role, email, created_by))
+                conn.commit()
+                return user_id
+            except sqlite3.IntegrityError:
+                raise ValueError(f"用户名 '{username}' 已存在")
+    
+    def verify_user(self, username: str, password: str) -> Dict:
+        """验证用户登录"""
+        import hashlib
+        password_hash = hashlib.sha256(password.encode()).hexdigest()
+        
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                SELECT id, username, display_name, role, email, is_active
+                FROM users 
+                WHERE username = ? AND password_hash = ? AND is_active = 1
+            ''', (username, password_hash))
+            
+            result = db_cursor.fetchone()
+            if result:
+                # 更新最后登录时间
+                db_cursor.execute('''
+                    UPDATE users SET last_login = CURRENT_TIMESTAMP, last_active = CURRENT_TIMESTAMP 
+                    WHERE id = ?
+                ''', (result[0],))
+                conn.commit()
+                
+                return {
+                    'id': result[0],
+                    'username': result[1],
+                    'display_name': result[2],
+                    'role': result[3],
+                    'email': result[4],
+                    'is_active': result[5]
+                }
+            return None
+    
+    def get_user_by_id(self, user_id: str) -> Dict:
+        """根据ID获取用户信息"""
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                SELECT id, username, display_name, role, email, is_active, created_at, last_login
+                FROM users 
+                WHERE id = ?
+            ''', (user_id,))
+            
+            result = db_cursor.fetchone()
+            if result:
+                return {
+                    'id': result[0],
+                    'username': result[1],
+                    'display_name': result[2],
+                    'role': result[3],
+                    'email': result[4],
+                    'is_active': result[5],
+                    'created_at': result[6],
+                    'last_login': result[7]
+                }
+            return None
+    
+    def list_users(self, role: str = None) -> List[Dict]:
+        """获取用户列表"""
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            if role:
+                db_cursor.execute('''
+                    SELECT id, username, display_name, role, email, is_active, created_at, last_login
+                    FROM users 
+                    WHERE role = ?
+                    ORDER BY created_at DESC
+                ''', (role,))
+            else:
+                db_cursor.execute('''
+                    SELECT id, username, display_name, role, email, is_active, created_at, last_login
+                    FROM users 
+                    ORDER BY created_at DESC
+                ''')
+            
+            results = db_cursor.fetchall()
+            return [{
+                'id': row[0],
+                'username': row[1],
+                'display_name': row[2],
+                'role': row[3],
+                'email': row[4],
+                'is_active': row[5],
+                'created_at': row[6],
+                'last_login': row[7]
+            } for row in results]
+    
+    def update_user(self, user_id: str, **kwargs) -> bool:
+        """更新用户信息"""
+        allowed_fields = ['display_name', 'role', 'email', 'is_active']
+        updates = []
+        values = []
+        
+        for field, value in kwargs.items():
+            if field in allowed_fields:
+                updates.append(f"{field} = ?")
+                values.append(value)
+        
+        if not updates:
+            return False
+        
+        values.append(user_id)
+        
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute(f'''
+                UPDATE users SET {', '.join(updates)}, last_active = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', values)
+            conn.commit()
+            return db_cursor.rowcount > 0
+    
+    def change_password(self, user_id: str, new_password: str) -> bool:
+        """修改用户密码"""
+        import hashlib
+        password_hash = hashlib.sha256(new_password.encode()).hexdigest()
+        
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                UPDATE users SET password_hash = ?, last_active = CURRENT_TIMESTAMP
+                WHERE id = ?
+            ''', (password_hash, user_id))
+            conn.commit()
+            return db_cursor.rowcount > 0
+    
+    def delete_user(self, user_id: str) -> bool:
+        """删除用户（软删除，设置为非活跃）"""
+        with sqlite3.connect(self.db_path) as conn:
+            db_cursor = conn.cursor()
+            db_cursor.execute('''
+                UPDATE users SET is_active = 0
+                WHERE id = ?
+            ''', (user_id,))
+            conn.commit()
+            return db_cursor.rowcount > 0
+    
+    def init_default_admin(self, username: str = 'admin', password: str = 'admin123'):
+        """初始化默认管理员账户"""
+        try:
+            existing_admin = None
+            with sqlite3.connect(self.db_path) as conn:
+                db_cursor = conn.cursor()
+                db_cursor.execute('SELECT COUNT(*) FROM users WHERE role = "admin"')
+                admin_count = db_cursor.fetchone()[0]
+                
+                if admin_count == 0:
+                    admin_id = self.create_user(
+                        username=username,
+                        password=password,
+                        role='admin',
+                        display_name='系统管理员',
+                        email='admin@system.local',
+                        created_by='system'
+                    )
+                    print(f"✅ 创建默认管理员账户: {username} / {password}")
+                    return admin_id
+                else:
+                    print(f"ℹ️ 管理员账户已存在，跳过创建")
+                    return None
+        except Exception as e:
+            print(f"❌ 创建默认管理员失败: {e}")
+            return None
 
 
 # 创建全局数据库实例
@@ -459,6 +647,11 @@ if __name__ == "__main__":
     # 创建默认项目
     project_id = db.create_project("默认项目", "系统默认项目")
     print(f"创建项目: {project_id}")
+    
+    # 初始化默认管理员账户
+    admin_id = db.init_default_admin()
+    if admin_id:
+        print(f"创建管理员账户: {admin_id}")
     
     # 获取统计信息
     stats = db.get_statistics()

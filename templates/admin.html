@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>用户管理 - AI模型评测系统</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        .admin-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 30px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .user-info {
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        
+        .user-avatar {
+            width: 40px;
+            height: 40px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: white;
+            font-weight: bold;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 10px;
+        }
+        
+        .users-section {
+            background: white;
+            border-radius: 15px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+            margin-bottom: 30px;
+        }
+        
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 20px;
+        }
+        
+        .users-table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 15px;
+            border-radius: 10px;
+            overflow: hidden;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .users-table th,
+        .users-table td {
+            padding: 15px 12px;
+            text-align: left;
+            border-bottom: 1px solid #e1e5e9;
+        }
+        
+        .users-table th {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            font-weight: 600;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .users-table tbody tr {
+            transition: background-color 0.2s;
+        }
+        
+        .users-table tbody tr:hover {
+            background-color: #f8f9fa;
+        }
+        
+        .users-table tbody tr:nth-child(even) {
+            background-color: #fafbfc;
+        }
+        
+        .role-badge {
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        
+        .role-admin {
+            background-color: #dc3545;
+            color: white;
+        }
+        
+        .role-reviewer {
+            background-color: #fd7e14;
+            color: white;
+        }
+        
+        .role-annotator {
+            background-color: #20c997;
+            color: white;
+        }
+        
+        .role-viewer {
+            background-color: #6c757d;
+            color: white;
+        }
+        
+        .status-active {
+            color: #28a745;
+        }
+        
+        .status-inactive {
+            color: #dc3545;
+        }
+        
+        .modal {
+            display: none;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.5);
+        }
+        
+        .modal-content {
+            background-color: white;
+            margin: 3% auto;
+            padding: 0;
+            border-radius: 20px;
+            width: 90%;
+            max-width: 550px;
+            position: relative;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+            animation: modalSlideIn 0.3s ease-out;
+        }
+        
+        @keyframes modalSlideIn {
+            from {
+                opacity: 0;
+                transform: translateY(-50px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+        
+        .modal-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 25px 30px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            margin-bottom: 0;
+        }
+        
+        .modal-header h3 {
+            margin: 0;
+            font-size: 20px;
+            font-weight: 600;
+        }
+        
+        .modal-body {
+            padding: 30px;
+        }
+        
+        .modal-close {
+            background: rgba(255, 255, 255, 0.2);
+            border: none;
+            font-size: 20px;
+            cursor: pointer;
+            color: white;
+            width: 35px;
+            height: 35px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: background-color 0.2s;
+        }
+        
+        .modal-close:hover {
+            background: rgba(255, 255, 255, 0.3);
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        
+        .form-row .form-group {
+            flex: 1;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-group label {
+            display: block;
+            margin-bottom: 8px;
+            color: #333;
+            font-weight: 600;
+            font-size: 14px;
+        }
+        
+        .form-group input,
+        .form-group select {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s, box-shadow 0.3s;
+            box-sizing: border-box;
+        }
+        
+        .form-group input:focus,
+        .form-group select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .btn-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 20px;
+        }
+        
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        /* 改进的响应式设计 */
+        @media (max-width: 768px) {
+            .container {
+                padding: 10px;
+            }
+            
+            .header-content {
+                flex-direction: column;
+                gap: 15px;
+            }
+            
+            .admin-header {
+                flex-direction: column;
+                gap: 15px;
+                text-align: center;
+            }
+            
+            .users-table {
+                font-size: 12px;
+            }
+            
+            .users-table th,
+            .users-table td {
+                padding: 8px 6px;
+            }
+            
+            .modal-content {
+                width: 95%;
+                margin: 2% auto;
+            }
+            
+            .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+            
+            .btn-group {
+                flex-direction: column;
+            }
+            
+            .btn-group button {
+                width: 100%;
+            }
+        }
+        
+        /* 表格操作按钮样式改进 */
+        .action-buttons {
+            display: flex;
+            gap: 5px;
+        }
+        
+        .btn-sm {
+            padding: 6px 10px;
+            font-size: 12px;
+            border-radius: 6px;
+            transition: all 0.2s;
+        }
+        
+        .btn-sm:hover {
+            transform: translateY(-1px);
+            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+        }
+        
+        /* 状态指示器改进 */
+        .status-active i {
+            color: #28a745;
+            animation: pulse 2s infinite;
+        }
+        
+        .status-inactive i {
+            color: #dc3545;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 1; }
+            50% { opacity: 0.5; }
+            100% { opacity: 1; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <div class="header-content">
+                <div class="header-text">
+                    <h1><i class="fas fa-users-cog"></i> 用户管理</h1>
+                    <p>管理系统用户和权限</p>
+                </div>
+                <div class="header-actions">
+                    <a href="/" class="btn btn-outline">
+                        <i class="fas fa-home"></i> 返回首页
+                    </a>
+                    <button class="btn btn-danger" onclick="logout()">
+                        <i class="fas fa-sign-out-alt"></i> 退出登录
+                    </button>
+                </div>
+            </div>
+        </header>
+
+        <div class="admin-header">
+            <div class="user-info">
+                <div class="user-avatar">{{ current_user.display_name[0] if current_user.display_name else 'A' }}</div>
+                <div>
+                    <strong>{{ current_user.display_name or current_user.username }}</strong>
+                    <div class="role-badge role-{{ current_user.role }}">{{ current_user.role }}</div>
+                </div>
+            </div>
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="openAddUserModal()">
+                    <i class="fas fa-user-plus"></i> 添加用户
+                </button>
+            </div>
+        </div>
+
+        <div class="users-section">
+            <div class="section-header">
+                <h2><i class="fas fa-users"></i> 系统用户</h2>
+                <button class="btn btn-outline" onclick="refreshUsers()">
+                    <i class="fas fa-sync-alt"></i> 刷新
+                </button>
+            </div>
+            
+            <div id="usersTableContainer">
+                <table class="users-table" id="usersTable">
+                    <thead>
+                        <tr>
+                            <th>用户名</th>
+                            <th>显示名称</th>
+                            <th>角色</th>
+                            <th>邮箱</th>
+                            <th>状态</th>
+                            <th>创建时间</th>
+                            <th>最后登录</th>
+                            <th>操作</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <!-- 用户数据将通过JavaScript动态加载 -->
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- 添加/编辑用户模态框 -->
+    <div id="userModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="modalTitle">添加用户</h3>
+                <button class="modal-close" onclick="closeUserModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <form id="userForm">
+                    <input type="hidden" id="userId" name="userId">
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="username">用户名 *</label>
+                            <input type="text" id="username" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label for="displayName">显示名称</label>
+                            <input type="text" id="displayName" name="displayName">
+                        </div>
+                    </div>
+                    
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="email">邮箱</label>
+                            <input type="email" id="email" name="email">
+                        </div>
+                        <div class="form-group">
+                            <label for="role">角色 *</label>
+                            <select id="role" name="role" required>
+                                <option value="viewer">查看者</option>
+                                <option value="annotator">标注员</option>
+                                <option value="reviewer">审核员</option>
+                                <option value="admin">管理员</option>
+                            </select>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group" id="passwordGroup">
+                        <label for="password">密码 *</label>
+                        <input type="password" id="password" name="password">
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> 保存
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeUserModal()">
+                            取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let currentUsers = [];
+        
+        // 页面加载时获取用户列表
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUsers();
+        });
+        
+        // 加载用户列表
+        async function loadUsers() {
+            try {
+                const response = await fetch('/admin/users');
+                if (response.ok) {
+                    currentUsers = await response.json();
+                    renderUsersTable();
+                } else {
+                    showAlert('获取用户列表失败', 'danger');
+                }
+            } catch (error) {
+                console.error('获取用户列表错误:', error);
+                showAlert('获取用户列表时发生错误', 'danger');
+            }
+        }
+        
+        // 渲染用户表格
+        function renderUsersTable() {
+            const tbody = document.getElementById('usersTableBody');
+            tbody.innerHTML = '';
+            
+            currentUsers.forEach(user => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>${user.username}</td>
+                    <td>${user.display_name || '-'}</td>
+                    <td><span class="role-badge role-${user.role}">${user.role}</span></td>
+                    <td>${user.email || '-'}</td>
+                    <td class="status-${user.is_active ? 'active' : 'inactive'}">
+                        <i class="fas fa-circle"></i> ${user.is_active ? '活跃' : '禁用'}
+                    </td>
+                    <td>${formatDateTime(user.created_at)}</td>
+                    <td>${user.last_login ? formatDateTime(user.last_login) : '从未登录'}</td>
+                    <td>
+                        <div class="action-buttons">
+                            <button class="btn btn-sm btn-outline" onclick="editUser('${user.id}')" title="编辑用户">
+                                <i class="fas fa-edit"></i>
+                            </button>
+                            <button class="btn btn-sm btn-outline" onclick="toggleUserStatus('${user.id}', ${user.is_active})" 
+                                    title="${user.is_active ? '禁用用户' : '启用用户'}">
+                                <i class="fas fa-${user.is_active ? 'ban' : 'check'}"></i>
+                            </button>
+                        </div>
+                    </td>
+                `;
+                tbody.appendChild(row);
+            });
+        }
+        
+        // 打开添加用户模态框
+        function openAddUserModal() {
+            document.getElementById('modalTitle').textContent = '添加用户';
+            document.getElementById('userForm').reset();
+            document.getElementById('userId').value = '';
+            document.getElementById('passwordGroup').style.display = 'block';
+            document.getElementById('password').required = true;
+            document.getElementById('userModal').style.display = 'block';
+        }
+        
+        // 编辑用户
+        function editUser(userId) {
+            const user = currentUsers.find(u => u.id === userId);
+            if (!user) return;
+            
+            document.getElementById('modalTitle').textContent = '编辑用户';
+            document.getElementById('userId').value = user.id;
+            document.getElementById('username').value = user.username;
+            document.getElementById('displayName').value = user.display_name || '';
+            document.getElementById('email').value = user.email || '';
+            document.getElementById('role').value = user.role;
+            document.getElementById('passwordGroup').style.display = 'none';
+            document.getElementById('password').required = false;
+            document.getElementById('userModal').style.display = 'block';
+        }
+        
+        // 关闭用户模态框
+        function closeUserModal() {
+            document.getElementById('userModal').style.display = 'none';
+        }
+        
+        // 提交用户表单
+        document.getElementById('userForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const formData = new FormData(this);
+            const userData = Object.fromEntries(formData);
+            const isEdit = userData.userId !== '';
+            
+            try {
+                const url = isEdit ? `/admin/users/${userData.userId}` : '/admin/users';
+                const method = isEdit ? 'PUT' : 'POST';
+                
+                const response = await fetch(url, {
+                    method: method,
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(userData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert(isEdit ? '用户更新成功' : '用户创建成功', 'success');
+                    closeUserModal();
+                    loadUsers();
+                } else {
+                    showAlert(result.message || '操作失败', 'danger');
+                }
+            } catch (error) {
+                console.error('用户操作错误:', error);
+                showAlert('操作过程中发生错误', 'danger');
+            }
+        });
+        
+        // 切换用户状态
+        async function toggleUserStatus(userId, currentStatus) {
+            const action = currentStatus ? '禁用' : '启用';
+            if (!confirm(`确定要${action}该用户吗？`)) return;
+            
+            try {
+                const response = await fetch(`/admin/users/${userId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        is_active: !currentStatus
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert(`用户${action}成功`, 'success');
+                    loadUsers();
+                } else {
+                    showAlert(result.message || `${action}失败`, 'danger');
+                }
+            } catch (error) {
+                console.error('用户状态切换错误:', error);
+                showAlert('操作过程中发生错误', 'danger');
+            }
+        }
+        
+        // 刷新用户列表
+        function refreshUsers() {
+            loadUsers();
+        }
+        
+        // 退出登录
+        async function logout() {
+            if (confirm('确定要退出登录吗？')) {
+                try {
+                    await fetch('/logout', { method: 'POST' });
+                    window.location.href = '/login';
+                } catch (error) {
+                    console.error('退出登录错误:', error);
+                    window.location.href = '/login';
+                }
+            }
+        }
+        
+        // 格式化日期时间
+        function formatDateTime(dateString) {
+            if (!dateString) return '-';
+            const date = new Date(dateString);
+            return date.toLocaleString('zh-CN');
+        }
+        
+        // 显示提示信息
+        function showAlert(message, type) {
+            // 可以在这里添加更好的提示框实现
+            if (type === 'success') {
+                alert(message);
+            } else {
+                alert(message);
+            }
+        }
+        
+        // 点击模态框外部关闭
+        window.onclick = function(event) {
+            const modal = document.getElementById('userModal');
+            if (event.target === modal) {
+                closeUserModal();
+            }
+        }
+    </script>
+</body>
+</html>

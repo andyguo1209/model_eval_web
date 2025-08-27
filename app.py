@@ -8,7 +8,7 @@ import time
 import re
 import csv
 from datetime import datetime, timedelta
-from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for
+from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
 from werkzeug.utils import secure_filename
 # Removed google.generativeai import as we're using direct API calls
 from typing import Dict, Any, List, Optional
@@ -461,12 +461,65 @@ def run_async_task(func, *args):
     finally:
         loop.close()
 
+
+# ===== 用户认证装饰器 =====
+
+def login_required(f):
+    """登录验证装饰器"""
+    from functools import wraps
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.is_json:
+                return jsonify({'error': '需要登录', 'redirect': '/login'}), 401
+            return redirect(url_for('login'))
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+def admin_required(f):
+    """管理员权限验证装饰器"""
+    from functools import wraps
+    
+    @wraps(f)
+    def decorated_function(*args, **kwargs):
+        if 'user_id' not in session:
+            if request.is_json:
+                return jsonify({'error': '需要登录', 'redirect': '/login'}), 401
+            return redirect(url_for('login'))
+        
+        user = db.get_user_by_id(session['user_id'])
+        if not user or user['role'] != 'admin':
+            if request.is_json:
+                return jsonify({'error': '需要管理员权限'}), 403
+            return redirect(url_for('index'))
+        
+        return f(*args, **kwargs)
+    return decorated_function
+
+
+# ===== 路由定义 =====
+
 @app.route('/')
 def index():
     """首页"""
-    return render_template('index.html')
+    # 如果未登录，显示欢迎页面
+    if 'user_id' not in session:
+        return render_template('welcome.html')
+    
+    # 如果已登录，显示主系统页面
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('index.html', current_user=current_user)
+
+
+@app.route('/welcome')
+def welcome():
+    """欢迎页面"""
+    return render_template('welcome.html')
 
 @app.route('/get_uploaded_files', methods=['GET'])
+@login_required
 def get_uploaded_files():
     """获取已上传的文件列表"""
     try:
@@ -492,6 +545,7 @@ def get_uploaded_files():
         return jsonify({'error': f'获取文件列表失败: {str(e)}'}), 500
 
 @app.route('/delete_file/<filename>', methods=['DELETE'])
+@login_required
 def delete_file(filename):
     """删除上传的文件"""
     try:
@@ -507,6 +561,7 @@ def delete_file(filename):
         return jsonify({'error': f'删除文件失败: {str(e)}'}), 500
 
 @app.route('/download_uploaded_file/<filename>', methods=['GET'])
+@login_required
 def download_uploaded_file(filename):
     """下载上传的文件"""
     try:
@@ -517,6 +572,7 @@ def download_uploaded_file(filename):
         return jsonify({'error': f'下载文件失败: {str(e)}'}), 500
 
 @app.route('/check_file_exists/<filename>', methods=['GET'])
+@login_required
 def check_file_exists(filename):
     """检查文件是否已存在"""
     filename = secure_filename(filename)
@@ -525,6 +581,7 @@ def check_file_exists(filename):
     return jsonify({'exists': exists, 'filename': filename})
 
 @app.route('/upload_file', methods=['POST'])
+@login_required
 def upload_file():
     """上传评测文件"""
     # 检查是否是选择历史文件
@@ -635,6 +692,7 @@ def analyze_existing_file(filename):
         return jsonify({'error': f'分析文件失败: {str(e)}'}), 500
 
 @app.route('/get_available_models', methods=['GET'])
+@login_required
 def get_available_models():
     """获取可用模型列表"""
     models = []
@@ -656,6 +714,7 @@ def get_available_models():
     })
 
 @app.route('/start_evaluation', methods=['POST'])
+@login_required
 def start_evaluation():
     """开始评测"""
     data = request.get_json()
@@ -764,6 +823,7 @@ def start_evaluation():
         return jsonify({'error': f'处理错误: {str(e)}'}), 400
 
 @app.route('/task_status/<task_id>')
+@login_required
 def get_task_status(task_id):
     """获取任务状态"""
     if task_id not in task_status:
@@ -785,6 +845,7 @@ def get_task_status(task_id):
     })
 
 @app.route('/download/<filename>')
+@login_required
 def download_file(filename):
     """下载结果文件"""
     filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
@@ -794,6 +855,7 @@ def download_file(filename):
         return jsonify({'error': '文件不存在'}), 404
 
 @app.route('/api/history/download/<result_id>')
+@login_required
 def download_history_result(result_id):
     """通过result_id下载历史记录结果文件"""
     try:
@@ -824,6 +886,7 @@ def download_history_result(result_id):
         return jsonify({'error': f'下载失败: {str(e)}'}), 500
 
 @app.route('/view_results/<filename>')
+@login_required
 def view_results(filename):
     """查看评测结果"""
     filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
@@ -877,16 +940,19 @@ def view_results(filename):
             if analysis_result.get('success'):
                 advanced_stats = analysis_result['analysis']
         
+        current_user = db.get_user_by_id(session['user_id'])
         return render_template('results.html', 
                              filename=filename,
                              columns=df.columns.tolist(),
                              data=df.to_dict('records'),
-                             advanced_stats=advanced_stats)
+                             advanced_stats=advanced_stats,
+                             current_user=current_user)
     except Exception as e:
         return jsonify({'error': f'读取结果文件错误: {str(e)}'}), 400
 
 
 @app.route('/save_api_keys', methods=['POST'])
+@login_required
 def save_api_keys():
     """保存API密钥到本地.env文件"""
     try:
@@ -937,6 +1003,7 @@ def save_api_keys():
 
 
 @app.route('/get_env_status', methods=['GET'])
+@login_required
 def get_env_status():
     """获取.env文件状态信息"""
     try:
@@ -965,13 +1032,16 @@ def get_env_status():
 # ===== 历史管理相关路由 =====
 
 @app.route('/history')
+@login_required
 def history_page():
     """历史管理页面"""
     if not history_manager:
         return "历史管理功能未启用", 503
-    return render_template('history.html')
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('history.html', current_user=current_user)
 
 @app.route('/api/history/statistics')
+@login_required
 def get_history_statistics():
     """获取历史统计信息"""
     if not history_manager:
@@ -983,6 +1053,7 @@ def get_history_statistics():
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/history/list')
+@login_required
 def get_history_list():
     """获取历史记录列表"""
     if not history_manager:
@@ -1028,6 +1099,7 @@ def get_history_list():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/history/detail/<result_id>')
+@login_required
 def get_history_detail(result_id):
     """获取历史记录详情"""
     if not history_manager:
@@ -1039,6 +1111,7 @@ def get_history_detail(result_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/history/tags')
+@login_required
 def get_available_tags():
     """获取可用标签列表"""
     if not history_manager:
@@ -1052,13 +1125,16 @@ def get_available_tags():
 # ===== 标注系统相关路由 =====
 
 @app.route('/annotate/<result_id>')
+@login_required
 def annotate_page(result_id):
     """标注页面"""
     if not annotation_system:
         return "标注功能未启用", 503
-    return render_template('annotate.html', result_id=result_id)
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('annotate.html', result_id=result_id, current_user=current_user)
 
 @app.route('/api/annotation/data/<result_id>')
+@login_required
 def get_annotation_data(result_id):
     """获取标注数据"""
     if not annotation_system:
@@ -1070,6 +1146,7 @@ def get_annotation_data(result_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/annotation/save', methods=['POST'])
+@login_required
 def save_annotation():
     """保存标注"""
     if not annotation_system:
@@ -1088,6 +1165,7 @@ def save_annotation():
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/annotation/progress/<result_id>')
+@login_required
 def get_annotation_progress(result_id):
     """获取标注进度"""
     if not annotation_system:
@@ -1099,6 +1177,7 @@ def get_annotation_progress(result_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/annotation/statistics/<result_id>')
+@login_required
 def get_annotation_statistics(result_id):
     """获取标注统计"""
     if not annotation_system:
@@ -1110,6 +1189,7 @@ def get_annotation_statistics(result_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/view_history/<result_id>')
+@login_required
 def view_history(result_id):
     """查看历史评测结果详情"""
     try:
@@ -1172,16 +1252,19 @@ def view_history(result_id):
         if analysis_result.get('success'):
             advanced_stats = analysis_result['analysis']
         
+        current_user = db.get_user_by_id(session['user_id'])
         return render_template('results.html', 
                              filename=result_file,
                              columns=df.columns.tolist(),
                              data=df.to_dict('records'),
                              result_detail=result_detail,
-                             advanced_stats=advanced_stats)
+                             advanced_stats=advanced_stats,
+                             current_user=current_user)
     except Exception as e:
         return jsonify({'error': f'处理异常: {str(e)}'}), 500
 
 @app.route('/api/history/delete/<result_id>', methods=['DELETE'])
+@login_required
 def delete_history_result(result_id):
     """删除历史评测结果"""
     try:
@@ -1194,6 +1277,7 @@ def delete_history_result(result_id):
         return jsonify({'success': False, 'error': str(e)}), 500
 
 @app.route('/api/update_score', methods=['POST'])
+@login_required
 def update_score():
     """修改评分"""
     try:
@@ -1296,6 +1380,7 @@ def update_score():
 
 @app.route('/api/generate_report/<path:filename>')
 @app.route('/api/generate_report/<path:filename>/<format_type>')
+@login_required
 def generate_complete_report(filename, format_type='excel'):
     """生成完整报告API - 支持Excel和CSV格式"""
     try:
@@ -1612,6 +1697,7 @@ def generate_complete_report(filename, format_type='excel'):
         return jsonify({'error': f'生成报告失败: {str(e)}'}), 500
 
 @app.route('/api/export_filtered', methods=['POST'])
+@login_required
 def export_filtered_results():
     """导出筛选结果API"""
     try:
@@ -1663,6 +1749,236 @@ def export_filtered_results():
     except Exception as e:
         print(f"❌ 导出筛选结果失败: {str(e)}")
         return jsonify({'error': f'导出失败: {str(e)}'}), 500
+
+
+# ===== 用户认证路由 =====
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    """用户登录"""
+    if request.method == 'GET':
+        # 如果已经登录，重定向到首页
+        if 'user_id' in session:
+            return redirect(url_for('index'))
+        return render_template('login.html')
+    
+    if request.method == 'POST':
+        try:
+            data = request.get_json()
+            username = data.get('username', '').strip()
+            password = data.get('password', '')
+            
+            if not username or not password:
+                return jsonify({
+                    'success': False,
+                    'message': '用户名和密码不能为空'
+                }), 400
+            
+            # 验证用户
+            user = db.verify_user(username, password)
+            if user:
+                # 设置session
+                session['user_id'] = user['id']
+                session['username'] = user['username']
+                session['display_name'] = user['display_name']
+                session['role'] = user['role']
+                
+                return jsonify({
+                    'success': True,
+                    'message': '登录成功',
+                    'user': {
+                        'username': user['username'],
+                        'display_name': user['display_name'],
+                        'role': user['role']
+                    },
+                    'redirect': '/admin' if user['role'] == 'admin' else '/'
+                })
+            else:
+                return jsonify({
+                    'success': False,
+                    'message': '用户名或密码错误'
+                }), 401
+                
+        except Exception as e:
+            print(f"❌ 登录错误: {e}")
+            return jsonify({
+                'success': False,
+                'message': '登录过程中发生错误'
+            }), 500
+
+
+@app.route('/logout', methods=['POST'])
+def logout():
+    """用户退出登录"""
+    session.clear()
+    return jsonify({'success': True, 'message': '已退出登录', 'redirect': '/login'})
+
+
+@app.route('/admin')
+@admin_required
+def admin():
+    """管理员页面"""
+    current_user = db.get_user_by_id(session['user_id'])
+    return render_template('admin.html', current_user=current_user)
+
+
+@app.route('/admin/users', methods=['GET'])
+@admin_required
+def get_users():
+    """获取用户列表"""
+    try:
+        users = db.list_users()
+        return jsonify(users)
+    except Exception as e:
+        print(f"❌ 获取用户列表错误: {e}")
+        return jsonify({'error': '获取用户列表失败'}), 500
+
+
+@app.route('/admin/users', methods=['POST'])
+@admin_required
+def create_user():
+    """创建新用户"""
+    try:
+        data = request.get_json()
+        username = data.get('username', '').strip()
+        password = data.get('password', '')
+        display_name = data.get('displayName', '').strip()
+        email = data.get('email', '').strip()
+        role = data.get('role', 'annotator')
+        
+        if not username or not password:
+            return jsonify({
+                'success': False,
+                'message': '用户名和密码不能为空'
+            }), 400
+        
+        if len(password) < 6:
+            return jsonify({
+                'success': False,
+                'message': '密码长度不能少于6位'
+            }), 400
+        
+        # 创建用户
+        user_id = db.create_user(
+            username=username,
+            password=password,
+            role=role,
+            display_name=display_name or None,
+            email=email or None,
+            created_by=session['user_id']
+        )
+        
+        return jsonify({
+            'success': True,
+            'message': '用户创建成功',
+            'user_id': user_id
+        })
+        
+    except ValueError as e:
+        return jsonify({
+            'success': False,
+            'message': str(e)
+        }), 400
+    except Exception as e:
+        print(f"❌ 创建用户错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '创建用户失败'
+        }), 500
+
+
+@app.route('/admin/users/<user_id>', methods=['PUT'])
+@admin_required
+def update_user(user_id):
+    """更新用户信息"""
+    try:
+        data = request.get_json()
+        
+        # 过滤允许更新的字段
+        update_data = {}
+        for field in ['display_name', 'role', 'email', 'is_active']:
+            if field in data:
+                if field == 'display_name':
+                    update_data[field] = data['displayName'] if 'displayName' in data else data[field]
+                else:
+                    update_data[field] = data[field]
+        
+        if not update_data:
+            return jsonify({
+                'success': False,
+                'message': '没有需要更新的字段'
+            }), 400
+        
+        # 更新用户
+        success = db.update_user(user_id, **update_data)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '用户更新成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '用户不存在或更新失败'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 更新用户错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '更新用户失败'
+        }), 500
+
+
+@app.route('/admin/users/<user_id>/password', methods=['PUT'])
+@admin_required
+def change_user_password(user_id):
+    """修改用户密码"""
+    try:
+        data = request.get_json()
+        new_password = data.get('password', '')
+        
+        if not new_password:
+            return jsonify({
+                'success': False,
+                'message': '新密码不能为空'
+            }), 400
+        
+        if len(new_password) < 6:
+            return jsonify({
+                'success': False,
+                'message': '密码长度不能少于6位'
+            }), 400
+        
+        # 修改密码
+        success = db.change_password(user_id, new_password)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '密码修改成功'
+            })
+        else:
+            return jsonify({
+                'success': False,
+                'message': '用户不存在或密码修改失败'
+            }), 404
+            
+    except Exception as e:
+        print(f"❌ 修改密码错误: {e}")
+        return jsonify({
+            'success': False,
+            'message': '修改密码失败'
+        }), 500
+
+
+# 初始化默认管理员账户
+try:
+    if db:
+        db.init_default_admin()
+except Exception as e:
+    print(f"⚠️ 初始化默认管理员失败: {e}")
 
 
 if __name__ == '__main__':

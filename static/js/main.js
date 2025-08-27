@@ -1190,3 +1190,65 @@ function updateModelDisplay(data) {
     
     updateStartButton();
 }
+
+// ===== 用户认证相关功能 =====
+
+// 页面加载时检查用户登录状态
+document.addEventListener('DOMContentLoaded', function() {
+    checkUserLoginStatus();
+});
+
+// 检查用户登录状态
+function checkUserLoginStatus() {
+    // 这里可以通过检查session或者调用API来确定用户状态
+    // 由于是服务端渲染，我们可以在页面模板中设置用户信息
+}
+
+// 退出登录
+async function logout() {
+    if (confirm('确定要退出登录吗？')) {
+        try {
+            const response = await fetch('/logout', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                }
+            });
+            
+            if (response.ok) {
+                const result = await response.json();
+                // 清除客户端状态
+                hideUserInfo();
+                showAlert('已退出登录', 'success');
+                // 重定向到登录页面
+                setTimeout(() => {
+                    window.location.href = result.redirect || '/login';
+                }, 1000);
+            } else {
+                showAlert('退出登录失败', 'error');
+            }
+        } catch (error) {
+            console.error('退出登录错误:', error);
+            showAlert('退出登录时发生错误', 'error');
+        }
+    }
+}
+
+// 显示用户信息
+function showUserInfo(user) {
+    document.getElementById('loginLink').style.display = 'none';
+    document.getElementById('userInfo').style.display = 'inline-block';
+    document.getElementById('displayName').textContent = user.display_name || user.username;
+    
+    // 如果是管理员，显示用户管理链接
+    if (user.role === 'admin') {
+        document.getElementById('adminLink').style.display = 'inline-block';
+    }
+}
+
+// 隐藏用户信息
+function hideUserInfo() {
+    document.getElementById('loginLink').style.display = 'inline-block';
+    document.getElementById('userInfo').style.display = 'none';
+    document.getElementById('adminLink').style.display = 'none';
+}
