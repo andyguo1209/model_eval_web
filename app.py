@@ -1326,7 +1326,7 @@ def view_results(filename):
 @app.route('/save_api_keys', methods=['POST'])
 @login_required
 def save_api_keys():
-    """保存API密钥到本地.env文件"""
+    """保存API密钥和Cookie到本地.env文件"""
     try:
         data = request.get_json()
         
@@ -1335,9 +1335,15 @@ def save_api_keys():
         hkgai_v1_key = data.get('hkgai_v1_key', '').strip()
         hkgai_v2_key = data.get('hkgai_v2_key', '').strip()
         
+        # 获取Copilot Cookie
+        copilot_cookie_prod = data.get('copilot_cookie_prod', '').strip()
+        copilot_cookie_test = data.get('copilot_cookie_test', '').strip()
+        copilot_cookie_net = data.get('copilot_cookie_net', '').strip()
+        
         # 准备要保存的环境变量
         env_vars_to_save = {}
         
+        # 添加API密钥
         if google_key:
             env_vars_to_save['GOOGLE_API_KEY'] = google_key
         if hkgai_v1_key:
@@ -1345,26 +1351,45 @@ def save_api_keys():
         if hkgai_v2_key:
             env_vars_to_save['ARK_API_KEY_HKGAI_V2'] = hkgai_v2_key
         
+        # 添加Copilot Cookie
+        if copilot_cookie_prod:
+            env_vars_to_save['COPILOT_COOKIE_PROD'] = copilot_cookie_prod
+        if copilot_cookie_test:
+            env_vars_to_save['COPILOT_COOKIE_TEST'] = copilot_cookie_test
+        if copilot_cookie_net:
+            env_vars_to_save['COPILOT_COOKIE_NET'] = copilot_cookie_net
+        
         if not env_vars_to_save:
             return jsonify({
                 'success': False,
-                'message': '没有提供任何API密钥'
+                'message': '没有提供任何API密钥或Cookie'
             })
         
         # 保存到.env文件
         success = env_manager.save_env_vars(env_vars_to_save)
         
         if success:
-            # API密钥已保存，无需额外配置（使用直接API调用）
+            # 统计保存的类型
+            api_keys_count = sum(1 for key in env_vars_to_save.keys() if 'API_KEY' in key or 'GOOGLE_API_KEY' in key)
+            cookies_count = sum(1 for key in env_vars_to_save.keys() if 'COOKIE' in key)
+            
+            message_parts = []
+            if api_keys_count > 0:
+                message_parts.append(f'{api_keys_count}个API密钥')
+            if cookies_count > 0:
+                message_parts.append(f'{cookies_count}个Cookie')
+            
+            message = f'已成功保存{" 和 ".join(message_parts)}到本地文件'
+            
             return jsonify({
                 'success': True,
-                'message': f'已成功保存{len(env_vars_to_save)}个API密钥到本地文件',
+                'message': message,
                 'saved_keys': list(env_vars_to_save.keys())
             })
         else:
             return jsonify({
                 'success': False,
-                'message': '保存API密钥失败，请检查文件权限'
+                'message': '保存配置失败，请检查文件权限'
             })
             
     except Exception as e:
@@ -1383,16 +1408,25 @@ def get_env_status():
         env_exists = env_manager.env_file_exists()
         
         saved_keys = []
+        saved_cookies = []
+        
         if env_exists:
             env_vars = env_manager.load_env()
+            
+            # 检查API密钥
             api_keys = ['GOOGLE_API_KEY', 'ARK_API_KEY_HKGAI_V1', 'ARK_API_KEY_HKGAI_V2']
             saved_keys = [key for key in api_keys if key in env_vars and env_vars[key]]
+            
+            # 检查Copilot Cookie
+            copilot_cookies = ['COPILOT_COOKIE_PROD', 'COPILOT_COOKIE_TEST', 'COPILOT_COOKIE_NET']
+            saved_cookies = [key for key in copilot_cookies if key in env_vars and env_vars[key]]
         
         return jsonify({
             'env_file_path': env_path,
             'env_file_exists': env_exists,
             'saved_keys': saved_keys,
-            'total_saved': len(saved_keys)
+            'saved_cookies': saved_cookies,
+            'total_saved': len(saved_keys) + len(saved_cookies)
         })
         
     except Exception as e:

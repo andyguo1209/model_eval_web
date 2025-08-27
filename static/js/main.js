@@ -1076,17 +1076,38 @@ async function updateEnvStatus() {
             return;
         }
         
-        const { env_file_exists, saved_keys, total_saved } = data;
+        const { env_file_exists, saved_keys, saved_cookies, total_saved } = data;
         
         if (!env_file_exists || total_saved === 0) {
-            statusDiv.innerHTML = '<span style="color: #95a5a6;">📁 暂未保存任何密钥到本地文件</span>';
+            statusDiv.innerHTML = '<span style="color: #95a5a6;">📁 暂未保存任何配置到本地文件</span>';
         } else {
-            const keyList = saved_keys.map(key => {
-                const displayName = key.replace('ARK_API_KEY_', '').replace('GOOGLE_API_KEY', 'Google Gemini');
-                return `<span style="color: #27ae60;">✓ ${displayName}</span>`;
-            }).join(', ');
+            let displayParts = [];
             
-            statusDiv.innerHTML = `<span style="color: #27ae60;">💾 已保存 ${total_saved} 个密钥: ${keyList}</span>`;
+            // 处理API密钥
+            if (saved_keys.length > 0) {
+                const keyList = saved_keys.map(key => {
+                    const displayName = key.replace('ARK_API_KEY_', '').replace('GOOGLE_API_KEY', 'Google Gemini');
+                    return `<span style="color: #27ae60;">✓ ${displayName}</span>`;
+                }).join(', ');
+                displayParts.push(`API密钥: ${keyList}`);
+            }
+            
+            // 处理Copilot Cookie
+            if (saved_cookies.length > 0) {
+                const cookieList = saved_cookies.map(key => {
+                    const displayName = key.replace('COPILOT_COOKIE_', '').toLowerCase();
+                    const envNames = {
+                        'prod': '生产环境',
+                        'test': '测试环境',
+                        'net': '备用环境'
+                    };
+                    return `<span style="color: #3498db;">🍪 ${envNames[displayName] || displayName}</span>`;
+                }).join(', ');
+                displayParts.push(`Cookie: ${cookieList}`);
+            }
+            
+            const displayText = displayParts.join(' | ');
+            statusDiv.innerHTML = `<span style="color: #27ae60;">💾 已保存 ${total_saved} 项配置</span><br/><span style="font-size: 0.9em;">${displayText}</span>`;
         }
     } catch (error) {
         console.error('获取环境状态失败:', error);
@@ -1117,6 +1138,12 @@ async function handleApiConfigSubmit(e) {
     const googleKey = document.getElementById('google-api-key').value;
     const hkgaiV1Key = document.getElementById('hkgai-v1-key').value;
     const hkgaiV2Key = document.getElementById('hkgai-v2-key').value;
+    
+    // 获取Copilot Cookie字段
+    const copilotCookieProd = document.getElementById('copilot-cookie-prod').value.trim();
+    const copilotCookieTest = document.getElementById('copilot-cookie-test').value.trim();
+    const copilotCookieNet = document.getElementById('copilot-cookie-net').value.trim();
+    
     const saveToFile = document.getElementById('save-to-file').checked;
     
     // 保存到sessionStorage (仅在当前会话有效)
@@ -1130,10 +1157,25 @@ async function handleApiConfigSubmit(e) {
         sessionStorage.setItem('ARK_API_KEY_HKGAI_V2', hkgaiV2Key);
     }
     
-    let successMessage = 'API密钥配置已保存到当前会话！';
+    // 保存Copilot Cookie到sessionStorage
+    if (copilotCookieProd) {
+        sessionStorage.setItem('COPILOT_COOKIE_PROD', copilotCookieProd);
+    }
+    if (copilotCookieTest) {
+        sessionStorage.setItem('COPILOT_COOKIE_TEST', copilotCookieTest);
+    }
+    if (copilotCookieNet) {
+        sessionStorage.setItem('COPILOT_COOKIE_NET', copilotCookieNet);
+    }
+    
+    let successMessage = 'API密钥和Cookie配置已保存到当前会话！';
+    
+    // 检查是否有任何配置需要保存
+    const hasAnyConfig = googleKey || hkgaiV1Key || hkgaiV2Key || 
+                        copilotCookieProd || copilotCookieTest || copilotCookieNet;
     
     // 如果选择保存到文件，则调用后端API
-    if (saveToFile && (googleKey || hkgaiV1Key || hkgaiV2Key)) {
+    if (saveToFile && hasAnyConfig) {
         try {
             const response = await fetch('/save_api_keys', {
                 method: 'POST',
@@ -1143,7 +1185,10 @@ async function handleApiConfigSubmit(e) {
                 body: JSON.stringify({
                     google_api_key: googleKey,
                     hkgai_v1_key: hkgaiV1Key,
-                    hkgai_v2_key: hkgaiV2Key
+                    hkgai_v2_key: hkgaiV2Key,
+                    copilot_cookie_prod: copilotCookieProd,
+                    copilot_cookie_test: copilotCookieTest,
+                    copilot_cookie_net: copilotCookieNet
                 })
             });
             
@@ -1173,6 +1218,38 @@ async function handleApiConfigSubmit(e) {
     
     // 清空表单
     document.getElementById('api-config-form').reset();
+}
+
+// Cookie帮助弹窗控制函数
+function showCookieHelp() {
+    const modal = document.getElementById('cookie-help-modal');
+    const backdrop = document.getElementById('cookie-help-backdrop');
+    
+    if (modal && backdrop) {
+        modal.style.display = 'block';
+        backdrop.style.display = 'block';
+        
+        // 添加动画效果
+        requestAnimationFrame(() => {
+            modal.style.opacity = '1';
+            modal.style.transform = 'scale(1)';
+        });
+    }
+}
+
+function closeCookieHelp() {
+    const modal = document.getElementById('cookie-help-modal');
+    const backdrop = document.getElementById('cookie-help-backdrop');
+    
+    if (modal && backdrop) {
+        modal.style.opacity = '0';
+        modal.style.transform = 'scale(0.95)';
+        
+        setTimeout(() => {
+            modal.style.display = 'none';
+            backdrop.style.display = 'none';
+        }, 300);
+    }
 }
 
 // 修改loadAvailableModels函数以支持会话存储的API密钥

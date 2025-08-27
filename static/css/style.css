@@ -1317,3 +1317,171 @@ body {
         text-align: center;
     }
 }
+
+/* Cookie帮助弹窗样式 */
+.help-section {
+    margin-bottom: 20px;
+}
+
+.help-section h4 {
+    color: #2c3e50;
+    margin-bottom: 15px;
+    padding-bottom: 8px;
+    border-bottom: 2px solid #ecf0f1;
+}
+
+.step {
+    display: flex;
+    align-items: flex-start;
+    margin-bottom: 15px;
+    padding: 15px;
+    background: #f8f9fa;
+    border-radius: 8px;
+    border-left: 4px solid #3498db;
+}
+
+.step-number {
+    background: #3498db;
+    color: white;
+    width: 30px;
+    height: 30px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: bold;
+    margin-right: 15px;
+    flex-shrink: 0;
+}
+
+.step-content {
+    flex: 1;
+}
+
+.step-content strong {
+    color: #2c3e50;
+    margin-bottom: 8px;
+    display: block;
+}
+
+.step-content p {
+    color: #5d6d7e;
+    margin: 8px 0;
+    line-height: 1.5;
+}
+
+.links {
+    margin-top: 10px;
+}
+
+.links a {
+    display: inline-block;
+    margin: 5px 10px 5px 0;
+    padding: 6px 12px;
+    background: #ecf0f1;
+    color: #2c3e50;
+    text-decoration: none;
+    border-radius: 6px;
+    font-size: 0.9em;
+    transition: all 0.3s ease;
+}
+
+.links a:hover {
+    background: #3498db;
+    color: white;
+    transform: translateY(-1px);
+}
+
+.help-section ul {
+    list-style: none;
+    padding-left: 20px;
+}
+
+.help-section li {
+    position: relative;
+    padding-left: 20px;
+    margin-bottom: 8px;
+    color: #5d6d7e;
+    line-height: 1.5;
+}
+
+.help-section li:before {
+    content: "•";
+    color: #e74c3c;
+    position: absolute;
+    left: 0;
+    font-weight: bold;
+}
+
+.code-example {
+    background: #2c3e50;
+    color: #ecf0f1;
+    padding: 15px;
+    border-radius: 6px;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+    overflow-x: auto;
+    border: 1px solid #34495e;
+}
+
+.code-example code {
+    background: none;
+    color: inherit;
+    padding: 0;
+    border: none;
+}
+
+/* 表单分组样式 */
+.form-section {
+    margin: 25px 0;
+    padding: 20px;
+    background: #f8f9fa;
+    border-radius: 10px;
+    border: 1px solid #e9ecef;
+}
+
+.form-section h4 {
+    color: #2c3e50;
+    margin-bottom: 10px;
+    font-size: 1.1em;
+}
+
+.form-section-desc {
+    color: #6c757d;
+    margin-bottom: 15px;
+    font-size: 0.95em;
+    line-height: 1.4;
+}
+
+.form-section-desc a {
+    color: #007bff;
+    text-decoration: none;
+}
+
+.form-section-desc a:hover {
+    text-decoration: underline;
+}
+
+/* Copilot表单字段样式 */
+.form-section textarea.form-control {
+    min-height: 80px;
+    resize: vertical;
+    font-family: 'Courier New', monospace;
+    font-size: 0.9em;
+}
+
+/* 键盘按键样式 */
+kbd {
+    background-color: #f8f9fa;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, .2), 0 2px 0 0 rgba(255, 255, 255, .7) inset;
+    color: #333;
+    display: inline-block;
+    font-family: 'Courier New', monospace;
+    font-size: .85em;
+    font-weight: 700;
+    line-height: 1;
+    padding: 2px 4px;
+    white-space: nowrap;
+}
