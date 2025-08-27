@@ -5,6 +5,69 @@ let fileInfo = null;
 let availableModels = [];
 let currentTaskId = null;
 
+// 显示提示信息
+function showAlert(message, type = 'info') {
+    // 移除已存在的提示
+    const existingAlert = document.getElementById('custom-alert');
+    if (existingAlert) {
+        existingAlert.remove();
+    }
+    
+    // 创建提示元素
+    const alert = document.createElement('div');
+    alert.id = 'custom-alert';
+    alert.style.cssText = `
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        max-width: 400px;
+        padding: 15px 20px;
+        border-radius: 8px;
+        color: white;
+        font-weight: 500;
+        z-index: 10000;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        transition: all 0.3s ease;
+    `;
+    
+    // 根据类型设置样式
+    switch(type) {
+        case 'success':
+            alert.style.background = 'linear-gradient(135deg, #28a745, #20c997)';
+            alert.innerHTML = `<i class="fas fa-check-circle"></i> ${message}`;
+            break;
+        case 'error':
+            alert.style.background = 'linear-gradient(135deg, #dc3545, #e74c3c)';
+            alert.innerHTML = `<i class="fas fa-exclamation-circle"></i> ${message}`;
+            break;
+        case 'warning':
+            alert.style.background = 'linear-gradient(135deg, #ffc107, #ff9800)';
+            alert.innerHTML = `<i class="fas fa-exclamation-triangle"></i> ${message}`;
+            break;
+        default:
+            alert.style.background = 'linear-gradient(135deg, #007bff, #0056b3)';
+            alert.innerHTML = `<i class="fas fa-info-circle"></i> ${message}`;
+    }
+    
+    // 添加到页面
+    document.body.appendChild(alert);
+    
+    // 3秒后自动消失
+    setTimeout(() => {
+        if (alert && alert.parentNode) {
+            alert.style.opacity = '0';
+            alert.style.transform = 'translateX(100%)';
+            setTimeout(() => {
+                if (alert && alert.parentNode) {
+                    alert.remove();
+                }
+            }, 300);
+        }
+    }, 3000);
+    
+    console.log(`🔔 [提示] ${type.toUpperCase()}: ${message}`);
+}
+
 // 页面加载完成后初始化
 document.addEventListener('DOMContentLoaded', function() {
     initializeApp();
@@ -1411,7 +1474,7 @@ async function editFilePrompt(filename) {
                                 cursor: pointer; 
                                 margin-right: 10px;
                             ">取消</button>
-                            <button onclick="saveFilePrompt('${filename}')" style="
+                            <button id="save-prompt-btn" onclick="saveFilePrompt('${filename}')" style="
                                 background: #17a2b8; 
                                 color: white; 
                                 border: none; 
@@ -1440,8 +1503,12 @@ async function editFilePrompt(filename) {
 
 // 保存文件提示词
 async function saveFilePrompt(filename) {
+    // 获取保存按钮和编辑器
+    const saveButton = document.getElementById('save-prompt-btn');
+    const promptEditor = document.getElementById('prompt-editor');
+    
     try {
-        const promptText = document.getElementById('prompt-editor').value.trim();
+        const promptText = promptEditor.value.trim();
         
         console.log(`✏️ [前端] 用户开始保存文件 ${filename} 的提示词，长度: ${promptText.length} 字符`);
         
@@ -1450,6 +1517,20 @@ async function saveFilePrompt(filename) {
             showAlert('提示词不能为空', 'error');
             return;
         }
+        
+        // 禁用保存按钮和编辑器，显示保存中状态
+        if (saveButton) {
+            saveButton.disabled = true;
+            saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
+        }
+        if (promptEditor) {
+            promptEditor.disabled = true;
+        }
+        
+        // 显示保存中提示
+        showAlert('正在保存提示词...', 'info');
+        
+        console.log(`🔄 [前端] 正在发送保存请求到服务器...`);
         
         const response = await fetch(`/api/file-prompt/${encodeURIComponent(filename)}`, {
             method: 'POST',
@@ -1461,11 +1542,9 @@ async function saveFilePrompt(filename) {
             })
         });
         
-        console.log(`🔄 [前端] 正在发送保存请求到服务器...`);
-        
         if (!response.ok) {
             console.log(`❌ [前端] 服务器响应错误: ${response.status} ${response.statusText}`);
-            throw new Error('保存失败');
+            throw new Error(`服务器错误 ${response.status}`);
         }
         
         const result = await response.json();
@@ -1473,10 +1552,14 @@ async function saveFilePrompt(filename) {
         
         if (result.success) {
             console.log(`✅ [前端] 提示词保存成功，文件: ${filename}`);
-            showAlert('提示词保存成功！您的自定义评测标准已生效', 'success');
-            closeFilePromptModal();
-            // 刷新文件列表以显示更新时间
-            loadHistoryFiles();
+            showAlert('✅ 提示词保存成功！您的自定义评测标准已生效', 'success');
+            
+            // 延迟关闭模态框，让用户看到成功提示
+            setTimeout(() => {
+                closeFilePromptModal();
+                // 刷新文件列表以显示更新时间
+                loadHistoryFiles();
+            }, 1000);
         } else {
             console.log(`❌ [前端] 保存失败，错误信息: ${result.error}`);
             throw new Error(result.error || '保存失败');
@@ -1484,7 +1567,16 @@ async function saveFilePrompt(filename) {
         
     } catch (error) {
         console.error(`❌ [前端] 保存提示词错误:`, error);
-        showAlert('保存提示词失败: ' + error.message, 'error');
+        showAlert('❌ 保存提示词失败: ' + error.message, 'error');
+    } finally {
+        // 恢复按钮和编辑器状态
+        if (saveButton) {
+            saveButton.disabled = false;
+            saveButton.innerHTML = '<i class="fas fa-save"></i> 保存';
+        }
+        if (promptEditor) {
+            promptEditor.disabled = false;
+        }
     }
 }
 
