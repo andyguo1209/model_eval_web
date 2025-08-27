@@ -208,28 +208,173 @@ def detect_evaluation_mode(df: pd.DataFrame) -> str:
         return 'subjective'  # 主观题评测
 
 def parse_json_str(s: str) -> Dict[str, Any]:
-    """解析JSON字符串"""
+    """解析JSON字符串 - 增强版，支持多种格式和错误恢复"""
     s = (s or "").strip()
     if not s:
+        print("⚠️ JSON解析: 输入为空")
         return {}
+    
+    print(f"🔍 JSON解析: 开始解析长度为 {len(s)} 的字符串")
+    print(f"📝 JSON解析: 原始内容前100字符: {s[:100]}...")
+    
+    # 预处理：移除常见的非JSON前缀和后缀
+    original_s = s
+    
     try:
-        # 去掉可能的markdown格式
-        if '```json' in s:
-            s = s.split('```json')[1].split('```')[0]
-        elif '```' in s:
-            s = s.split('```')[1].split('```')[0]
+        # 1. 处理markdown代码块
+        if '```json' in s.lower():
+            # 找到第一个```json和对应的结束```
+            start_marker = s.lower().find('```json')
+            if start_marker != -1:
+                start_pos = start_marker + 7  # len('```json')
+                # 从start_pos开始查找结束的```
+                remaining = s[start_pos:]
+                end_marker = remaining.find('```')
+                if end_marker != -1:
+                    s = remaining[:end_marker].strip()
+                    print(f"✂️ JSON解析: 从markdown中提取JSON，长度: {len(s)}")
+                else:
+                    # 没有找到结束标记，取从```json后的所有内容
+                    s = remaining.strip()
+                    print(f"⚠️ JSON解析: 未找到结束markdown标记，使用剩余内容")
         
-        result = json.loads(s.strip())
-        print(f"✅ JSON解析成功: {len(result)} 个模型结果")
-        return result
-    except json.JSONDecodeError as e:
-        print(f"❌ JSON解析失败: {e}")
+        elif '```' in s:
+            # 通用代码块处理
+            parts = s.split('```')
+            if len(parts) >= 3:
+                s = parts[1].strip()
+                print(f"✂️ JSON解析: 从通用代码块中提取内容，长度: {len(s)}")
+            elif len(parts) == 2:
+                # 只有开始标记，没有结束标记
+                s = parts[1].strip()
+                print(f"⚠️ JSON解析: 只找到开始代码块标记")
+        
+        # 2. 移除常见的前缀文本
+        prefixes_to_remove = [
+            "这是评测结果:",
+            "评测结果如下:",
+            "根据评测标准，结果为:",
+            "JSON格式输出:",
+            "输出结果:",
+            "结果:",
+            "评分:",
+        ]
+        
+        for prefix in prefixes_to_remove:
+            if s.lower().startswith(prefix.lower()):
+                s = s[len(prefix):].strip()
+                print(f"✂️ JSON解析: 移除前缀 '{prefix}'")
+                break
+        
+        # 3. 查找JSON对象的开始和结束
+        # 找到第一个 { 或 [
+        json_start = -1
+        for i, char in enumerate(s):
+            if char in '{[':
+                json_start = i
+                break
+        
+        if json_start == -1:
+            print(f"❌ JSON解析: 未找到JSON起始符号 {{ 或 [")
+            return {}
+        
+        # 从起始位置开始提取JSON
+        s = s[json_start:]
+        
+        # 4. 尝试解析JSON
+        try:
+            result = json.loads(s)
+            print(f"✅ JSON解析成功: 包含 {len(result)} 个顶级键")
+            return result
+        except json.JSONDecodeError as json_error:
+            print(f"⚠️ 第一次JSON解析失败: {json_error}")
+            
+            # 5. 尝试修复常见的JSON错误
+            fixed_attempts = []
+            
+            # 尝试1: 移除多余的逗号
+            s_fixed = re.sub(r',\s*}', '}', s)  # 移除}前的逗号
+            s_fixed = re.sub(r',\s*]', ']', s_fixed)  # 移除]前的逗号
+            fixed_attempts.append(("移除多余逗号", s_fixed))
+            
+            # 尝试2: 修复未闭合的引号（简单情况）
+            if s.count('"') % 2 != 0:
+                s_fixed = s + '"'
+                fixed_attempts.append(("添加缺失引号", s_fixed))
+            
+            # 尝试3: 添加缺失的闭合括号
+            open_braces = s.count('{')
+            close_braces = s.count('}')
+            if open_braces > close_braces:
+                s_fixed = s + '}' * (open_braces - close_braces)
+                fixed_attempts.append(("添加缺失的}", s_fixed))
+            
+            # 尝试4: 查找最大的有效JSON片段
+            brace_count = 0
+            last_valid_pos = -1
+            for i, char in enumerate(s):
+                if char == '{':
+                    brace_count += 1
+                elif char == '}':
+                    brace_count -= 1
+                    if brace_count == 0:
+                        last_valid_pos = i + 1
+                        break
+            
+            if last_valid_pos > 0:
+                s_fixed = s[:last_valid_pos]
+                fixed_attempts.append(("提取完整JSON片段", s_fixed))
+            
+            # 逐一尝试修复后的JSON
+            for attempt_name, attempt_json in fixed_attempts:
+                try:
+                    result = json.loads(attempt_json)
+                    print(f"✅ JSON解析成功 (使用{attempt_name}): 包含 {len(result)} 个顶级键")
+                    return result
+                except json.JSONDecodeError:
+                    continue
+            
+            # 6. 如果所有尝试都失败，尝试提取关键信息
+            print(f"⚠️ 所有JSON修复尝试失败，尝试提取关键信息")
+            print(f"📝 原始响应内容: {original_s[:500]}...")
+            
+            # 使用正则表达式提取评分信息
+            extracted_data = {}
+            
+            # 查找模型评分信息
+            model_pattern = r'"?模型(\d+)"?\s*[:：]\s*{[^}]*"?评分"?\s*[:：]\s*["\']?(\d+)["\']?[^}]*}'
+            matches = re.findall(model_pattern, original_s)
+            
+            for model_num, score in matches:
+                key = f"模型{model_num}"
+                try:
+                    extracted_data[key] = {"评分": int(score), "理由": "自动提取的评分"}
+                except ValueError:
+                    pass
+            
+            if extracted_data:
+                print(f"✅ 使用正则提取到 {len(extracted_data)} 个模型的评分")
+                return extracted_data
+            
+            # 7. 最后的备用方案：返回空字典但记录详细错误
+            print(f"❌ JSON解析完全失败")
+            print(f"原始内容长度: {len(original_s)}")
+            print(f"处理后内容: {s[:200]}...")
+            print(f"JSON错误详情: {json_error}")
+            
+            return {}
+    
+    except Exception as e:
+        print(f"❌ JSON解析过程中发生异常: {e}")
+        print(f"异常类型: {type(e).__name__}")
+        import traceback
+        traceback.print_exc()
         return {}
 
 
 
-async def query_gemini_model(prompt: str, api_key: str = None) -> str:
-    """查询Gemini模型 使用数据库配置的端点"""
+async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int = 3) -> str:
+    """查询Gemini模型 使用数据库配置的端点 - 增强版，支持重试和更好的错误处理"""
     from database import db
     
     # 使用传入的API密钥或默认密钥
@@ -255,6 +400,7 @@ async def query_gemini_model(prompt: str, api_key: str = None) -> str:
         "Content-Type": "application/json"
     }
     
+    # 基础请求数据
     data = {
         "contents": [
             {
@@ -263,39 +409,138 @@ async def query_gemini_model(prompt: str, api_key: str = None) -> str:
                 ]
             }
         ],
-        "tools": [
-            {
-                "google_search": {}
-            }
-        ]
+        "generationConfig": {
+            "temperature": 0.1,  # 降低随机性，提高JSON格式一致性
+            "topK": 40,
+            "topP": 0.95,
+            "maxOutputTokens": 2048,
+        }
     }
     
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=data, timeout=timeout) as response:
-                if response.status == 200:
-                    result = await response.json()
-                    
-                    # 提取结果文本
-                    if "candidates" in result and len(result["candidates"]) > 0:
-                        candidate = result["candidates"][0]
-                        if "content" in candidate and "parts" in candidate["content"]:
-                            parts = candidate["content"]["parts"]
-                            if len(parts) > 0 and "text" in parts[0]:
-                                text_result = parts[0]["text"]
-                                print(f"✅ Gemini评测成功，返回长度: {len(text_result)}")
-                                return text_result
-                    
-                    print(f"⚠️ Gemini返回格式异常: {result}")
-                    return "Gemini模型调用失败: 返回格式异常"
-                else:
-                    error_text = await response.text()
-                    print(f"❌ Gemini API请求失败: HTTP {response.status} - {error_text}")
-                    return f"Gemini模型调用失败: HTTP {response.status} - {error_text}"
-                    
-    except Exception as e:
-        print(f"❌ Gemini评测失败: {e}")
-        return f"Gemini模型调用失败: {str(e)}"
+    # 尝试重试机制
+    last_error = None
+    for attempt in range(retry_count):
+        try:
+            print(f"🔄 Gemini API调用尝试 {attempt + 1}/{retry_count}")
+            
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, json=data, timeout=timeout) as response:
+                    if response.status == 200:
+                        try:
+                            result = await response.json()
+                        except json.JSONDecodeError as json_err:
+                            print(f"⚠️ Gemini响应JSON解析失败: {json_err}")
+                            # 尝试获取原始文本
+                            text_response = await response.text()
+                            print(f"📝 原始响应: {text_response[:200]}...")
+                            if attempt < retry_count - 1:
+                                continue
+                            return f"Gemini模型调用失败: 响应JSON格式错误 - {json_err}"
+                        
+                        # 提取结果文本
+                        if "candidates" in result and len(result["candidates"]) > 0:
+                            candidate = result["candidates"][0]
+                            
+                            # 检查是否有安全过滤
+                            if "finishReason" in candidate and candidate["finishReason"] == "SAFETY":
+                                print(f"⚠️ Gemini响应被安全过滤器阻止")
+                                if attempt < retry_count - 1:
+                                    # 稍微修改提示词重试
+                                    data["contents"][0]["parts"][0]["text"] = prompt + "\n\n请严格按照JSON格式输出评测结果。"
+                                    continue
+                                return "Gemini模型调用失败: 内容被安全过滤器阻止"
+                            
+                            if "content" in candidate and "parts" in candidate["content"]:
+                                parts = candidate["content"]["parts"]
+                                if len(parts) > 0 and "text" in parts[0]:
+                                    text_result = parts[0]["text"]
+                                    
+                                    # 验证返回的内容是否包含JSON结构
+                                    if not text_result.strip():
+                                        print(f"⚠️ Gemini返回空内容")
+                                        if attempt < retry_count - 1:
+                                            continue
+                                        return "Gemini模型调用失败: 返回内容为空"
+                                    
+                                    # 检查是否包含可能的JSON结构
+                                    if '{' not in text_result and '[' not in text_result:
+                                        print(f"⚠️ Gemini返回内容不包含JSON结构: {text_result[:100]}...")
+                                        if attempt < retry_count - 1:
+                                            # 修改提示词强调JSON格式要求
+                                            data["contents"][0]["parts"][0]["text"] = prompt + "\n\n重要：必须严格按照JSON格式输出，不要包含任何解释文字。"
+                                            continue
+                                    
+                                    print(f"✅ Gemini评测成功，返回长度: {len(text_result)}")
+                                    return text_result
+                        
+                        # 如果到这里，说明响应格式异常
+                        print(f"⚠️ Gemini返回格式异常: {result}")
+                        
+                        # 检查是否有错误信息
+                        if "error" in result:
+                            error_msg = result["error"].get("message", "未知错误")
+                            print(f"❌ Gemini API返回错误: {error_msg}")
+                            if attempt < retry_count - 1:
+                                await asyncio.sleep(1)  # 等待1秒后重试
+                                continue
+                            return f"Gemini模型调用失败: {error_msg}"
+                        
+                        if attempt < retry_count - 1:
+                            continue
+                        return "Gemini模型调用失败: 返回格式异常"
+                        
+                    elif response.status == 429:  # 速率限制
+                        print(f"⚠️ Gemini API速率限制，等待重试...")
+                        if attempt < retry_count - 1:
+                            await asyncio.sleep(2 ** attempt)  # 指数退避
+                            continue
+                        error_text = await response.text()
+                        return f"Gemini模型调用失败: 请求过于频繁，请稍后重试"
+                        
+                    elif response.status == 400:  # 请求错误
+                        error_text = await response.text()
+                        print(f"❌ Gemini API请求错误: {error_text}")
+                        try:
+                            error_json = json.loads(error_text)
+                            if "error" in error_json:
+                                error_detail = error_json["error"].get("message", error_text)
+                                return f"Gemini模型调用失败: {error_detail}"
+                        except:
+                            pass
+                        return f"Gemini模型调用失败: 请求参数错误 - {error_text[:200]}..."
+                        
+                    else:
+                        error_text = await response.text()
+                        print(f"❌ Gemini API请求失败: HTTP {response.status} - {error_text[:200]}...")
+                        if attempt < retry_count - 1:
+                            await asyncio.sleep(1)
+                            continue
+                        return f"Gemini模型调用失败: HTTP {response.status}"
+                        
+        except asyncio.TimeoutError:
+            print(f"⏰ Gemini API请求超时 (尝试 {attempt + 1}/{retry_count})")
+            last_error = "请求超时"
+            if attempt < retry_count - 1:
+                await asyncio.sleep(2)
+                continue
+                
+        except aiohttp.ClientError as client_err:
+            print(f"🌐 Gemini API网络错误: {client_err}")
+            last_error = f"网络连接错误: {client_err}"
+            if attempt < retry_count - 1:
+                await asyncio.sleep(1)
+                continue
+                
+        except Exception as e:
+            print(f"❌ Gemini评测异常 (尝试 {attempt + 1}/{retry_count}): {e}")
+            last_error = str(e)
+            if attempt < retry_count - 1:
+                await asyncio.sleep(1)
+                continue
+    
+    # 所有重试都失败了
+    print(f"❌ Gemini API调用完全失败，已尝试 {retry_count} 次")
+    return f"Gemini模型调用失败: {last_error or '所有重试尝试都失败'}"
 
 def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_type: str = "", filename: str = None) -> str:
     """构建主观题评测提示"""
@@ -356,7 +601,26 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 2. 提供详细的评分理由
 3. 确保评分客观公正，基于事实和逻辑
 
-请严格按照以下JSON格式输出，不要包含其他任何文字: {json.dumps(json_format, ensure_ascii=False)}
+=== 关键输出格式要求 ===
+❗重要：必须严格按照JSON格式输出，不得包含任何解释文字❗
+
+✅ 正确格式示例：
+{json.dumps(json_format, ensure_ascii=False, indent=2)}
+
+❌ 错误格式：
+- 不要添加"以下是评测结果："等前缀
+- 不要使用markdown代码块```json```
+- 不要在JSON前后添加任何说明文字
+- 不要使用不标准的引号或符号
+
+⚠️ 格式检查清单：
+1. 输出必须以 {{ 开始，以 }} 结束
+2. 所有字符串必须用双引号包围
+3. 评分必须是0-5之间的整数
+4. 理由字段不能为空
+5. JSON结构必须完整且有效
+
+请现在输出评测结果的JSON：
 """
 
 def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[str, str], question_type: str = "") -> str:
@@ -406,7 +670,27 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
 3. 提供详细的评分依据和理由
 4. 客观公正，基于事实判断
 
-请严格按照以下JSON格式输出，不要包含其他任何文字: {json.dumps(json_format, ensure_ascii=False)}
+=== 关键输出格式要求 ===
+❗重要：必须严格按照JSON格式输出，不得包含任何解释文字❗
+
+✅ 正确格式示例：
+{json.dumps(json_format, ensure_ascii=False, indent=2)}
+
+❌ 错误格式：
+- 不要添加"以下是评测结果："等前缀
+- 不要使用markdown代码块```json```
+- 不要在JSON前后添加任何说明文字
+- 不要使用不标准的引号或符号
+
+⚠️ 格式检查清单：
+1. 输出必须以 {{ 开始，以 }} 结束
+2. 所有字符串必须用双引号包围
+3. 评分必须是0-5之间的整数
+4. 准确性必须是"正确"、"部分正确"或"错误"之一
+5. 理由字段不能为空
+6. JSON结构必须完整且有效
+
+请现在输出评测结果的JSON：
 """
 
 def flatten_json(data: Dict[str, Any], prefix: str = "") -> Dict[str, Any]:
