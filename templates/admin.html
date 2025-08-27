@@ -299,19 +299,104 @@
         /* 表格操作按钮样式改进 */
         .action-buttons {
             display: flex;
-            gap: 5px;
+            gap: 8px;
         }
         
         .btn-sm {
-            padding: 6px 10px;
-            font-size: 12px;
-            border-radius: 6px;
-            transition: all 0.2s;
+            padding: 8px 12px;
+            font-size: 13px;
+            border-radius: 8px;
+            transition: all 0.3s ease;
+            min-width: 36px;
+            height: 36px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 500;
         }
         
-        .btn-sm:hover {
+        /* 表格内按钮样式 - 覆盖全局样式 */
+        .users-table .btn-outline {
+            background: #f8f9fa;
+            border: 2px solid #dee2e6;
+            color: #495057;
+        }
+        
+        .users-table .btn-outline:hover {
+            background: #e9ecef;
+            border-color: #adb5bd;
+            color: #212529;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+        }
+        
+        /* 编辑按钮 */
+        .users-table .btn-edit {
+            background: #e3f2fd;
+            border: 2px solid #2196f3;
+            color: #1976d2;
+        }
+        
+        .users-table .btn-edit:hover {
+            background: #2196f3;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
+        }
+        
+        /* 状态切换按钮 */
+        .users-table .btn-toggle-active {
+            background: #e8f5e8;
+            border: 2px solid #4caf50;
+            color: #2e7d32;
+        }
+        
+        .users-table .btn-toggle-active:hover {
+            background: #4caf50;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(76, 175, 80, 0.3);
+        }
+        
+        .users-table .btn-toggle-inactive {
+            background: #ffebee;
+            border: 2px solid #f44336;
+            color: #c62828;
+        }
+        
+        .users-table .btn-toggle-inactive:hover {
+            background: #f44336;
+            color: white;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(244, 67, 54, 0.3);
+        }
+        
+        /* 刷新按钮特殊样式 */
+        .section-header .btn-outline {
+            background: #f8f9fa;
+            border: 2px solid #6c757d;
+            color: #495057;
+        }
+        
+        .section-header .btn-outline:hover {
+            background: #6c757d;
+            border-color: #6c757d;
+            color: white;
             transform: translateY(-1px);
-            box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+            box-shadow: 0 2px 8px rgba(108, 117, 125, 0.3);
+        }
+        
+        /* 头部按钮保持原样 */
+        .header-actions .btn-outline {
+            background: transparent;
+            border: 2px solid rgba(255, 255, 255, 0.8);
+            color: white;
+        }
+        
+        .header-actions .btn-outline:hover {
+            background: rgba(255, 255, 255, 0.1);
+            border-color: white;
+            transform: translateY(-1px);
         }
         
         /* 状态指示器改进 */
@@ -495,10 +580,11 @@
                     <td>${user.last_login ? formatDateTime(user.last_login) : '从未登录'}</td>
                     <td>
                         <div class="action-buttons">
-                            <button class="btn btn-sm btn-outline" onclick="editUser('${user.id}')" title="编辑用户">
+                            <button class="btn btn-sm btn-edit" onclick="editUser('${user.id}')" title="编辑用户">
                                 <i class="fas fa-edit"></i>
                             </button>
-                            <button class="btn btn-sm btn-outline" onclick="toggleUserStatus('${user.id}', ${user.is_active})" 
+                            <button class="btn btn-sm ${user.is_active ? 'btn-toggle-active' : 'btn-toggle-inactive'}" 
+                                    onclick="toggleUserStatus('${user.id}', ${user.is_active})" 
                                     title="${user.is_active ? '禁用用户' : '启用用户'}">
                                 <i class="fas fa-${user.is_active ? 'ban' : 'check'}"></i>
                             </button>
