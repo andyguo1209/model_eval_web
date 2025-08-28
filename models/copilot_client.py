@@ -278,7 +278,9 @@ class CopilotClient:
                                     return f"❌ Cookie认证失败: {error_data.get('msg', 'Unauthorized')}"
                                 else:
                                     print(f"❌ Copilot API错误: {error_data}")
-                                    return f"❌ API错误: {error_data.get('msg', f'Code {error_data.get(\"code\")}')})"
+                                    error_code = error_data.get('code', 'Unknown')
+                                    error_msg = error_data.get('msg', f'Code {error_code}')
+                                    return f"❌ API错误: {error_msg}"
                             except json.JSONDecodeError:
                                 pass
                         
