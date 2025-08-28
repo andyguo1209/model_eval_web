@@ -3168,7 +3168,7 @@ def delete_system_config(config_key):
 @app.route('/admin/scoring-criteria', methods=['GET'])
 @admin_required
 def get_scoring_criteria():
-    """获取评分标准列表"""
+hu    """获取评分标准列表"""
     try:
         criteria_type = request.args.get('type', None)
         active_only = request.args.get('active_only', 'true').lower() == 'true'
