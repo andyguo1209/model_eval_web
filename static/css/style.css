@@ -98,15 +98,11 @@ body {
 
 .step.active .step-number {
     background: #4CAF50;
-    border: 2px solid #4CAF50;
     transform: scale(1.1);
-    box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
 }
 
 .step.completed .step-number {
     background: #2196F3;
-    border: 2px solid #2196F3;
-    box-shadow: 0 4px 15px rgba(33, 150, 243, 0.4);
 }
 
 .step-text {
@@ -1334,7 +1330,7 @@ body {
     border-bottom: 2px solid #ecf0f1;
 }
 
-.step {
+.cookie-help-modal .step {
     display: flex;
     align-items: flex-start;
     margin-bottom: 15px;
@@ -1344,7 +1340,7 @@ body {
     border-left: 4px solid #3498db;
 }
 
-.step-number {
+.cookie-help-modal .step-number {
     background: #3498db;
     color: white;
     width: 30px;
