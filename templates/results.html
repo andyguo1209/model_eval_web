@@ -1205,23 +1205,47 @@
             `;
         }
         
-        // 计算分数分布的辅助函数
+        // 计算分数分布的辅助函数 - 增强版
         function calculateScoreDistribution() {
+            console.log('🔍 [分数分布] 开始计算分数分布...');
             const distribution = {};
             const scoreColumns = columns.filter(col => col.includes('评分'));
             
+            console.log(`🔍 [分数分布] 找到评分列: ${scoreColumns.length} 个`, scoreColumns);
+            console.log(`🔍 [分数分布] 使用数据源: originalData，共 ${originalData.length} 行`);
+            
             scoreColumns.forEach(col => {
                 const modelName = col.replace('_评分', '').replace('评分', '');
-                distribution[modelName] = {1: 0, 2: 0, 3: 0, 4: 0, 5: 0, 0: 0};
+                distribution[modelName] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0}; // 确保包含0分
                 
-                originalData.forEach(row => {
-                    const score = parseInt(row[col]);
+                let validScoreCount = 0;
+                let invalidScoreCount = 0;
+                
+                originalData.forEach((row, rowIndex) => {
+                    const rawScore = row[col];
+                    let score = parseInt(rawScore);
+                    
+                    // 兼容处理：如果是字符串数字，尝试转换
+                    if (isNaN(score) && typeof rawScore === 'string') {
+                        score = parseInt(rawScore.trim());
+                    }
+                    
                     if (!isNaN(score) && score >= 0 && score <= 5) {
                         distribution[modelName][score]++;
+                        validScoreCount++;
+                    } else {
+                        invalidScoreCount++;
+                        if (rowIndex < 3) { // 只记录前3个无效值用于调试
+                            console.log(`⚠️ [分数分布] 第${rowIndex}行，列'${col}'的值无效: '${rawScore}' (类型: ${typeof rawScore})`);
+                        }
                     }
                 });
+                
+                console.log(`📊 [分数分布] 模型 ${modelName}: 有效评分 ${validScoreCount} 个，无效评分 ${invalidScoreCount} 个`);
+                console.log(`📊 [分数分布] 模型 ${modelName} 分布:`, distribution[modelName]);
             });
             
+            console.log('✅ [分数分布] 计算完成', distribution);
             return distribution;
         }
         
@@ -2035,34 +2059,55 @@
                         originalRowIndex = rowIndex;
                     }
                     
-                    // 更新数据
+                    // 强制更新数据 - 使用字符串和数字两种形式确保兼容
+                    const scoreValue = parseInt(updatedScore);
+                    const reasonValue = updatedReason || '';
+                    
+                    // 更新filteredData
                     if (actualRowIndex >= 0 && actualRowIndex < filteredData.length) {
-                        filteredData[actualRowIndex][scoreColumn] = updatedScore;
-                        if (reasonColumn && updatedReason) {
-                            filteredData[actualRowIndex][reasonColumn] = updatedReason;
+                        filteredData[actualRowIndex][scoreColumn] = scoreValue;
+                        if (reasonColumn) {
+                            filteredData[actualRowIndex][reasonColumn] = reasonValue;
                         }
-                        console.log(`✅ [保存评分] filteredData已更新，行索引: ${actualRowIndex}`);
+                        console.log(`✅ [保存评分] filteredData已更新，行索引: ${actualRowIndex}, 评分: ${scoreValue}`);
                     }
                     
+                    // 更新originalData
                     if (originalRowIndex >= 0 && originalRowIndex < originalData.length) {
-                        originalData[originalRowIndex][scoreColumn] = updatedScore;
-                        if (reasonColumn && updatedReason) {
-                            originalData[originalRowIndex][reasonColumn] = updatedReason;
+                        originalData[originalRowIndex][scoreColumn] = scoreValue;
+                        if (reasonColumn) {
+                            originalData[originalRowIndex][reasonColumn] = reasonValue;
                         }
-                        console.log(`✅ [保存评分] originalData已更新，行索引: ${originalRowIndex}`);
+                        console.log(`✅ [保存评分] originalData已更新，行索引: ${originalRowIndex}, 评分: ${scoreValue}`);
                     }
                     
-                    // 重新渲染表格以显示更新
-                    renderTable();
+                    // 强制刷新所有相关数据和显示
+                    console.log('🔄 [数据刷新] 开始强制刷新所有组件...');
                     
-                    // 重新生成所有统计分析
-                    refreshAllAnalysis();
+                    // 1. 重新渲染表格
+                    renderTable();
+                    console.log('✅ [数据刷新] 表格重新渲染完成');
+                    
+                    // 2. 强制清除并重新生成统计
+                    setTimeout(() => {
+                        console.log('🔄 [统计刷新] 开始刷新统计分析...');
+                        
+                        // 清除现有统计内容
+                        const analysisSection = document.querySelector('.analysis-section-wide');
+                        if (analysisSection) {
+                            analysisSection.innerHTML = '<h3>📊 分数分布统计</h3><p>🔄 正在重新计算...</p>';
+                        }
+                        
+                        // 重新生成统计
+                        refreshAllAnalysis();
+                        console.log('✅ [统计刷新] 统计分析刷新完成');
+                        
+                        // 显示成功消息
+                        alert('✅ 评分和理由修改成功！统计数据已更新。');
+                    }, 100);
                     
                     // 关闭模态框
                     closeScoreEditModal();
-                    
-                    // 显示成功消息
-                    alert('✅ 评分和理由修改成功！数据已保存到服务器。');
                     
                 } else {
                     console.error(`❌ [保存评分] 服务器返回错误:`, data);
@@ -2091,34 +2136,109 @@
             });
         }
         
-        // 刷新所有分析面板
+        // 刷新所有分析面板 - 增强版
         function refreshAllAnalysis() {
-            console.log('🔄 开始刷新统计分析...');
+            console.log('🔄 [刷新统计] 开始强制刷新所有统计分析...');
             
-            // 1. 重新生成基础统计
-            generateStats();
+            try {
+                // 1. 重新生成基础统计
+                console.log('🔄 [基础统计] 重新生成基础统计...');
+                generateStats();
+                console.log('✅ [基础统计] 基础统计完成');
+                
+                // 2. 强制重新计算分数分布
+                console.log('🔄 [分数分布] 强制重新计算分数分布...');
+                const scoreDistribution = calculateScoreDistribution();
+                
+                // 3. 更新分数分布显示
+                const analysisSection = document.querySelector('.analysis-section-wide');
+                if (analysisSection) {
+                    console.log('🔄 [分数分布] 更新分数分布显示...');
+                    
+                    // 清空现有内容
+                    analysisSection.innerHTML = '<h3>📊 分数分布统计</h3><p>🔄 正在重新计算...</p>';
+                    
+                    // 使用最新数据重新生成
+                    const newDistributionHtml = generateDistributionDisplay(scoreDistribution);
+                    analysisSection.innerHTML = `
+                        <h3>📊 分数分布统计</h3>
+                        ${newDistributionHtml}
+                    `;
+                    console.log('✅ [分数分布] 分数分布显示更新完成');
+                } else {
+                    console.warn('⚠️ [分数分布] 未找到分数分布容器元素');
+                }
+                
+                // 4. 重新生成模型对比
+                const modelComparisonSection = document.querySelector('.analysis-section:first-child');
+                if (modelComparisonSection) {
+                    console.log('🔄 [模型对比] 重新生成模型对比...');
+                    const updatedComparison = generateUpdatedModelComparison();
+                    modelComparisonSection.innerHTML = `
+                        <h3>📊 模型性能对比</h3>
+                        ${updatedComparison}
+                    `;
+                    console.log('✅ [模型对比] 模型对比更新完成');
+                }
+                
+                console.log('✅ [刷新统计] 所有统计分析刷新完成');
+                
+            } catch (error) {
+                console.error('❌ [刷新统计] 统计分析刷新失败:', error);
+            }
+        }
+        
+        // 生成分数分布显示HTML
+        function generateDistributionDisplay(scoreDistribution) {
+            console.log('🎨 [分布显示] 生成分数分布显示HTML...');
             
-            // 2. 重新计算并更新分数分布（查找现有的分数分布面板并更新）
-            const analysisSection = document.querySelector('.analysis-section-wide');
-            if (analysisSection) {
-                const newDistributionHtml = generateRecommendations(null); // 参数在函数内部不使用
-                analysisSection.innerHTML = `
-                    <h3>📊 分数分布统计</h3>
-                    ${newDistributionHtml}
-                `;
+            if (!scoreDistribution || Object.keys(scoreDistribution).length === 0) {
+                return '<p>暂无评分数据</p>';
             }
             
-            // 3. 如果有高级统计数据，重新生成模型对比（模拟数据）
-            const modelComparisonSection = document.querySelector('.analysis-section:first-child');
-            if (modelComparisonSection) {
-                const updatedComparison = generateUpdatedModelComparison();
-                modelComparisonSection.innerHTML = `
-                    <h3>📊 模型性能对比</h3>
-                    ${updatedComparison}
+            let distributionHtml = '';
+            Object.entries(scoreDistribution).forEach(([modelName, distribution]) => {
+                const total = Object.values(distribution).reduce((sum, count) => sum + count, 0);
+                
+                if (total === 0) {
+                    distributionHtml += `
+                        <div class="distribution-item">
+                            <h4>${modelName}</h4>
+                            <p>暂无评分数据</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                distributionHtml += `
+                    <div class="distribution-item">
+                        <h4>${modelName} (总计: ${total}条)</h4>
+                        <div class="score-bars">
                 `;
-            }
+                
+                for (let score = 0; score <= 5; score++) {
+                    const count = distribution[score] || 0;
+                    const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
+                    
+                    distributionHtml += `
+                        <div class="score-bar">
+                            <span class="score-label">${score}分</span>
+                            <div class="bar-container">
+                                <div class="bar" style="width: ${percentage}%"></div>
+                            </div>
+                            <span class="score-count">${count} (${percentage}%)</span>
+                        </div>
+                    `;
+                }
+                
+                distributionHtml += `
+                        </div>
+                    </div>
+                `;
+            });
             
-            console.log('✅ 统计分析刷新完成');
+            console.log('✅ [分布显示] 分数分布显示HTML生成完成');
+            return distributionHtml;
         }
         
         // 根据最新数据生成模型对比
