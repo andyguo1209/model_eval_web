@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>背景样式测试</title>
+    <style>
+        /* 直接内联样式测试 */
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: white;
+        }
+        
+        .test-card {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 30px;
+            margin: 20px auto;
+            max-width: 600px;
+            text-align: center;
+        }
+        
+        .gradient-preview {
+            width: 100%;
+            height: 100px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 8px;
+            margin: 20px 0;
+            border: 2px solid white;
+        }
+        
+        .status {
+            padding: 10px;
+            margin: 10px 0;
+            border-radius: 6px;
+            background: rgba(255, 255, 255, 0.2);
+        }
+    </style>
+</head>
+<body>
+    <div class="test-card">
+        <h1>🎨 背景样式测试页面</h1>
+        <p>如果您能看到紫色渐变背景，说明样式正常工作。</p>
+        
+        <div class="gradient-preview"></div>
+        
+        <div class="status">
+            <h3>测试结果</h3>
+            <p>✅ 如果页面有紫色渐变背景 = CSS正常</p>
+            <p>❌ 如果页面是白色背景 = CSS加载失败</p>
+        </div>
+        
+        <p><strong>访问地址：</strong> <code>http://localhost:8080/static/test-background.html</code></p>
+        
+        <div style="margin-top: 30px;">
+            <a href="/" style="color: white; text-decoration: none; background: rgba(255,255,255,0.2); padding: 10px 20px; border-radius: 6px;">
+                ← 返回主页
+            </a>
+        </div>
+    </div>
+    
+    <script>
+        // 检测CSS加载状态
+        console.log('背景样式测试页面已加载');
+        console.log('当前背景样式:', getComputedStyle(document.body).background);
+        
+        // 显示浏览器信息
+        document.addEventListener('DOMContentLoaded', function() {
+            const info = document.createElement('div');
+            info.innerHTML = `
+                <div style="margin-top: 20px; font-size: 12px; opacity: 0.8;">
+                    浏览器: ${navigator.userAgent}<br>
+                    时间: ${new Date().toLocaleString()}
+                </div>
+            `;
+            document.querySelector('.test-card').appendChild(info);
+        });
+    </script>
+</body>
+</html>
