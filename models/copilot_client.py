@@ -266,24 +266,42 @@ class CopilotClient:
         async with sem_model:
             try:
                 async with session.post(model_config["url"], headers=headers, json=payload, timeout=60) as resp:
+                    raw_response = await resp.text()
+                    
                     if resp.status == 200:
-                        raw = await resp.text()
-                        # 使用Copilot响应解析函数
-                        content = cls.extract_stream_content(raw.splitlines())
+                        # 检查是否为错误响应（即使HTTP 200）
+                        if raw_response.strip().startswith('{"code":'):
+                            try:
+                                error_data = json.loads(raw_response.strip())
+                                if error_data.get("code") == 401:
+                                    print(f"❌ Copilot认证失败: Cookie已过期或无效")
+                                    return f"❌ Cookie认证失败: {error_data.get('msg', 'Unauthorized')}"
+                                else:
+                                    print(f"❌ Copilot API错误: {error_data}")
+                                    return f"❌ API错误: {error_data.get('msg', f'Code {error_data.get(\"code\")}')})"
+                            except json.JSONDecodeError:
+                                pass
+                        
+                        # 正常流式响应解析
+                        content = cls.extract_stream_content(raw_response.splitlines())
                         
                         # 更新进度
                         if task_status and task_id in task_status:
                             task_status[task_id].progress += 1
                             task_status[task_id].current_step = f"已完成 {task_status[task_id].progress}/{task_status[task_id].total} 个查询"
                         
-                        return content if content.strip() else "无有效内容返回"
+                        return content if content.strip() else "⚠️ API响应为空，请检查Cookie是否有效"
                     else:
-                        error_text = await resp.text()
-                        print(f"❌ Copilot请求失败: HTTP {resp.status} - {error_text[:200]}...")
-                        return f"请求失败: HTTP {resp.status}"
+                        print(f"❌ Copilot请求失败: HTTP {resp.status} - {raw_response[:200]}...")
+                        if resp.status == 401:
+                            return f"❌ Cookie认证失败: 请更新 {model_config['cookie_env']} Cookie"
+                        elif resp.status == 403:
+                            return f"❌ 访问被拒绝: 请检查Cookie权限"
+                        else:
+                            return f"❌ 请求失败: HTTP {resp.status}"
             except Exception as e:
                 print(f"❌ Copilot请求异常: {e}")
-                return f"请求异常: {str(e)}"
+                return f"❌ 请求异常: {str(e)}"
 
 
 # 创建全局实例
