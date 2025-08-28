@@ -779,92 +779,129 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
         writer = csv.writer(f)
         writer.writerow(headers)
         
-        # 创建并发任务来评测所有问题
+        # 创建并发任务来评测所有问题，添加实时进度更新
         print(f"🚀 开始并发评测，并发数: {GEMINI_CONCURRENT_REQUESTS}")
         semaphore = asyncio.Semaphore(GEMINI_CONCURRENT_REQUESTS)
+        
+        # 进度计数器（线程安全）
+        import threading
+        progress_lock = threading.Lock()
+        completed_count = [0]  # 使用列表以便在闭包中修改
         
         async def evaluate_single_question(i: int, row: Dict) -> Tuple[int, List]:
             """评测单个问题"""
             async with semaphore:
-                # 检查任务是否被暂停或取消
-                if task_id in task_status:
-                    # 检查内存状态
-                    memory_status = task_status[task_id].status
-                    if memory_status == "已暂停":
-                        # 任务被暂停，等待继续
-                        while task_id in task_status and task_status[task_id].status == "已暂停":
-                            await asyncio.sleep(1)
+                try:
+                    # 检查任务是否被暂停或取消
+                    if task_id in task_status:
+                        # 检查内存状态
+                        memory_status = task_status[task_id].status
+                        if memory_status == "已暂停":
+                            # 任务被暂停，等待继续
+                            while task_id in task_status and task_status[task_id].status == "已暂停":
+                                await asyncio.sleep(1)
+                            
+                            # 如果任务被删除，返回空结果
+                            if task_id not in task_status:
+                                print(f"任务 {task_id} 已被删除，跳过第{i+1}题")
+                                return i, []
                         
-                        # 如果任务被删除，返回空结果
-                        if task_id not in task_status:
-                            print(f"任务 {task_id} 已被删除，跳过第{i+1}题")
-                            return i, []
-                    
-                    # 检查数据库状态
-                    db_task = db.get_running_task(task_id)
-                    if not db_task or db_task['status'] == 'cancelled':
-                        print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
-                        return i, []
-                    elif db_task['status'] == 'paused':
-                        # 任务被暂停，等待继续
-                        while True:
-                            await asyncio.sleep(1)
-                            db_task = db.get_running_task(task_id)
-                            if not db_task or db_task['status'] != 'paused':
-                                break
-                        
-                        # 再次检查任务是否存在
+                        # 检查数据库状态
+                        db_task = db.get_running_task(task_id)
                         if not db_task or db_task['status'] == 'cancelled':
                             print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
                             return i, []
-                
-                query = str(row.get("query", ""))
-                question_type = str(row.get("type", "未分类"))
-                standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
-                
-                # 获取各模型的答案
-                current_answers = {}
-                for model_name in model_names:
-                    if i < len(model_results[model_name]):
-                        current_answers[model_name] = model_results[model_name][i]
-                    else:
-                        current_answers[model_name] = "获取答案失败"
-                
-                # 构建评测提示
-                if mode == 'objective':
-                    prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type, filename)
-                else:
-                    prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
-                
-                try:
-                    print(f"🔄 开始评测第{i+1}题...")
-                    gem_raw = await query_gemini_model(prompt, google_api_key)
-                    result_json = parse_json_str(gem_raw)
-                except Exception as e:
-                    print(f"❌ 评测第{i+1}题时出错: {e}")
-                    result_json = {}
-                
-                # 构造CSV行数据
-                row_data = [i+1, question_type, query]
-                if mode == 'objective':
-                    row_data.append(standard_answer)
-                
-                # 添加各模型的结果
-                for j, model_name in enumerate(model_names, 1):
-                    model_key = f"模型{j}"
-                    row_data.append(current_answers[model_name])  # 模型答案
+                        elif db_task['status'] == 'paused':
+                            # 任务被暂停，等待继续
+                            while True:
+                                await asyncio.sleep(1)
+                                db_task = db.get_running_task(task_id)
+                                if not db_task or db_task['status'] != 'paused':
+                                    break
+                            
+                            # 再次检查任务是否存在
+                            if not db_task or db_task['status'] == 'cancelled':
+                                print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
+                                return i, []
                     
-                    if model_key in result_json:
-                        row_data.append(result_json[model_key].get("评分", ""))  # 评分
-                        row_data.append(result_json[model_key].get("理由", ""))  # 理由
-                        if mode == 'objective':
-                            row_data.append(result_json[model_key].get("准确性", ""))  # 准确性
+                    query = str(row.get("query", ""))
+                    question_type = str(row.get("type", "未分类"))
+                    standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
+                    
+                    # 获取各模型的答案
+                    current_answers = {}
+                    for model_name in model_names:
+                        if i < len(model_results[model_name]):
+                            current_answers[model_name] = model_results[model_name][i]
+                        else:
+                            current_answers[model_name] = "获取答案失败"
+                    
+                    # 构建评测提示
+                    if mode == 'objective':
+                        prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type, filename)
                     else:
-                        row_data.extend(["", ""])  # 评分、理由
-                        if mode == 'objective':
-                            row_data.append("")  # 准确性
-                
-                return i, row_data
+                        prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
+                    
+                    try:
+                        print(f"🔄 开始评测第{i+1}题...")
+                        gem_raw = await query_gemini_model(prompt, google_api_key)
+                        result_json = parse_json_str(gem_raw)
+                        print(f"✅ 完成评测第{i+1}题")
+                    except Exception as e:
+                        print(f"❌ 评测第{i+1}题时出错: {e}")
+                        result_json = {}
+                    
+                    # 构造CSV行数据
+                    row_data = [i+1, question_type, query]
+                    if mode == 'objective':
+                        row_data.append(standard_answer)
+                    
+                    # 添加各模型的结果
+                    for j, model_name in enumerate(model_names, 1):
+                        model_key = f"模型{j}"
+                        row_data.append(current_answers[model_name])  # 模型答案
+                        
+                        if model_key in result_json:
+                            row_data.append(result_json[model_key].get("评分", ""))  # 评分
+                            row_data.append(result_json[model_key].get("理由", ""))  # 理由
+                            if mode == 'objective':
+                                row_data.append(result_json[model_key].get("准确性", ""))  # 准确性
+                        else:
+                            row_data.extend(["", ""])  # 评分、理由
+                            if mode == 'objective':
+                                row_data.append("")  # 准确性
+                    
+                    # 实时更新进度
+                    with progress_lock:
+                        completed_count[0] += 1
+                        current_progress = completed_count[0]
+                        
+                        if task_id in task_status:
+                            task_status[task_id].progress = current_progress
+                            task_status[task_id].current_step = f"已评测 {current_progress}/{len(data)} 题 (第{i+1}题完成)"
+                            
+                            # 同时更新数据库
+                            try:
+                                db.update_task_progress(task_id, current_progress, task_status[task_id].current_step)
+                            except Exception as e:
+                                print(f"⚠️ 更新数据库进度失败: {e}")
+                    
+                    return i, row_data
+                    
+                except Exception as e:
+                    print(f"❌ 评测第{i+1}题出现异常: {e}")
+                    # 即使失败也要更新进度
+                    with progress_lock:
+                        completed_count[0] += 1
+                        current_progress = completed_count[0]
+                        if task_id in task_status:
+                            task_status[task_id].progress = current_progress
+                            task_status[task_id].current_step = f"已处理 {current_progress}/{len(data)} 题 (第{i+1}题失败)"
+                            try:
+                                db.update_task_progress(task_id, current_progress, task_status[task_id].current_step)
+                            except:
+                                pass
+                    return i, []
         
         # 创建所有评测任务
         tasks = [evaluate_single_question(i, row) for i, row in enumerate(data)]
@@ -885,17 +922,10 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
         # 按题目序号排序
         valid_results.sort(key=lambda x: x[0])
         
-        # 写入CSV并更新进度
+        # 写入CSV
+        print(f"📝 写入CSV文件，共 {len(valid_results)} 条有效记录...")
         for i, (question_index, row_data) in enumerate(valid_results):
             writer.writerow(row_data)
-            
-            # 更新进度
-            if task_id in task_status:
-                task_status[task_id].progress = i + 1
-                task_status[task_id].current_step = f"已评测 {i + 1}/{len(valid_results)} 题"
-                
-                # 同时更新数据库
-                db.update_task_progress(task_id, task_status[task_id].progress, task_status[task_id].current_step)
         
         print(f"✅ 并发评测完成，成功处理 {len(valid_results)}/{len(data)} 题")
 
