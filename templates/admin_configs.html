@@ -467,7 +467,7 @@
         
         // 配置项帮助信息
         const configHelpTexts = {
-            'gemini_api_endpoint': '设置Gemini API的基础端点地址，默认为Google官方API地址',
+            'gemini_api_endpoint': '设置Gemini API的基础端点地址，默认为HKGAI代理服务器地址',
             'gemini_model_name': '指定使用的Gemini模型版本，如 gemini-2.5-flash',
             'gemini_api_timeout': '设置API请求超时时间（秒），建议60-120秒'
         };
@@ -661,7 +661,7 @@
                 const defaultConfigs = [
                     {
                         config_key: 'gemini_api_endpoint',
-                        config_value: 'https://generativelanguage.googleapis.com/v1beta/models',
+                        config_value: 'https://gemini-proxy.hkgai.net/v1beta/models',
                         config_type: 'string',
                         description: 'Gemini API基础端点地址',
                         category: 'api',

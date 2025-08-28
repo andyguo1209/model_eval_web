@@ -28,9 +28,12 @@ def secure_chinese_filename(filename):
     if not filename:
         return filename
     
-    # 移除路径分隔符和其他危险字符
-    dangerous_chars = ['/', '\\', '..', '<', '>', ':', '"', '|', '?', '*', '\0']
+    # 移除路径分隔符和其他危险字符（保留中文标点符号）
+    dangerous_chars = ['/', '\\', '..', '<', '>', '"', '|', '?', '*', '\0']
     safe_filename = filename
+    
+    # 特别处理ASCII冒号（危险），但保留中文冒号（安全）
+    safe_filename = safe_filename.replace(':', '_')  # 只替换ASCII冒号
     
     for char in dangerous_chars:
         safe_filename = safe_filename.replace(char, '_')
@@ -355,7 +358,7 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
         return "Gemini模型调用失败: 未配置GOOGLE_API_KEY"
     
     # 从数据库获取配置
-    api_endpoint = db.get_system_config('gemini_api_endpoint', 'https://generativelanguage.googleapis.com/v1beta/models')
+    api_endpoint = db.get_system_config('gemini_api_endpoint', 'https://gemini-proxy.hkgai.net/v1beta/models')
     model_name = db.get_system_config('gemini_model_name', MODEL_NAME)
     timeout_str = db.get_system_config('gemini_api_timeout', '60')
     
@@ -1169,14 +1172,26 @@ def rename_dataset_file():
         try:
             if db:
                 # 检查是否有与原文件名关联的提示词
-                old_prompt = db.get_file_prompt(original_filename)
-                if old_prompt:
-                    # 为新文件名设置相同的提示词
-                    db.set_file_prompt(new_filename, old_prompt, 'file_rename')
-                    print(f"✅ 提示词关联已更新: {original_filename} -> {new_filename}")
+                old_prompt_info = db.get_file_prompt_info(original_filename)
+                if old_prompt_info:
+                    old_prompt = old_prompt_info['custom_prompt']
+                    updated_by = old_prompt_info['updated_by']
                     
-                    # 可选：删除旧的提示词记录（为了避免数据冗余）
-                    # 这里可以选择保留或删除，取决于业务需求
+                    # 为新文件名设置相同的提示词
+                    success = db.set_file_prompt(new_filename, old_prompt, updated_by)
+                    if success:
+                        print(f"✅ 提示词关联已更新: {original_filename} -> {new_filename}")
+                        
+                        # 删除旧的提示词记录（避免数据冗余）
+                        deleted = db.delete_file_prompt(original_filename)
+                        if deleted:
+                            print(f"🗑️ 已删除旧文件的提示词记录: {original_filename}")
+                        else:
+                            print(f"⚠️ 删除旧文件提示词记录失败: {original_filename}")
+                    else:
+                        print(f"❌ 设置新文件提示词失败: {new_filename}")
+                else:
+                    print(f"📝 原文件 {original_filename} 没有提示词记录，无需迁移")
         except Exception as e:
             print(f"⚠️ 更新提示词关联时出现警告: {e}")
             # 不阻断重命名操作，仅记录警告
@@ -3168,7 +3183,7 @@ def delete_system_config(config_key):
 @app.route('/admin/scoring-criteria', methods=['GET'])
 @admin_required
 def get_scoring_criteria():
-hu    """获取评分标准列表"""
+    """获取评分标准列表"""
     try:
         criteria_type = request.args.get('type', None)
         active_only = request.args.get('active_only', 'true').lower() == 'true'
