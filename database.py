@@ -371,16 +371,88 @@ class EvaluationDatabase:
             return [dict(zip(columns, row)) for row in rows]
     
     def get_result_id_by_filename(self, filename: str) -> Optional[str]:
-        """根据结果文件名获取result_id"""
+        """根据结果文件名获取result_id，支持多目录查找和路径修复"""
+        import os
+        
         with sqlite3.connect(self.db_path) as conn:
             db_cursor = conn.cursor()
+            
+            # 首先尝试直接匹配
             db_cursor.execute('''
-                SELECT id FROM evaluation_results 
+                SELECT id, result_file FROM evaluation_results 
                 WHERE result_file = ? OR result_file LIKE ?
             ''', (filename, f'%/{filename}'))
             
             result = db_cursor.fetchone()
-            return result[0] if result else None
+            if result:
+                result_id, stored_path = result
+                # 检查存储的路径是否真实存在
+                if os.path.exists(stored_path):
+                    return result_id
+                else:
+                    print(f"🔍 [数据库] 存储路径不存在: {stored_path}，开始查找实际位置...")
+            
+            # 如果直接匹配失败或文件不存在，尝试在多个目录中查找
+            results_folder = 'results'  # 与app.py中的配置保持一致
+            search_dirs = [
+                results_folder,
+                'results_history'  # 与results目录同级
+            ]
+            
+            actual_filepath = None
+            for search_dir in search_dirs:
+                if os.path.exists(search_dir):
+                    potential_path = os.path.join(search_dir, filename)
+                    if os.path.exists(potential_path):
+                        actual_filepath = potential_path
+                        print(f"✅ [数据库] 在 {search_dir} 中找到文件: {filename}")
+                        break
+            
+            if actual_filepath:
+                # 如果找到了实际文件，更新数据库记录
+                if result:  # 如果数据库中有记录但路径不对
+                    result_id = result[0] if isinstance(result, tuple) else result
+                    try:
+                        db_cursor.execute('''
+                            UPDATE evaluation_results 
+                            SET result_file = ? 
+                            WHERE id = ?
+                        ''', (actual_filepath, result_id))
+                        conn.commit()
+                        print(f"✅ [数据库] 已更新result_file路径: {result_id} -> {actual_filepath}")
+                        return result_id
+                    except Exception as e:
+                        print(f"⚠️ [数据库] 更新路径失败: {e}")
+                        return result_id
+                else:
+                    # 尝试通过文件名模糊匹配查找可能的记录
+                    # 去掉扩展名和时间戳，尝试匹配dataset_file
+                    base_filename = filename.replace('.csv', '')
+                    db_cursor.execute('''
+                        SELECT id FROM evaluation_results 
+                        WHERE dataset_file LIKE ? OR result_file LIKE ?
+                    ''', (f'%{base_filename}%', f'%{base_filename}%'))
+                    
+                    fuzzy_result = db_cursor.fetchone()
+                    if fuzzy_result:
+                        result_id = fuzzy_result[0]
+                        print(f"🔍 [数据库] 通过模糊匹配找到记录: {result_id}")
+                        # 更新该记录的result_file路径
+                        try:
+                            db_cursor.execute('''
+                                UPDATE evaluation_results 
+                                SET result_file = ? 
+                                WHERE id = ?
+                            ''', (actual_filepath, result_id))
+                            conn.commit()
+                            print(f"✅ [数据库] 已修复result_file路径: {result_id} -> {actual_filepath}")
+                            return result_id
+                        except Exception as e:
+                            print(f"⚠️ [数据库] 修复路径失败: {e}")
+                            return result_id
+            
+            print(f"❌ [数据库] 未找到文件 {filename} 对应的数据库记录")
+            return None
     
     def get_result_by_id(self, result_id: str) -> Optional[Dict]:
         """根据result_id获取评测结果详情"""
