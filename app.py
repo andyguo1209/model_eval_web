@@ -7,6 +7,7 @@ import pandas as pd
 import time
 import re
 import csv
+import sqlite3
 from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
 from werkzeug.utils import secure_filename
@@ -1128,6 +1129,70 @@ def debug_files():
     except Exception as e:
         return jsonify({'error': f'调试失败: {str(e)}'}), 500
 
+@app.route('/api/debug/csv_file_status/<path:filename>')
+@login_required
+def debug_csv_file_status(filename):
+    """调试CSV文件状态"""
+    try:
+        # 计算文件路径
+        filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+        
+        # 检查文件系统状态
+        file_exists = os.path.exists(filepath)
+        
+        # 检查数据库状态
+        result_id = None
+        db_record = None
+        if db:
+            result_id = db.get_result_id_by_filename(filename)
+            if result_id:
+                # 获取数据库中的详细记录
+                with sqlite3.connect(db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('SELECT * FROM evaluation_results WHERE id = ?', (result_id,))
+                    row = cursor.fetchone()
+                    if row:
+                        columns = [description[0] for description in cursor.description]
+                        db_record = dict(zip(columns, row))
+        
+        # 检查可能的文件位置
+        possible_files = []
+        
+        # 在results目录中查找
+        if os.path.exists(app.config['RESULTS_FOLDER']):
+            for file in os.listdir(app.config['RESULTS_FOLDER']):
+                if filename in file or file in filename:
+                    possible_files.append({
+                        'path': os.path.join(app.config['RESULTS_FOLDER'], file),
+                        'location': 'results',
+                        'filename': file
+                    })
+        
+        # 在results_history目录中查找
+        history_path = os.path.join(os.path.dirname(app.config['RESULTS_FOLDER']), 'results_history')
+        if os.path.exists(history_path):
+            for file in os.listdir(history_path):
+                if filename in file or file in filename:
+                    possible_files.append({
+                        'path': os.path.join(history_path, file),
+                        'location': 'results_history',
+                        'filename': file
+                    })
+        
+        return jsonify({
+            'filename': filename,
+            'target_filepath': filepath,
+            'file_exists': file_exists,
+            'database_result_id': result_id,
+            'database_record': db_record,
+            'possible_files': possible_files,
+            'results_folder': app.config['RESULTS_FOLDER'],
+            'files_in_results': os.listdir(app.config['RESULTS_FOLDER']) if os.path.exists(app.config['RESULTS_FOLDER']) else []
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
 @app.route('/delete_file/<filename>', methods=['DELETE'])
 @login_required
 def delete_file(filename):
@@ -2195,6 +2260,24 @@ def update_score():
         print(f"📁 [CSV文件] 目标文件路径: {filepath}")
         print(f"📁 [CSV文件] 文件是否存在: {os.path.exists(filepath)}")
         
+        # 如果文件不存在，尝试在其他位置查找
+        if not os.path.exists(filepath):
+            print(f"🔍 [文件查找] 在主results目录未找到文件，开始在其他位置搜索...")
+            found_filepath = None
+            
+            # 在results_history目录中查找
+            history_path = os.path.join(os.path.dirname(app.config['RESULTS_FOLDER']), 'results_history')
+            if os.path.exists(history_path):
+                for file in os.listdir(history_path):
+                    if file == filename:
+                        found_filepath = os.path.join(history_path, file)
+                        print(f"✅ [文件查找] 在results_history中找到文件: {found_filepath}")
+                        break
+            
+            # 如果在history中找到，使用该路径
+            if found_filepath:
+                filepath = found_filepath
+        
         if os.path.exists(filepath):
             print(f"📖 [CSV文件] 开始读取文件...")
             # 读取CSV文件
@@ -2293,15 +2376,32 @@ def update_score():
         else:
             # 如果CSV文件不存在但数据库操作成功，仍然返回成功
             if db and result_id:
-                print(f"⚠️ CSV文件不存在，但数据库更新成功")
+                print(f"⚠️ CSV文件未找到: {filename}")
+                print(f"📋 在以下位置搜索过文件:")
+                print(f"   - {os.path.join(app.config['RESULTS_FOLDER'], filename)}")
+                history_path = os.path.join(os.path.dirname(app.config['RESULTS_FOLDER']), 'results_history')
+                print(f"   - {os.path.join(history_path, filename)}")
+                print(f"✅ 数据库更新成功，但CSV文件同步失败")
             else:
                 return jsonify({'success': False, 'error': '文件不存在且数据库中无记录'}), 404
         
         print(f"🎉 [完成] 评分更新操作完成，准备返回结果")
         
+        # 准备返回信息
+        csv_updated = os.path.exists(filepath)
+        database_updated = result_id is not None
+        
+        # 构建消息
+        if csv_updated and database_updated:
+            message = f'{model_name} 的评分已更新为 {new_score} 分'
+        elif database_updated and not csv_updated:
+            message = f'{model_name} 的评分已更新为 {new_score} 分 (仅数据库，CSV文件未找到)'
+        else:
+            message = f'评分更新失败'
+        
         return jsonify({
             'success': True,
-            'message': f'{model_name} 的评分已更新为 {new_score} 分',
+            'message': message,
             'updated_score': new_score,
             'updated_reason': reason,
             'score_column': score_column,
@@ -2309,12 +2409,14 @@ def update_score():
             'row_index': row_index,  # 这是CSV文件中的实际行索引（从0开始）
             'debug_info': {
                 'filename': filename,
-                'filepath': filepath,
-                'file_exists': os.path.exists(filepath),
+                'target_filepath': os.path.join(app.config['RESULTS_FOLDER'], filename),
+                'actual_filepath': filepath,
+                'file_exists': csv_updated,
                 'database_result_id': result_id,
                 'model_name': model_name,
-                'csv_row_updated': True,
-                'database_updated': result_id is not None
+                'csv_updated': csv_updated,
+                'database_updated': database_updated,
+                'file_location': 'results_history' if 'results_history' in filepath else 'results' if csv_updated else 'not_found'
             }
         })
         
