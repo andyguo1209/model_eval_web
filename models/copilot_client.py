@@ -265,8 +265,27 @@ class CopilotClient:
         # 发送请求并解析响应
         async with sem_model:
             try:
+                # 详细请求日志 - 开始
+                print(f"📤 [Copilot请求] {model_name}")
+                print(f"🔗 URL: {model_config['url']}")
+                print(f"📋 Headers:")
+                for key, value in headers.items():
+                    if key.lower() == 'cookie':
+                        # 只显示Cookie的前50字符
+                        print(f"   {key}: {value[:50]}...")
+                    else:
+                        print(f"   {key}: {value}")
+                print(f"📄 Payload: {json.dumps(payload, ensure_ascii=False)}")
+                print(f"🚀 开始发送请求...")
+                # 详细请求日志 - 结束
+                
                 async with session.post(model_config["url"], headers=headers, json=payload, timeout=60) as resp:
                     raw_response = await resp.text()
+                    
+                    # 响应日志
+                    print(f"📥 [Copilot响应] HTTP {resp.status}")
+                    print(f"📊 响应长度: {len(raw_response)} 字符")
+                    print(f"📝 响应前200字符: {raw_response[:200]}...")
                     
                     if resp.status == 200:
                         # 检查是否为错误响应（即使HTTP 200）
@@ -275,6 +294,8 @@ class CopilotClient:
                                 error_data = json.loads(raw_response.strip())
                                 if error_data.get("code") == 401:
                                     print(f"❌ Copilot认证失败: Cookie已过期或无效")
+                                    print(f"💡 错误详情: {error_data}")
+                                    print(f"🔍 使用的Cookie环境变量: {model_config['cookie_env']}")
                                     return f"❌ Cookie认证失败: {error_data.get('msg', 'Unauthorized')}"
                                 else:
                                     print(f"❌ Copilot API错误: {error_data}")

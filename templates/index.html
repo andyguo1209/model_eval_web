@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI模型评测系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v=20250828v3">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(1, 10000) | random }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -67,6 +67,21 @@
                 <div class="card">
                     <h2><i class="fas fa-upload"></i> 上传评测文件</h2>
                     
+                    <!-- 正在进行的测评任务 -->
+                    <div class="running-tasks-section" id="running-tasks-section" style="display: none; margin-bottom: 20px;">
+                        <div class="card" style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px;">
+                            <div style="padding: 15px;">
+                                <h4 style="margin: 0 0 10px 0; color: #856404; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-clock" style="color: #f39c12;"></i>
+                                    正在进行的测评任务
+                                </h4>
+                                <div id="running-tasks-list">
+                                    <!-- 动态加载任务列表 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 快速入口 -->
                     <div class="quick-access" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
                         <a href="/history" style="display: inline-flex; align-items: center; gap: 8px; color: #495057; text-decoration: none; font-size: 14px; font-weight: 500; margin-right: 15px;">
@@ -197,6 +212,32 @@
                         </div>
                     </div>
 
+                    <!-- 评测配置 -->
+                    <div class="evaluation-config" style="margin-top: 20px;">
+                        <h3><i class="fas fa-cog"></i> 评测配置</h3>
+                        <div style="display: flex; flex-direction: column; gap: 15px;">
+                            <div class="config-item">
+                                <label for="result-name" style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
+                                    <i class="fas fa-tag"></i> 结果名称（可选）
+                                </label>
+                                <input type="text" 
+                                       id="result-name" 
+                                       placeholder="为此次评测起个名字，留空将自动生成" 
+                                       style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;"
+                                       maxlength="100">
+                                <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                                    建议包含数据集特征、模型对比目的等信息，方便后续查找
+                                </small>
+                            </div>
+                            <div class="config-item">
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #666;">
+                                    <input type="checkbox" id="save-to-history" checked>
+                                    <i class="fas fa-history"></i> 保存到评测历史
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="action-buttons">
                         <button class="btn btn-secondary" onclick="prevStep()">上一步</button>
                         <button class="btn btn-primary" id="start-btn" disabled>
@@ -243,6 +284,27 @@
                     <div class="log-area">
                         <h4>详细日志：</h4>
                         <div id="log-content" class="log-content"></div>
+                    </div>
+
+                    <!-- 任务控制按钮 -->
+                    <div class="task-controls" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                        <div class="control-buttons" style="display: flex; gap: 10px; justify-content: center;">
+                            <button class="btn btn-warning" id="pause-task-btn" onclick="pauseCurrentTask()" style="display: none;">
+                                <i class="fas fa-pause"></i> 暂停测评
+                            </button>
+                            <button class="btn btn-success" id="resume-task-btn" onclick="resumeCurrentTask()" style="display: none;">
+                                <i class="fas fa-play"></i> 继续测评
+                            </button>
+                            <button class="btn btn-danger" id="cancel-task-btn" onclick="cancelCurrentTask()">
+                                <i class="fas fa-times"></i> 取消测评
+                            </button>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px;">
+                            <small style="color: #6c757d;">
+                                <i class="fas fa-info-circle"></i>
+                                您可以暂时离开此页面，任务会在后台继续运行。可随时从主页重新进入查看进度。
+                            </small>
+                        </div>
                     </div>
                 </div>
             </section>

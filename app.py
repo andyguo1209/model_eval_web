@@ -11,12 +11,58 @@ from datetime import datetime, timedelta
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
 from werkzeug.utils import secure_filename
 # Removed google.generativeai import as we're using direct API calls
-from typing import Dict, Any, List, Optional
+from typing import Dict, Any, List, Optional, Tuple
+import unicodedata
 import threading
 from utils.env_manager import env_manager
+from config import GEMINI_MAX_OUTPUT_TOKENS, GEMINI_CONCURRENT_REQUESTS
 
 # 导入新的模型客户端
 from models.model_factory import model_factory
+
+def secure_chinese_filename(filename):
+    """
+    支持中文的安全文件名处理函数
+    保留中文字符，同时确保文件名安全
+    """
+    if not filename:
+        return filename
+    
+    # 移除路径分隔符和其他危险字符
+    dangerous_chars = ['/', '\\', '..', '<', '>', ':', '"', '|', '?', '*', '\0']
+    safe_filename = filename
+    
+    for char in dangerous_chars:
+        safe_filename = safe_filename.replace(char, '_')
+    
+    # 移除开头和结尾的点号和空格（Windows文件名限制）
+    safe_filename = safe_filename.strip('. ')
+    
+    # 限制文件名长度（考虑中文字符）
+    if len(safe_filename.encode('utf-8')) > 200:  # 200字节限制
+        # 保留扩展名
+        if '.' in safe_filename:
+            name, ext = safe_filename.rsplit('.', 1)
+            # 截断名称部分，保留扩展名
+            max_name_bytes = 200 - len(ext.encode('utf-8')) - 1  # -1 for dot
+            while len(name.encode('utf-8')) > max_name_bytes and name:
+                name = name[:-1]
+            safe_filename = f"{name}.{ext}"
+        else:
+            # 没有扩展名，直接截断
+            while len(safe_filename.encode('utf-8')) > 200 and safe_filename:
+                safe_filename = safe_filename[:-1]
+    
+    # 如果文件名为空或只有扩展名，提供默认名称
+    if not safe_filename or safe_filename.startswith('.'):
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        if '.' in filename:
+            ext = filename.split('.')[-1]
+            safe_filename = f"file_{timestamp}.{ext}"
+        else:
+            safe_filename = f"file_{timestamp}"
+    
+    return safe_filename
 
 # 🔧 加载.env文件中的环境变量
 print("🔧 加载环境变量...")
@@ -338,7 +384,7 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
             "temperature": 0.1,  # 降低随机性，提高JSON格式一致性
             "topK": 40,
             "topP": 0.95,
-            "maxOutputTokens": 2048,
+            "maxOutputTokens": GEMINI_MAX_OUTPUT_TOKENS,
         }
     }
     
@@ -593,7 +639,7 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 请现在输出评测结果的JSON：
 """
 
-def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[str, str], question_type: str = "") -> str:
+def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[str, str], question_type: str = "", filename: str = None) -> str:
     """构建客观题评测提示"""
     type_context = f"问题类型: {question_type}\n" if question_type else ""
     
@@ -604,8 +650,8 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
     model_keys = list(answers.keys())
     json_format = {f"模型{i+1}": {"评分": "0-5", "准确性": "正确/部分正确/错误", "理由": "评分理由"} for i in range(len(model_keys))}
     
-    return f"""
-你是一位专业的大模型测评工程师，请根据标准答案对模型回答进行客观、精确的评测。
+    # 获取自定义提示词（与主观题相同的逻辑）
+    custom_prompt = """你是一位专业的大模型测评工程师，请根据标准答案对模型回答进行客观、精确的评测。
 
 === 评分标准 ===
 - 5分：完全正确 - 答案准确无误，表述清晰完整，逻辑严密，语言地道自然
@@ -625,7 +671,24 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
 === 准确性评估标准 ===
 - 正确：答案与标准答案一致、等价或在合理范围内
 - 部分正确：答案包含标准答案的部分要素但不完整
-- 错误：答案与标准答案相悖、无关或存在重大错误
+- 错误：答案与标准答案相悖、无关或存在重大错误"""
+    
+    if filename:
+        print(f"🔍 [客观题评测引擎] 正在检查文件 {filename} 是否有自定义提示词...")
+        try:
+            file_prompt = db.get_file_prompt(filename)
+            if file_prompt:
+                prompt_length = len(file_prompt)
+                print(f"✅ [客观题评测引擎] 使用文件 {filename} 的自定义提示词，长度: {prompt_length} 字符")
+                custom_prompt = file_prompt
+            else:
+                print(f"📝 [客观题评测引擎] 文件 {filename} 未设置自定义提示词，使用系统默认提示词")
+        except Exception as e:
+            print(f"⚠️ [客观题评测引擎] 获取文件 {filename} 的自定义提示词失败: {e}")
+            print(f"🔄 [客观题评测引擎] 回退到使用系统默认提示词")
+    
+    return f"""
+{custom_prompt}
 
 === 评测任务 ===
 {type_context}问题: {query}
@@ -682,6 +745,9 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
         task_status[task_id].status = "评测中"
         task_status[task_id].total = len(data)
         task_status[task_id].progress = 0
+        
+        # 更新数据库状态
+        db.update_task_status(task_id, "running")
 
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     output_file = os.path.join(app.config['RESULTS_FOLDER'], f"evaluation_result_{timestamp}.csv")
@@ -710,59 +776,125 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
         writer = csv.writer(f)
         writer.writerow(headers)
         
-        for i, row in enumerate(data):
-            query = str(row.get("query", ""))
-            question_type = str(row.get("type", "未分类"))
-            standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
-            
-            # 获取各模型的答案
-            current_answers = {}
-            for model_name in model_names:
-                if i < len(model_results[model_name]):
-                    current_answers[model_name] = model_results[model_name][i]
-                else:
-                    current_answers[model_name] = "获取答案失败"
-            
-            # 构建评测提示
-            if mode == 'objective':
-                prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type)
-            else:
-                prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
-            
-            try:
-                print(f"🔄 开始评测第{i+1}题...")
-                gem_raw = await query_gemini_model(prompt, google_api_key)
-                result_json = parse_json_str(gem_raw)
-            except Exception as e:
-                print(f"❌ 评测第{i+1}题时出错: {e}")
-                result_json = {}
-            
-            # 构造CSV行数据
-            row_data = [i+1, question_type, query]
-            if mode == 'objective':
-                row_data.append(standard_answer)
-            
-            # 添加各模型的结果
-            for j, model_name in enumerate(model_names, 1):
-                model_key = f"模型{j}"
-                row_data.append(current_answers[model_name])  # 模型答案
+        # 创建并发任务来评测所有问题
+        print(f"🚀 开始并发评测，并发数: {GEMINI_CONCURRENT_REQUESTS}")
+        semaphore = asyncio.Semaphore(GEMINI_CONCURRENT_REQUESTS)
+        
+        async def evaluate_single_question(i: int, row: Dict) -> Tuple[int, List]:
+            """评测单个问题"""
+            async with semaphore:
+                # 检查任务是否被暂停或取消
+                if task_id in task_status:
+                    # 检查内存状态
+                    memory_status = task_status[task_id].status
+                    if memory_status == "已暂停":
+                        # 任务被暂停，等待继续
+                        while task_id in task_status and task_status[task_id].status == "已暂停":
+                            await asyncio.sleep(1)
+                        
+                        # 如果任务被删除，返回空结果
+                        if task_id not in task_status:
+                            print(f"任务 {task_id} 已被删除，跳过第{i+1}题")
+                            return i, []
+                    
+                    # 检查数据库状态
+                    db_task = db.get_running_task(task_id)
+                    if not db_task or db_task['status'] == 'cancelled':
+                        print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
+                        return i, []
+                    elif db_task['status'] == 'paused':
+                        # 任务被暂停，等待继续
+                        while True:
+                            await asyncio.sleep(1)
+                            db_task = db.get_running_task(task_id)
+                            if not db_task or db_task['status'] != 'paused':
+                                break
+                        
+                        # 再次检查任务是否存在
+                        if not db_task or db_task['status'] == 'cancelled':
+                            print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
+                            return i, []
                 
-                if model_key in result_json:
-                    row_data.append(result_json[model_key].get("评分", ""))  # 评分
-                    row_data.append(result_json[model_key].get("理由", ""))  # 理由
-                    if mode == 'objective':
-                        row_data.append(result_json[model_key].get("准确性", ""))  # 准确性
+                query = str(row.get("query", ""))
+                question_type = str(row.get("type", "未分类"))
+                standard_answer = str(row.get("answer", "")) if mode == 'objective' else ""
+                
+                # 获取各模型的答案
+                current_answers = {}
+                for model_name in model_names:
+                    if i < len(model_results[model_name]):
+                        current_answers[model_name] = model_results[model_name][i]
+                    else:
+                        current_answers[model_name] = "获取答案失败"
+                
+                # 构建评测提示
+                if mode == 'objective':
+                    prompt = build_objective_eval_prompt(query, standard_answer, current_answers, question_type, filename)
                 else:
-                    row_data.extend(["", ""])  # 评分、理由
-                    if mode == 'objective':
-                        row_data.append("")  # 准确性
-            
+                    prompt = build_subjective_eval_prompt(query, current_answers, question_type, filename)
+                
+                try:
+                    print(f"🔄 开始评测第{i+1}题...")
+                    gem_raw = await query_gemini_model(prompt, google_api_key)
+                    result_json = parse_json_str(gem_raw)
+                except Exception as e:
+                    print(f"❌ 评测第{i+1}题时出错: {e}")
+                    result_json = {}
+                
+                # 构造CSV行数据
+                row_data = [i+1, question_type, query]
+                if mode == 'objective':
+                    row_data.append(standard_answer)
+                
+                # 添加各模型的结果
+                for j, model_name in enumerate(model_names, 1):
+                    model_key = f"模型{j}"
+                    row_data.append(current_answers[model_name])  # 模型答案
+                    
+                    if model_key in result_json:
+                        row_data.append(result_json[model_key].get("评分", ""))  # 评分
+                        row_data.append(result_json[model_key].get("理由", ""))  # 理由
+                        if mode == 'objective':
+                            row_data.append(result_json[model_key].get("准确性", ""))  # 准确性
+                    else:
+                        row_data.extend(["", ""])  # 评分、理由
+                        if mode == 'objective':
+                            row_data.append("")  # 准确性
+                
+                return i, row_data
+        
+        # 创建所有评测任务
+        tasks = [evaluate_single_question(i, row) for i, row in enumerate(data)]
+        
+        # 并发执行所有任务
+        print(f"📊 开始并发执行 {len(tasks)} 个评测任务...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        
+        # 按序号排序并写入CSV
+        valid_results = []
+        for result in results:
+            if isinstance(result, Exception):
+                print(f"❌ 评测任务异常: {result}")
+                continue
+            if len(result) == 2 and len(result[1]) > 0:  # 有效结果
+                valid_results.append(result)
+        
+        # 按题目序号排序
+        valid_results.sort(key=lambda x: x[0])
+        
+        # 写入CSV并更新进度
+        for i, (question_index, row_data) in enumerate(valid_results):
             writer.writerow(row_data)
             
             # 更新进度
             if task_id in task_status:
-                task_status[task_id].progress += 1
-                task_status[task_id].current_step = f"已评测 {task_status[task_id].progress}/{task_status[task_id].total} 题"
+                task_status[task_id].progress = i + 1
+                task_status[task_id].current_step = f"已评测 {i + 1}/{len(valid_results)} 题"
+                
+                # 同时更新数据库
+                db.update_task_progress(task_id, task_status[task_id].progress, task_status[task_id].current_step)
+        
+        print(f"✅ 并发评测完成，成功处理 {len(valid_results)}/{len(data)} 题")
 
     return output_file
 
@@ -841,39 +973,134 @@ def get_uploaded_files():
         files = []
         
         if os.path.exists(upload_folder):
-            for filename in os.listdir(upload_folder):
+            # 获取文件列表并确保正确的编码处理
+            print(f"🔍 正在扫描文件夹: {upload_folder}")
+            try:
+                filenames = os.listdir(upload_folder)
+                print(f"📂 原始文件列表: {filenames}")
+                # 检查中文文件
+                chinese_files = [f for f in filenames if any('\u4e00' <= char <= '\u9fff' for char in f)]
+                print(f"🔤 包含中文的文件: {chinese_files}")
+            except UnicodeDecodeError as e:
+                print(f"⚠️ 编码错误: {e}")
+                # 如果遇到编码问题，尝试用不同编码读取
+                import locale
+                encoding = locale.getpreferredencoding()
+                print(f"🔧 使用系统编码: {encoding}")
+                filenames = [f.encode(encoding).decode('utf-8', errors='ignore') for f in os.listdir(upload_folder)]
+                print(f"📂 编码转换后文件列表: {filenames}")
+            
+            for filename in filenames:
                 if filename.endswith(('.xlsx', '.xls', '.csv')):
-                    filepath = os.path.join(upload_folder, filename)
-                    stat = os.stat(filepath)
-                    
-                    # 确保文件有提示词记录
-                    db.create_file_prompt_if_not_exists(filename)
-                    
-                    # 获取提示词信息
-                    prompt_info = db.get_file_prompt_info(filename)
-                    has_custom_prompt = prompt_info is not None
-                    
-                    files.append({
-                        'filename': filename,
-                        'size': stat.st_size,
-                        'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                        'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
-                        'has_custom_prompt': has_custom_prompt,
-                        'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None
-                    })
+                    try:
+                        filepath = os.path.join(upload_folder, filename)
+                        
+                        # 检查文件是否真实存在（防止编码问题导致的文件不存在）
+                        if not os.path.exists(filepath):
+                            print(f"⚠️ 文件不存在或编码问题: {filename}")
+                            continue
+                            
+                        stat = os.stat(filepath)
+                        
+                        # 确保文件有提示词记录
+                        db.create_file_prompt_if_not_exists(filename)
+                        
+                        # 获取提示词信息
+                        prompt_info = db.get_file_prompt_info(filename)
+                        has_custom_prompt = prompt_info is not None
+                        
+                        # 确保文件名是有效的UTF-8字符串
+                        safe_filename = filename
+                        if isinstance(filename, bytes):
+                            safe_filename = filename.decode('utf-8', errors='replace')
+                        
+                        files.append({
+                            'filename': safe_filename,
+                            'size': stat.st_size,
+                            'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                            'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
+                            'has_custom_prompt': has_custom_prompt,
+                            'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None
+                        })
+                        
+                        print(f"✅ 加载测试集文件: {safe_filename}")
+                        
+                    except Exception as file_error:
+                        print(f"❌ 处理文件 {filename} 时出错: {file_error}")
+                        continue
         
         # 按上传时间倒序排列
         files.sort(key=lambda x: x['upload_time'], reverse=True)
-        return jsonify({'success': True, 'files': files})
+        print(f"📋 共找到 {len(files)} 个测试集文件")
+        
+        # 设置正确的响应头确保中文正确传输
+        response = jsonify({'success': True, 'files': files})
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        return response
+        
     except Exception as e:
+        print(f"❌ 获取文件列表失败: {e}")
         return jsonify({'error': f'获取文件列表失败: {str(e)}'}), 500
+
+@app.route('/api/debug/files', methods=['GET'])
+@login_required  
+def debug_files():
+    """调试：显示文件系统中的所有文件"""
+    try:
+        upload_folder = app.config['UPLOAD_FOLDER']
+        debug_info = {
+            'upload_folder': upload_folder,
+            'folder_exists': os.path.exists(upload_folder),
+            'all_files': [],
+            'supported_files': [],
+            'chinese_files': []
+        }
+        
+        if os.path.exists(upload_folder):
+            # 获取所有文件
+            all_files = os.listdir(upload_folder)
+            debug_info['all_files'] = all_files
+            
+            # 过滤支持的文件格式
+            supported_files = [f for f in all_files if f.endswith(('.xlsx', '.xls', '.csv'))]
+            debug_info['supported_files'] = supported_files
+            
+            # 查找包含中文的文件
+            chinese_files = [f for f in supported_files if any('\u4e00' <= char <= '\u9fff' for char in f)]
+            debug_info['chinese_files'] = chinese_files
+            
+            # 文件详细信息
+            file_details = []
+            for filename in supported_files:
+                filepath = os.path.join(upload_folder, filename)
+                try:
+                    stat = os.stat(filepath)
+                    file_details.append({
+                        'filename': filename,
+                        'size': stat.st_size,
+                        'is_chinese': any('\u4e00' <= char <= '\u9fff' for char in filename),
+                        'encoded_bytes': list(filename.encode('utf-8')),
+                        'upload_time': datetime.fromtimestamp(stat.st_mtime).isoformat()
+                    })
+                except Exception as e:
+                    file_details.append({
+                        'filename': filename,
+                        'error': str(e)
+                    })
+            
+            debug_info['file_details'] = file_details
+        
+        return jsonify(debug_info)
+        
+    except Exception as e:
+        return jsonify({'error': f'调试失败: {str(e)}'}), 500
 
 @app.route('/delete_file/<filename>', methods=['DELETE'])
 @login_required
 def delete_file(filename):
     """删除上传的文件"""
     try:
-        filename = secure_filename(filename)
+        filename = secure_chinese_filename(filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
         if not os.path.exists(filepath):
@@ -889,7 +1116,7 @@ def delete_file(filename):
 def download_uploaded_file(filename):
     """下载上传的文件"""
     try:
-        filename = secure_filename(filename)
+        filename = secure_chinese_filename(filename)
         upload_folder = app.config['UPLOAD_FOLDER']
         return send_from_directory(upload_folder, filename, as_attachment=True)
     except Exception as e:
@@ -899,10 +1126,71 @@ def download_uploaded_file(filename):
 @login_required
 def check_file_exists(filename):
     """检查文件是否已存在"""
-    filename = secure_filename(filename)
+    filename = secure_chinese_filename(filename)
     filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
     exists = os.path.exists(filepath)
     return jsonify({'exists': exists, 'filename': filename})
+
+@app.route('/api/dataset/rename', methods=['PUT'])
+@login_required
+def rename_dataset_file():
+    """重命名数据集文件"""
+    try:
+        data = request.get_json()
+        original_filename = data.get('original_filename', '').strip()
+        new_filename = data.get('new_filename', '').strip()
+        
+        if not original_filename or not new_filename:
+            return jsonify({'success': False, 'error': '文件名不能为空'}), 400
+        
+        # 安全文件名处理
+        original_filename = secure_chinese_filename(original_filename)
+        new_filename = secure_chinese_filename(new_filename)
+        print(f"🏷️ 重命名文件: '{original_filename}' -> '{new_filename}'")
+        
+        # 构建文件路径
+        upload_folder = app.config['UPLOAD_FOLDER']
+        original_path = os.path.join(upload_folder, original_filename)
+        new_path = os.path.join(upload_folder, new_filename)
+        
+        # 检查原文件是否存在
+        if not os.path.exists(original_path):
+            return jsonify({'success': False, 'error': '原文件不存在'}), 404
+        
+        # 检查新文件名是否已存在
+        if os.path.exists(new_path):
+            return jsonify({'success': False, 'error': '目标文件名已存在'}), 400
+        
+        # 重命名文件
+        os.rename(original_path, new_path)
+        print(f"✅ 文件重命名成功: {original_filename} -> {new_filename}")
+        
+        # 更新数据库中的文件提示词关联（如果存在）
+        try:
+            if db:
+                # 检查是否有与原文件名关联的提示词
+                old_prompt = db.get_file_prompt(original_filename)
+                if old_prompt:
+                    # 为新文件名设置相同的提示词
+                    db.set_file_prompt(new_filename, old_prompt, 'file_rename')
+                    print(f"✅ 提示词关联已更新: {original_filename} -> {new_filename}")
+                    
+                    # 可选：删除旧的提示词记录（为了避免数据冗余）
+                    # 这里可以选择保留或删除，取决于业务需求
+        except Exception as e:
+            print(f"⚠️ 更新提示词关联时出现警告: {e}")
+            # 不阻断重命名操作，仅记录警告
+        
+        return jsonify({
+            'success': True, 
+            'message': '文件重命名成功',
+            'original_filename': original_filename,
+            'new_filename': new_filename
+        })
+        
+    except Exception as e:
+        print(f"❌ 文件重命名失败: {e}")
+        return jsonify({'success': False, 'error': f'重命名失败: {str(e)}'}), 500
 
 @app.route('/upload_file', methods=['POST'])
 @login_required
@@ -926,8 +1214,9 @@ def upload_file():
     overwrite = request.form.get('overwrite', 'false').lower() == 'true'
     
     if file and file.filename.endswith(('.xlsx', '.xls', '.csv')):
-        filename = secure_filename(file.filename)
+        filename = secure_chinese_filename(file.filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        print(f"📤 上传文件: 原始名称='{file.filename}' -> 安全名称='{filename}'")
         
         # 如果文件存在且不允许覆盖，返回提示
         if os.path.exists(filepath) and not overwrite:
@@ -980,7 +1269,7 @@ def upload_file():
 def analyze_existing_file(filename):
     """分析已存在的文件"""
     try:
-        filename = secure_filename(filename)
+        filename = secure_chinese_filename(filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
         if not os.path.exists(filepath):
@@ -1043,6 +1332,8 @@ def start_evaluation():
     filename = data.get('filename')
     selected_models = data.get('selected_models', [])
     force_mode = data.get('force_mode')  # 'auto', 'subjective', 'objective'
+    custom_name = data.get('custom_name', '').strip()  # 自定义结果名称
+    save_to_history = data.get('save_to_history', True)  # 是否保存到历史记录
     
     if not filename:
         return jsonify({'error': '缺少文件名'}), 400
@@ -1093,6 +1384,20 @@ def start_evaluation():
         task_status[task_id].start_time = datetime.now()
         task_status[task_id].question_count = len(data_list)
         
+        # 同时保存到数据库
+        task_name = f"{os.path.basename(filename)}_{mode}评测"
+        current_user_id = session.get('user_id', 'anonymous')
+        db.create_running_task(
+            task_id=task_id,
+            task_name=task_name,
+            dataset_file=filepath,
+            dataset_filename=filename,
+            evaluation_mode=mode,
+            selected_models=selected_models,
+            total=len(data_list),
+            created_by=current_user_id
+        )
+        
         # 在主线程中获取所有需要的数据
         headers_dict = dict(request.headers)
         google_api_key = GOOGLE_API_KEY or request.headers.get('X-Google-API-Key')
@@ -1112,24 +1417,32 @@ def start_evaluation():
                 task_status[task_id].current_step = f"评测完成，结果已保存到 {os.path.basename(output_file)}"
                 task_status[task_id].end_time = datetime.now()
                 
+                # 同时更新数据库
+                db.update_task_status(task_id, "completed", result_file=output_file)
+                
                 # 保存到历史记录
-                try:
-                    evaluation_data = {
-                        'dataset_file': filename,
-                        'models': selected_models,
-                        'evaluation_mode': mode,
-                        'start_time': task_status[task_id].start_time.isoformat(),
-                        'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
-                        'question_count': len(data_list)
-                    }
-                    history_manager.save_evaluation_result(evaluation_data, output_file)
-                except Exception as e:
-                    print(f"保存历史记录失败: {e}")
+                if save_to_history:
+                    try:
+                        evaluation_data = {
+                            'dataset_file': filename,
+                            'models': selected_models,
+                            'evaluation_mode': mode,
+                            'start_time': task_status[task_id].start_time.isoformat(),
+                            'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
+                            'question_count': len(data_list),
+                            'custom_name': custom_name  # 传递自定义名称
+                        }
+                        history_manager.save_evaluation_result(evaluation_data, output_file)
+                    except Exception as e:
+                        print(f"保存历史记录失败: {e}")
                 
             except Exception as e:
                 task_status[task_id].status = "失败"
                 task_status[task_id].error_message = str(e)
                 print(f"评测任务失败: {e}")  # 添加日志
+                
+                # 同时更新数据库
+                db.update_task_status(task_id, "failed", error_message=str(e))
         
         # 在后台运行任务
         thread = threading.Thread(target=task)
@@ -1668,16 +1981,42 @@ def view_history(result_id):
     except Exception as e:
         return jsonify({'error': f'处理异常: {str(e)}'}), 500
 
+@app.route('/api/history/rename/<result_id>', methods=['PUT'])
+@login_required
+def rename_history_result(result_id):
+    """重命名历史评测结果"""
+    try:
+        data = request.get_json()
+        new_name = data.get('new_name', '').strip()
+        
+        if not new_name:
+            return jsonify({'success': False, 'error': '名称不能为空'}), 400
+            
+        if len(new_name) > 100:
+            return jsonify({'success': False, 'error': '名称长度不能超过100个字符'}), 400
+        
+        success = history_manager.rename_result(result_id, new_name)
+        if success:
+            return jsonify({'success': True, 'message': '重命名成功'})
+        else:
+            return jsonify({'success': False, 'error': '重命名失败'}), 400
+    except Exception as e:
+        return jsonify({'success': False, 'error': str(e)}), 500
+
 @app.route('/api/history/delete/<result_id>', methods=['DELETE'])
 @login_required
 def delete_history_result(result_id):
-    """删除历史评测结果"""
+    """删除历史评测结果和对应的CSV文件"""
     try:
-        success = history_manager.delete_result(result_id)
-        if success:
-            return jsonify({'success': True, 'message': '删除成功'})
+        result = history_manager.delete_result(result_id)
+        if result.get('success'):
+            return jsonify({
+                'success': True, 
+                'message': result.get('message', '删除成功'),
+                'deleted_files': result.get('deleted_files', [])
+            })
         else:
-            return jsonify({'success': False, 'error': '删除失败'}), 400
+            return jsonify({'success': False, 'error': result.get('error', '删除失败')}), 400
     except Exception as e:
         return jsonify({'success': False, 'error': str(e)}), 500
 
@@ -2572,7 +2911,7 @@ def change_user_password(user_id):
 def get_file_prompt(filename):
     """获取文件的自定义提示词"""
     try:
-        filename = secure_filename(filename)
+        filename = secure_chinese_filename(filename)
         
         # 获取当前用户信息
         current_user = db.get_user_by_id(session['user_id'])
@@ -2617,7 +2956,7 @@ def get_file_prompt(filename):
 def set_file_prompt(filename):
     """设置文件的自定义提示词"""
     try:
-        filename = secure_filename(filename)
+        filename = secure_chinese_filename(filename)
         data = request.get_json()
         custom_prompt = data.get('custom_prompt', '').strip()
         
@@ -2984,6 +3323,172 @@ def delete_scoring_criteria(criteria_id):
 
 # ========== 移除了普通用户的评分标准查看功能 ==========
 # 已简化为只保留"编辑提示词"功能，评分标准现在只能通过提示词编辑查看
+
+
+# ========== 任务管理路由 ==========
+
+@app.route('/api/tasks/running', methods=['GET'])
+@login_required
+def get_running_tasks():
+    """获取正在进行的任务列表"""
+    try:
+        current_user_id = session.get('user_id', 'anonymous')
+        tasks = db.get_running_tasks(status='running', created_by=current_user_id)
+        
+        # 合并内存中的任务状态信息
+        for task in tasks:
+            task_id = task['task_id']
+            if task_id in task_status:
+                memory_task = task_status[task_id]
+                task.update({
+                    'memory_status': memory_task.status,
+                    'memory_progress': memory_task.progress,
+                    'memory_current_step': memory_task.current_step,
+                    'is_active': True
+                })
+            else:
+                task['is_active'] = False
+        
+        return jsonify({
+            'success': True,
+            'tasks': tasks
+        })
+    except Exception as e:
+        print(f"❌ 获取运行任务失败: {e}")
+        return jsonify({'error': f'获取任务列表失败: {str(e)}'}), 500
+
+@app.route('/api/tasks/<task_id>/pause', methods=['POST'])
+@login_required
+def pause_task(task_id):
+    """暂停任务"""
+    try:
+        # 检查任务是否存在且属于当前用户
+        current_user_id = session.get('user_id', 'anonymous')
+        task = db.get_running_task(task_id)
+        
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        
+        if task['created_by'] != current_user_id:
+            return jsonify({'error': '无权限操作此任务'}), 403
+        
+        if task['status'] != 'running':
+            return jsonify({'error': '只能暂停正在运行的任务'}), 400
+        
+        # 更新内存和数据库状态
+        if task_id in task_status:
+            task_status[task_id].status = "已暂停"
+        
+        db.update_task_status(task_id, "paused")
+        
+        return jsonify({
+            'success': True,
+            'message': '任务已暂停'
+        })
+    except Exception as e:
+        print(f"❌ 暂停任务失败: {e}")
+        return jsonify({'error': f'暂停任务失败: {str(e)}'}), 500
+
+@app.route('/api/tasks/<task_id>/resume', methods=['POST'])
+@login_required
+def resume_task(task_id):
+    """继续任务"""
+    try:
+        # 检查任务是否存在且属于当前用户
+        current_user_id = session.get('user_id', 'anonymous')
+        task = db.get_running_task(task_id)
+        
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        
+        if task['created_by'] != current_user_id:
+            return jsonify({'error': '无权限操作此任务'}), 403
+        
+        if task['status'] != 'paused':
+            return jsonify({'error': '只能继续已暂停的任务'}), 400
+        
+        # 更新内存和数据库状态
+        if task_id in task_status:
+            task_status[task_id].status = "运行中"
+        
+        db.update_task_status(task_id, "running")
+        
+        return jsonify({
+            'success': True,
+            'message': '任务已继续'
+        })
+    except Exception as e:
+        print(f"❌ 继续任务失败: {e}")
+        return jsonify({'error': f'继续任务失败: {str(e)}'}), 500
+
+@app.route('/api/tasks/<task_id>/cancel', methods=['DELETE'])
+@login_required
+def cancel_task(task_id):
+    """取消/删除任务"""
+    try:
+        # 检查任务是否存在且属于当前用户
+        current_user_id = session.get('user_id', 'anonymous')
+        task = db.get_running_task(task_id)
+        
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        
+        if task['created_by'] != current_user_id:
+            return jsonify({'error': '无权限操作此任务'}), 403
+        
+        # 从内存中删除任务状态
+        if task_id in task_status:
+            del task_status[task_id]
+        
+        # 从数据库中删除任务记录
+        db.delete_running_task(task_id)
+        
+        return jsonify({
+            'success': True,
+            'message': '任务已删除'
+        })
+    except Exception as e:
+        print(f"❌ 删除任务失败: {e}")
+        return jsonify({'error': f'删除任务失败: {str(e)}'}), 500
+
+@app.route('/api/tasks/<task_id>/connect', methods=['POST'])
+@login_required
+def connect_to_task(task_id):
+    """连接到现有任务（重新进入进度页面）"""
+    try:
+        # 检查任务是否存在且属于当前用户
+        current_user_id = session.get('user_id', 'anonymous')
+        task = db.get_running_task(task_id)
+        
+        if not task:
+            return jsonify({'error': '任务不存在'}), 404
+        
+        if task['created_by'] != current_user_id:
+            return jsonify({'error': '无权限访问此任务'}), 403
+        
+        # 如果内存中没有此任务，尝试从数据库恢复
+        if task_id not in task_status and task['status'] == 'running':
+            # 重新创建内存中的任务状态
+            task_status[task_id] = TaskStatus(task_id)
+            task_status[task_id].evaluation_mode = task['evaluation_mode']
+            task_status[task_id].selected_models = task['selected_models']
+            task_status[task_id].progress = task['progress']
+            task_status[task_id].total = task['total']
+            task_status[task_id].current_step = task['current_step']
+            task_status[task_id].status = "运行中"
+            
+            # 从数据库时间戳解析
+            if task['started_at']:
+                task_status[task_id].start_time = datetime.fromisoformat(task['started_at'])
+        
+        return jsonify({
+            'success': True,
+            'task_id': task_id,
+            'task': task
+        })
+    except Exception as e:
+        print(f"❌ 连接任务失败: {e}")
+        return jsonify({'error': f'连接任务失败: {str(e)}'}), 500
 
 
 # 初始化默认管理员账户

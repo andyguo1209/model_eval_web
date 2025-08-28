@@ -692,6 +692,9 @@
                             <button class="card-btn" onclick="viewDetail('${result.id}')" title="查看详情">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            <button class="card-btn" onclick="renameResult('${result.id}', '${result.name.replace(/'/g, '\\\'')}')" title="重命名">
+                                <i class="fas fa-edit"></i>
+                            </button>
                             <button class="card-btn" onclick="downloadResult('${result.id}')" title="下载结果">
                                 <i class="fas fa-download"></i>
                             </button>
@@ -891,9 +894,53 @@
             window.open(`/annotate/${resultId}`, '_blank');
         }
         
+        // 重命名结果
+        async function renameResult(resultId, currentName) {
+            // 从当前名称中移除时间戳后缀，提取用户友好的名称
+            const cleanName = currentName.replace(/_\d{8}_\d{6}$/, '');
+            
+            const newName = prompt('请输入新的结果名称:', cleanName);
+            if (newName === null || newName.trim() === '') {
+                return;
+            }
+            
+            const trimmedName = newName.trim();
+            if (trimmedName === cleanName) {
+                return; // 名称没有变化
+            }
+            
+            if (trimmedName.length > 100) {
+                showError('名称长度不能超过100个字符');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/api/history/rename/${resultId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        new_name: trimmedName
+                    })
+                });
+                
+                const data = await response.json();
+                
+                if (data.success) {
+                    showSuccess('重命名成功');
+                    loadHistory();
+                } else {
+                    showError(data.error || '重命名失败');
+                }
+            } catch (error) {
+                showError('重命名失败: ' + error.message);
+            }
+        }
+
         // 删除结果
         async function deleteResult(resultId) {
-            if (!confirm('确定要删除这个评测结果吗？此操作不可恢复。')) {
+            if (!confirm('确定要删除这个评测结果吗？\n\n⚠️ 此操作将同时删除：\n• 数据库中的评测记录\n• 对应的CSV结果文件\n• 相关的历史文件\n\n此操作不可恢复！')) {
                 return;
             }
             
@@ -905,7 +952,11 @@
                 const data = await response.json();
                 
                 if (data.success) {
-                    showSuccess('删除成功');
+                    let successMsg = data.message || '删除成功';
+                    if (data.deleted_files && data.deleted_files.length > 0) {
+                        successMsg += `\n已删除 ${data.deleted_files.length} 个相关文件`;
+                    }
+                    showSuccess(successMsg);
                     loadHistory();
                     loadStatistics();
                 } else {

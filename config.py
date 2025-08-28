@@ -57,8 +57,8 @@ MAX_CONCURRENT_REQUESTS = int(os.getenv("MAX_CONCURRENT_REQUESTS", 10))
 REQUEST_TIMEOUT = int(os.getenv("REQUEST_TIMEOUT", 60))
 
 # Gemini 特定配置
-GEMINI_CONCURRENT_REQUESTS = int(os.getenv("GEMINI_CONCURRENT_REQUESTS", 3))  # Gemini并发数，避免过载
-GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", 4096))  # Gemini最大输出token数
+GEMINI_CONCURRENT_REQUESTS = int(os.getenv("GEMINI_CONCURRENT_REQUESTS", 5))  # Gemini并发数，提升评测效率
+GEMINI_MAX_OUTPUT_TOKENS = int(os.getenv("GEMINI_MAX_OUTPUT_TOKENS", 8192))  # Gemini最大输出token数 (大幅增加限制)
 
 def check_api_keys():
     """检查必需的API密钥是否已配置"""

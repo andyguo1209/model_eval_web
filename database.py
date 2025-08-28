@@ -144,11 +144,76 @@ class EvaluationDatabase:
                 )
             ''')
             
+            # 7. 运行时任务管理表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS running_tasks (
+                    task_id TEXT PRIMARY KEY,
+                    task_name TEXT NOT NULL,
+                    status TEXT DEFAULT 'running', -- 'running', 'paused', 'completed', 'failed', 'cancelled'
+                    
+                    -- 任务配置
+                    dataset_file TEXT NOT NULL,
+                    dataset_filename TEXT NOT NULL,
+                    evaluation_mode TEXT NOT NULL, -- 'objective' or 'subjective'
+                    selected_models TEXT NOT NULL, -- JSON格式存储模型列表
+                    
+                    -- 进度信息
+                    progress INTEGER DEFAULT 0,
+                    total INTEGER DEFAULT 0,
+                    current_step TEXT DEFAULT '',
+                    
+                    -- 时间信息
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    started_at TIMESTAMP,
+                    paused_at TIMESTAMP,
+                    completed_at TIMESTAMP,
+                    
+                    -- 结果信息
+                    result_file TEXT,
+                    error_message TEXT,
+                    
+                    -- 元数据
+                    metadata TEXT, -- JSON格式存储额外信息
+                    created_by TEXT
+                )
+            ''')
+            
+            # 8. 系统配置表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS system_configs (
+                    id TEXT PRIMARY KEY,
+                    config_key TEXT UNIQUE NOT NULL,
+                    config_value TEXT,
+                    config_type TEXT DEFAULT 'string', -- 'string', 'number', 'boolean', 'json'
+                    description TEXT,
+                    category TEXT DEFAULT 'general',
+                    is_sensitive BOOLEAN DEFAULT FALSE,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_by TEXT DEFAULT 'system'
+                )
+            ''')
+            
+            # 9. 文件提示词管理表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS file_prompts (
+                    id TEXT PRIMARY KEY,
+                    filename TEXT UNIQUE NOT NULL,
+                    custom_prompt TEXT NOT NULL,
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    created_by TEXT DEFAULT 'system',
+                    updated_by TEXT DEFAULT 'system'
+                )
+            ''')
+            
             # 创建索引提高查询性能
             db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_project ON evaluation_results(project_id)')
             db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_created ON evaluation_results(created_at)')
             db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_result ON annotations(result_id)')
             db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_annotator ON annotations(annotator)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_running_tasks_status ON running_tasks(status)')
+            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_running_tasks_created ON running_tasks(created_at)')
             
             conn.commit()
     
@@ -850,6 +915,195 @@ class EvaluationDatabase:
                 }
                 for row in rows
             ]
+    
+    # ========== 运行时任务管理方法 ==========
+    
+    def create_running_task(self, task_id: str, task_name: str, dataset_file: str, 
+                           dataset_filename: str, evaluation_mode: str, selected_models: List[str],
+                           total: int, created_by: str = 'system') -> bool:
+        """创建运行时任务记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO running_tasks 
+                    (task_id, task_name, dataset_file, dataset_filename, evaluation_mode, 
+                     selected_models, total, started_at, created_by)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    task_id, task_name, dataset_file, dataset_filename, evaluation_mode,
+                    json.dumps(selected_models), total, datetime.now().isoformat(), created_by
+                ))
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"创建运行时任务失败: {e}")
+            return False
+    
+    def update_task_progress(self, task_id: str, progress: int, current_step: str = '') -> bool:
+        """更新任务进度"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE running_tasks 
+                    SET progress = ?, current_step = ?
+                    WHERE task_id = ?
+                ''', (progress, current_step, task_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"更新任务进度失败: {e}")
+            return False
+    
+    def update_task_status(self, task_id: str, status: str, **kwargs) -> bool:
+        """更新任务状态"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 构建更新字段
+                update_fields = ['status = ?']
+                values = [status]
+                
+                # 根据状态添加时间戳
+                if status == 'paused':
+                    update_fields.append('paused_at = ?')
+                    values.append(datetime.now().isoformat())
+                elif status == 'completed':
+                    update_fields.append('completed_at = ?')
+                    values.append(datetime.now().isoformat())
+                    if 'result_file' in kwargs:
+                        update_fields.append('result_file = ?')
+                        values.append(kwargs['result_file'])
+                elif status == 'failed':
+                    if 'error_message' in kwargs:
+                        update_fields.append('error_message = ?')
+                        values.append(kwargs['error_message'])
+                
+                values.append(task_id)
+                
+                cursor.execute(f'''
+                    UPDATE running_tasks 
+                    SET {', '.join(update_fields)}
+                    WHERE task_id = ?
+                ''', values)
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"更新任务状态失败: {e}")
+            return False
+    
+    def update_evaluation_result_name(self, result_id: str, new_name: str) -> bool:
+        """更新评测结果名称"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE evaluation_results 
+                    SET name = ?
+                    WHERE id = ?
+                ''', (new_name, result_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"更新结果名称失败: {e}")
+            return False
+    
+    def get_running_task(self, task_id: str) -> Optional[Dict]:
+        """获取运行时任务信息"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT * FROM running_tasks WHERE task_id = ?
+                ''', (task_id,))
+                
+                row = cursor.fetchone()
+                if row:
+                    columns = [description[0] for description in cursor.description]
+                    task_data = dict(zip(columns, row))
+                    # 解析JSON字段
+                    if task_data.get('selected_models'):
+                        task_data['selected_models'] = json.loads(task_data['selected_models'])
+                    if task_data.get('metadata'):
+                        task_data['metadata'] = json.loads(task_data['metadata'])
+                    return task_data
+                return None
+        except Exception as e:
+            print(f"获取运行时任务失败: {e}")
+            return None
+    
+    def get_running_tasks(self, status: str = None, created_by: str = None) -> List[Dict]:
+        """获取运行时任务列表"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = 'SELECT * FROM running_tasks'
+                params = []
+                conditions = []
+                
+                if status:
+                    conditions.append('status = ?')
+                    params.append(status)
+                
+                if created_by:
+                    conditions.append('created_by = ?')
+                    params.append(created_by)
+                
+                if conditions:
+                    query += ' WHERE ' + ' AND '.join(conditions)
+                
+                query += ' ORDER BY created_at DESC'
+                
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                
+                columns = [description[0] for description in cursor.description]
+                tasks = []
+                for row in rows:
+                    task_data = dict(zip(columns, row))
+                    # 解析JSON字段
+                    if task_data.get('selected_models'):
+                        task_data['selected_models'] = json.loads(task_data['selected_models'])
+                    if task_data.get('metadata'):
+                        task_data['metadata'] = json.loads(task_data['metadata'])
+                    tasks.append(task_data)
+                
+                return tasks
+        except Exception as e:
+            print(f"获取运行时任务列表失败: {e}")
+            return []
+    
+    def delete_running_task(self, task_id: str) -> bool:
+        """删除运行时任务记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('DELETE FROM running_tasks WHERE task_id = ?', (task_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"删除运行时任务失败: {e}")
+            return False
+    
+    def cleanup_completed_tasks(self, days_old: int = 7) -> int:
+        """清理旧的已完成任务"""
+        try:
+            cutoff_date = (datetime.now() - timedelta(days=days_old)).isoformat()
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    DELETE FROM running_tasks 
+                    WHERE status IN ('completed', 'failed', 'cancelled') 
+                    AND completed_at < ?
+                ''', (cutoff_date,))
+                conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            print(f"清理已完成任务失败: {e}")
+            return 0
 
 
 # 创建全局数据库实例

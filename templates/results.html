@@ -6,6 +6,8 @@
     <title>评测结果 - AI模型评测系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <!-- Markdown解析库 -->
+    <script src="https://cdn.jsdelivr.net/npm/marked@5.1.1/marked.min.js"></script>
     <style>
         .results-container {
             max-width: 1400px;
@@ -431,32 +433,371 @@
             background: rgba(0,0,0,0.5);
         }
         
+        /* Markdown内容样式 */
+        .markdown-content {
+            line-height: 1.6;
+            color: #333;
+            height: 100% !important;
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            box-sizing: border-box !important;
+            overflow-y: auto !important;
+        }
+        
+
+        
+        .markdown-content h1,
+        .markdown-content h2,
+        .markdown-content h3,
+        .markdown-content h4,
+        .markdown-content h5,
+        .markdown-content h6 {
+            margin: 20px 0 10px 0;
+            font-weight: 600;
+            color: #2c3e50;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 5px;
+        }
+        
+        .markdown-content h1 { font-size: 1.8em; }
+        .markdown-content h2 { font-size: 1.6em; }
+        .markdown-content h3 { font-size: 1.4em; }
+        .markdown-content h4 { font-size: 1.2em; }
+        .markdown-content h5 { font-size: 1.1em; }
+        .markdown-content h6 { font-size: 1em; }
+        
+        .markdown-content p {
+            margin: 10px 0;
+        }
+        
+        .markdown-content ul,
+        .markdown-content ol {
+            margin: 10px 0;
+            padding-left: 30px;
+        }
+        
+        .markdown-content li {
+            margin: 5px 0;
+        }
+        
+        .markdown-content blockquote {
+            border-left: 4px solid #3498db;
+            margin: 15px 0;
+            padding: 10px 20px;
+            background: #f8f9fa;
+            border-radius: 0 4px 4px 0;
+            font-style: italic;
+        }
+        
+        .markdown-content code {
+            background: #f1f2f6;
+            padding: 2px 6px;
+            border-radius: 3px;
+            font-family: 'Consolas', 'Monaco', 'Courier New', monospace;
+            font-size: 0.9em;
+            color: #e83e8c;
+        }
+        
+        .markdown-content pre {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            border: 1px solid #e9ecef;
+            margin: 15px 0;
+        }
+        
+        .markdown-content pre code {
+            background: none;
+            padding: 0;
+            color: #333;
+        }
+        
+        .markdown-content table {
+            border-collapse: collapse;
+            width: 100%;
+            margin: 15px 0;
+        }
+        
+        .markdown-content th,
+        .markdown-content td {
+            border: 1px solid #ddd;
+            padding: 8px 12px;
+            text-align: left;
+        }
+        
+        .markdown-content th {
+            background-color: #f8f9fa;
+            font-weight: 600;
+        }
+        
+        .markdown-content tr:nth-child(even) {
+            background-color: #f9f9f9;
+        }
+        
+        .markdown-content a {
+            color: #3498db;
+            text-decoration: none;
+        }
+        
+        .markdown-content a:hover {
+            text-decoration: underline;
+        }
+        
+        .markdown-content strong {
+            font-weight: 600;
+            color: #2c3e50;
+        }
+        
+        .markdown-content em {
+            font-style: italic;
+            color: #7f8c8d;
+        }
+        
+        .markdown-content hr {
+            border: none;
+            border-top: 2px solid #eee;
+            margin: 20px 0;
+        }
+        
+        /* 内容容器样式 */
+        .content-container {
+            position: relative;
+        }
+        
+        .content-text {
+            background: #f8f9fa;
+            border: 1px solid #e9ecef;
+            border-radius: 6px;
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+        }
+        
+        .content-text.markdown-rendered {
+            background: white;
+            border: 1px solid #dee2e6;
+        }
+        
+        /* 原始文本模式样式 */
+        .content-text pre {
+            margin: 0 !important;
+            background: none !important;
+            border: none !important;
+            padding: 0 !important;
+            font-size: 13px;
+            color: #495057;
+        }
+        
+        /* 统一按钮样式 */
+        .btn-outline,
+        .expand-btn,
+        .expanded-body .btn-outline {
+            background: #ffffff !important;
+            color: #495057 !important;
+            border: 1px solid #dee2e6 !important;
+            font-weight: 500 !important;
+            transition: all 0.2s ease !important;
+            border-radius: 4px !important;
+            padding: 4px 8px !important;
+            font-size: 12px !important;
+            display: inline-flex !important;
+            align-items: center !important;
+            gap: 4px !important;
+            box-shadow: 0 1px 3px rgba(0,0,0,0.1) !important;
+            text-decoration: none !important;
+            cursor: pointer !important;
+            line-height: 1.2 !important;
+        }
+        
+        .btn-outline:hover,
+        .expand-btn:hover,
+        .expanded-body .btn-outline:hover {
+            background: #f8f9fa !important;
+            color: #343a40 !important;
+            border-color: #adb5bd !important;
+            transform: translateY(-1px) !important;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.15) !important;
+        }
+        
+        /* 特殊按钮变体 */
+        .btn-outline.btn-primary:hover {
+            background: #007bff !important;
+            color: white !important;
+            border-color: #007bff !important;
+        }
+        
+        .expand-btn.btn-info:hover {
+            background: #17a2b8 !important;
+            color: white !important;
+            border-color: #17a2b8 !important;
+        }
+        
+        /* 按钮容器样式 */
+        .content-actions {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+        
+        /* 放大窗口样式 */
+        .expanded-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: rgba(0,0,0,0.9);
+            z-index: 2000;
+            display: none;
+            padding: 0;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        
+        .expanded-content {
+            background: white;
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            margin: 0;
+            box-sizing: border-box;
+        }
+        
+        .expanded-header {
+            padding: 8px 16px;
+            border-bottom: 1px solid #dee2e6;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            background: #f8f9fa;
+            flex-shrink: 0;
+            box-sizing: border-box;
+            height: 48px;
+        }
+        
+        .expanded-body {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+            position: relative;
+        }
+        
+        .expanded-body .content-text {
+            flex: 1;
+            padding: 16px;
+            overflow-y: auto;
+            font-size: 14px;
+            line-height: 1.6;
+            box-sizing: border-box;
+            max-height: none !important;  /* 关键：移除300px限制 */
+            height: auto !important;
+            background: white !important;
+            border: none !important;
+            border-radius: 0 !important;
+        }
+        
+        .expanded-body .content-actions {
+            flex-shrink: 0;
+            padding: 12px 16px;
+            background: #f8f9fa;
+            border-top: 1px solid #dee2e6;
+            border-radius: 0 0 8px 8px;
+            box-sizing: border-box;
+        }
+        
+        .expanded-close {
+            background: #ffffff;
+            color: #6c757d;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            font-size: 16px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .expanded-close:hover {
+            background: #f8f9fa;
+            color: #495057;
+            border-color: #adb5bd;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
+        }
+        
+        /* 详情部分标题间距调整 */
+        .detail-section h5 {
+            margin: 0 0 8px 0;
+            color: #495057;
+            font-size: 14px;
+        }
+        
         .modal-content {
             background: white;
             margin: 5% auto;
-            padding: 20px;
             border-radius: 12px;
             width: 80%;
             max-width: 800px;
             max-height: 80vh;
-            overflow-y: auto;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
         }
         
         .modal-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 20px;
-            padding-bottom: 15px;
+            padding: 20px 20px 15px 20px;
             border-bottom: 1px solid #dee2e6;
+            background: white;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            border-radius: 12px 12px 0 0;
+        }
+        
+        .modal-body {
+            padding: 20px;
+            overflow-y: auto;
+            flex: 1;
         }
         
         .close-btn {
-            background: none;
-            border: none;
-            font-size: 24px;
+            background: #ffffff;
+            border: 1px solid #dee2e6;
+            border-radius: 6px;
+            width: 32px;
+            height: 32px;
+            font-size: 16px;
             cursor: pointer;
-            color: #666;
+            color: #6c757d;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            transition: all 0.2s ease;
+            font-weight: bold;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+        }
+        
+        .close-btn:hover {
+            background: #f8f9fa;
+            color: #495057;
+            border-color: #adb5bd;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 8px rgba(0,0,0,0.15);
         }
         
         .detail-section {
@@ -637,8 +978,28 @@
                 <h3>详细信息</h3>
                 <button class="close-btn" onclick="closeModal()">&times;</button>
             </div>
-            <div id="modal-body">
+            <div class="modal-body" id="modal-body">
                 <!-- 详细内容将通过JavaScript动态生成 -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- 放大查看窗口 -->
+    <div class="expanded-modal" id="expanded-modal">
+        <div class="expanded-content">
+            <div class="expanded-header">
+                <h3 id="expanded-title">内容详情</h3>
+                <button class="expanded-close" onclick="closeExpandedModal()">&times;</button>
+            </div>
+            <div class="expanded-body">
+                <div class="content-text markdown-rendered" id="expanded-content">
+                    <!-- 放大内容将通过JavaScript动态生成 -->
+                </div>
+                <div class="content-actions">
+                    <button class="btn-outline" onclick="toggleExpandedMarkdownMode()" id="expanded-toggle-btn">
+                        <i class="fas fa-code"></i> 原始文本
+                    </button>
+                </div>
             </div>
         </div>
     </div>
@@ -1168,6 +1529,160 @@
             showDetail(index, null);
         }
         
+        // Markdown渲染辅助函数
+        function renderMarkdown(text) {
+            if (!text || typeof text !== 'string') {
+                return text || '无答案';
+            }
+            
+            // 检查是否包含markdown语法
+            const hasMarkdown = /[#*`\[\]_~>-]/.test(text) || 
+                              text.includes('\n\n') || 
+                              text.includes('```') ||
+                              text.includes('**') ||
+                              text.includes('##') ||
+                              text.includes('* ') ||
+                              text.includes('- ');
+            
+            if (hasMarkdown && typeof marked !== 'undefined') {
+                try {
+                    // 配置marked选项
+                    marked.setOptions({
+                        breaks: true,
+                        gfm: true,
+                        sanitize: false
+                    });
+                    
+                    const rendered = marked.parse(text);
+                    return `<div class="markdown-content">${rendered}</div>`;
+                } catch (error) {
+                    console.warn('Markdown渲染失败:', error);
+                    return escapeHtml(text);
+                }
+            } else {
+                // 如果不包含markdown语法，转换为纯HTML
+                return escapeHtml(text).replace(/\n/g, '<br>');
+            }
+        }
+        
+        // HTML转义函数
+        function escapeHtml(unsafe) {
+            return unsafe
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+        
+        // 切换显示模式（原始文本/渲染后）
+        function toggleMarkdownMode(element, originalText) {
+            const isRendered = element.classList.contains('markdown-rendered');
+            
+            // 找到相关的切换按钮
+            const parentContainer = element.closest('.content-container');
+            const toggleButton = parentContainer.querySelector('.btn-outline');
+            
+            if (isRendered) {
+                // 切换到原始文本
+                element.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit; margin: 0;">${escapeHtml(originalText)}</pre>`;
+                element.classList.remove('markdown-rendered');
+                toggleButton.innerHTML = '<i class="fas fa-eye"></i> 渲染显示';
+            } else {
+                // 切换到渲染模式
+                element.innerHTML = renderMarkdown(originalText);
+                element.classList.add('markdown-rendered');
+                toggleButton.innerHTML = '<i class="fas fa-code"></i> 原始文本';
+            }
+        }
+        
+        // 全局变量存储当前放大窗口的内容
+        let currentExpandedContent = {
+            title: '',
+            text: '',
+            isMarkdown: true
+        };
+        
+        // 放大查看内容
+        function expandContent(title, content, index, type) {
+            const modal = document.getElementById('expanded-modal');
+            const titleElement = document.getElementById('expanded-title');
+            const contentElement = document.getElementById('expanded-content');
+            const toggleButton = document.getElementById('expanded-toggle-btn');
+            
+            // 设置标题
+            const cleanTitle = title.replace(/[_-]/g, ' ');
+            titleElement.textContent = `${cleanTitle} - 详细查看`;
+            
+            // 存储当前内容
+            currentExpandedContent = {
+                title: cleanTitle,
+                text: content,
+                isMarkdown: true
+            };
+            
+            // 设置内容（默认markdown模式）
+            contentElement.innerHTML = renderMarkdown(content);
+            contentElement.classList.add('markdown-rendered');
+            
+            // 设置切换按钮
+            toggleButton.innerHTML = '<i class="fas fa-code"></i> 原始文本';
+            
+            // 显示模态框
+            modal.style.display = 'flex';
+            
+            // 防止背景滚动
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // 切换放大窗口的显示模式
+        function toggleExpandedMarkdownMode() {
+            const contentElement = document.getElementById('expanded-content');
+            const toggleButton = document.getElementById('expanded-toggle-btn');
+            const isRendered = contentElement.classList.contains('markdown-rendered');
+            
+            if (isRendered) {
+                // 切换到原始文本
+                contentElement.innerHTML = `<pre style="white-space: pre-wrap; font-family: inherit; margin: 0; font-size: 14px; line-height: 1.5;">${escapeHtml(currentExpandedContent.text)}</pre>`;
+                contentElement.classList.remove('markdown-rendered');
+                toggleButton.innerHTML = '<i class="fas fa-eye"></i> 渲染显示';
+                currentExpandedContent.isMarkdown = false;
+            } else {
+                // 切换到渲染模式
+                contentElement.innerHTML = renderMarkdown(currentExpandedContent.text);
+                contentElement.classList.add('markdown-rendered');
+                toggleButton.innerHTML = '<i class="fas fa-code"></i> 原始文本';
+                currentExpandedContent.isMarkdown = true;
+            }
+        }
+        
+        // 关闭放大窗口
+        function closeExpandedModal() {
+            const modal = document.getElementById('expanded-modal');
+            modal.style.display = 'none';
+            
+            // 恢复背景滚动
+            document.body.style.overflow = 'auto';
+        }
+        
+        // 点击背景关闭放大窗口
+        document.addEventListener('click', function(event) {
+            const modal = document.getElementById('expanded-modal');
+            if (event.target === modal) {
+                closeExpandedModal();
+            }
+        });
+        
+        // ESC键关闭放大窗口
+        document.addEventListener('keydown', function(event) {
+            if (event.key === 'Escape') {
+                const modal = document.getElementById('expanded-modal');
+                if (modal.style.display === 'flex') {
+                    closeExpandedModal();
+                }
+            }
+        });
+        
         // 显示详情
         function showDetail(index, column) {
             const row = filteredData[index];
@@ -1183,20 +1698,36 @@
                 
                 <div class="detail-section">
                     <h4><i class="fas fa-question-circle"></i> 问题</h4>
-                    <p>${row['query'] || row['问题'] || '无'}</p>
+                    <div class="content-container">
+                        <div class="content-text markdown-rendered">${renderMarkdown(row['query'] || row['问题'] || '无')}</div>
+                    </div>
                 </div>
                 
                 ${row['标准答案'] ? `
                 <div class="detail-section">
                     <h4><i class="fas fa-check-circle"></i> 标准答案</h4>
-                    <p>${row['标准答案']}</p>
+                    <div class="content-container">
+                        <div class="content-text markdown-rendered">${renderMarkdown(row['标准答案'])}</div>
+                    </div>
                 </div>
                 ` : ''}
                 
                 ${Object.keys(row).filter(key => key.includes('答案') && !key.includes('标准')).map(key => `
                 <div class="detail-section">
                     <h4><i class="fas fa-robot"></i> ${key}</h4>
-                    <p>${row[key] || '无答案'}</p>
+                    <div class="content-container" style="margin-bottom: 15px;">
+                        <div class="content-text markdown-rendered" id="answer-${index}-${key.replace(/[^a-zA-Z0-9]/g, '-')}">${renderMarkdown(row[key] || '无答案')}</div>
+                        <div class="content-actions" style="margin-top: 10px;">
+                            <button class="btn btn-sm btn-outline" onclick="toggleMarkdownMode(document.getElementById('answer-${index}-${key.replace(/[^a-zA-Z0-9]/g, '-')}'), '${(row[key] || '无答案').replace(/'/g, '\\\'').replace(/\n/g, '\\n')}')" 
+                                    style="padding: 4px 8px; font-size: 12px;">
+                                <i class="fas fa-code"></i> 原始文本
+                            </button>
+                            <button class="expand-btn" onclick="expandContent('${key}', '${(row[key] || '无答案').replace(/'/g, '\\\'').replace(/\n/g, '\\n')}', ${index}, 'answer')" 
+                                    title="放大查看">
+                                <i class="fas fa-expand-alt"></i> 放大
+                            </button>
+                        </div>
+                    </div>
                     ${(row[key.replace('答案', '评分')] !== null && row[key.replace('答案', '评分')] !== undefined && row[key.replace('答案', '评分')] !== '') || row[key.replace('答案', '评分')] === 0 ? `
                         <div class="score-edit-section">
                             <p><strong>评分：</strong>
@@ -1208,7 +1739,22 @@
                         </div>
                     ` : ''}
                     ${row[key.replace('答案', '理由')] ? `
-                        <p><strong>评分理由：</strong>${row[key.replace('答案', '理由')]}</p>
+                        <div style="margin-top: 15px;">
+                            <h5><strong>评分理由：</strong></h5>
+                            <div class="content-container">
+                                <div class="content-text markdown-rendered" id="reason-${index}-${key.replace(/[^a-zA-Z0-9]/g, '-')}">${renderMarkdown(row[key.replace('答案', '理由')])}</div>
+                                <div class="content-actions" style="margin-top: 8px;">
+                                    <button class="btn btn-sm btn-outline" onclick="toggleMarkdownMode(document.getElementById('reason-${index}-${key.replace(/[^a-zA-Z0-9]/g, '-')}'), '${(row[key.replace('答案', '理由')] || '').replace(/'/g, '\\\'').replace(/\n/g, '\\n')}')" 
+                                            style="padding: 3px 6px; font-size: 11px;">
+                                        <i class="fas fa-code"></i> 原始文本
+                                    </button>
+                                    <button class="expand-btn" onclick="expandContent('${key.replace('答案', '理由')}', '${(row[key.replace('答案', '理由')] || '').replace(/'/g, '\\\'').replace(/\n/g, '\\n')}', ${index}, 'reason')" 
+                                            title="放大查看">
+                                        <i class="fas fa-expand-alt"></i> 放大
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
                     ` : ''}
                 </div>
                 `).join('')}
@@ -1636,6 +2182,59 @@
                 }
             }
         }
+        
+        // 页面初始化
+        document.addEventListener('DOMContentLoaded', function() {
+            // 检查是否已显示过markdown功能提示
+            const hasShownMarkdownTip = localStorage.getItem('hasShownMarkdownTip');
+            
+            if (!hasShownMarkdownTip && typeof marked !== 'undefined') {
+                // 显示新功能提示
+                setTimeout(() => {
+                    const tip = document.createElement('div');
+                    tip.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        background: linear-gradient(135deg, #28a745, #20c997);
+                        color: white;
+                        padding: 15px 20px;
+                        border-radius: 8px;
+                        box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+                        z-index: 9999;
+                        max-width: 350px;
+                        font-size: 14px;
+                    `;
+                    
+                    tip.innerHTML = `
+                        <div style="display: flex; align-items: center; gap: 10px;">
+                            <i class="fas fa-magic" style="font-size: 16px;"></i>
+                            <div>
+                                <strong>✨ 新功能！</strong><br>
+                                模型回答现在支持Markdown格式显示！<br>
+                                点击详情查看时可切换显示模式。
+                            </div>
+                            <button onclick="this.parentElement.parentElement.remove()" 
+                                    style="background: none; border: none; color: white; font-size: 18px; cursor: pointer; margin-left: auto;">
+                                ×
+                            </button>
+                        </div>
+                    `;
+                    
+                    document.body.appendChild(tip);
+                    
+                    // 5秒后自动消失
+                    setTimeout(() => {
+                        if (tip.parentElement) {
+                            tip.remove();
+                        }
+                    }, 8000);
+                    
+                    // 标记已显示
+                    localStorage.setItem('hasShownMarkdownTip', 'true');
+                }, 1000);
+            }
+        });
     </script>
 </body>
 </html>

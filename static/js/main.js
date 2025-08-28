@@ -549,18 +549,51 @@ function switchUploadTab(tabName) {
 async function loadHistoryFiles() {
     const historyList = document.getElementById('history-files-list');
     
+    // 显示加载状态
+    historyList.innerHTML = '<div class="loading-placeholder"><i class="fas fa-spinner fa-spin"></i> 加载测试集列表中...</div>';
+    
     try {
+        console.log('🔄 开始加载测试集列表...');
         const response = await fetch('/get_uploaded_files');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
         const result = await response.json();
+        console.log('📋 收到测试集列表响应:', result);
         
         if (result.success) {
+            console.log(`✅ 成功加载 ${result.files.length} 个测试集文件`);
+            // 检查文件名编码
+            result.files.forEach((file, index) => {
+                console.log(`📄 文件 ${index + 1}: "${file.filename}" (${typeof file.filename})`);
+                // 检查是否包含中文字符
+                if (/[\u4e00-\u9fa5]/.test(file.filename)) {
+                    console.log(`🔤 文件 "${file.filename}" 包含中文字符`);
+                }
+            });
             displayHistoryFiles(result.files);
         } else {
-            historyList.innerHTML = '<div class="no-files">获取文件列表失败</div>';
+            console.error('❌ 获取文件列表失败:', result.error);
+            historyList.innerHTML = `<div class="no-files">获取文件列表失败: ${result.error || '未知错误'}</div>`;
         }
     } catch (error) {
-        historyList.innerHTML = '<div class="no-files">网络错误</div>';
+        console.error('❌ 加载测试集列表网络错误:', error);
+        historyList.innerHTML = `<div class="no-files">网络错误: ${error.message}</div>`;
     }
+}
+
+// 安全的HTML转义函数
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+// 安全的属性值转义函数
+function escapeAttr(text) {
+    return text.replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
 
 // 显示测试集列表
@@ -578,42 +611,97 @@ function displayHistoryFiles(files) {
         return;
     }
     
-    const filesHtml = files.map(file => `
-        <div class="history-file-item" data-filename="${file.filename}">
-            <div class="file-info">
-                <div class="file-icon">
-                    <i class="fas ${getFileIcon(file.filename)}"></i>
-                </div>
-                <div class="file-details">
-                    <div class="file-name" title="${file.filename}">${file.filename}</div>
-                    <div class="file-meta">
-                        <span><i class="fas fa-clock"></i> ${file.upload_time}</span>
-                        <span><i class="fas fa-hdd"></i> ${file.size_formatted}</span>
-                    </div>
-                </div>
-            </div>
-            <div class="file-actions">
-                <button class="btn btn-sm btn-primary" onclick="selectHistoryFile('${file.filename}')" 
-                        title="选择此文件">
-                    <i class="fas fa-check"></i>
-                </button>
-                <button class="btn btn-sm btn-info" onclick="editFilePrompt('${file.filename}')" 
-                        title="编辑提示词">
-                    <i class="fas fa-edit"></i>
-                </button>
-                <button class="btn btn-sm btn-secondary" onclick="downloadHistoryFile('${file.filename}')" 
-                        title="下载文件">
-                    <i class="fas fa-download"></i>
-                </button>
-                <button class="btn btn-sm btn-danger" onclick="deleteHistoryFile('${file.filename}')" 
-                        title="删除文件">
-                    <i class="fas fa-trash"></i>
-                </button>
-            </div>
-        </div>
-    `).join('');
+    // 清空容器
+    historyList.innerHTML = '';
     
-    historyList.innerHTML = filesHtml;
+    // 为每个文件创建DOM元素
+    files.forEach((file, index) => {
+        const fileItem = document.createElement('div');
+        fileItem.className = 'history-file-item';
+        fileItem.setAttribute('data-filename', file.filename);
+        
+        // 创建文件信息区域
+        const fileInfo = document.createElement('div');
+        fileInfo.className = 'file-info';
+        
+        const fileIcon = document.createElement('div');
+        fileIcon.className = 'file-icon';
+        fileIcon.innerHTML = `<i class="fas ${getFileIcon(file.filename)}"></i>`;
+        
+        const fileDetails = document.createElement('div');
+        fileDetails.className = 'file-details';
+        
+        const fileName = document.createElement('div');
+        fileName.className = 'file-name';
+        fileName.title = file.filename;
+        fileName.textContent = file.filename; // 使用textContent自动处理中文
+        
+        const fileMeta = document.createElement('div');
+        fileMeta.className = 'file-meta';
+        fileMeta.innerHTML = `
+            <span><i class="fas fa-clock"></i> ${file.upload_time}</span>
+            <span><i class="fas fa-hdd"></i> ${file.size_formatted}</span>
+        `;
+        
+        fileDetails.appendChild(fileName);
+        fileDetails.appendChild(fileMeta);
+        fileInfo.appendChild(fileIcon);
+        fileInfo.appendChild(fileDetails);
+        
+        // 创建操作按钮区域
+        const fileActions = document.createElement('div');
+        fileActions.className = 'file-actions';
+        
+        // 选择按钮
+        const selectBtn = document.createElement('button');
+        selectBtn.className = 'btn btn-sm btn-primary';
+        selectBtn.title = '选择此文件';
+        selectBtn.innerHTML = '<i class="fas fa-check"></i>';
+        selectBtn.onclick = () => selectHistoryFile(file.filename);
+        
+        // 重命名按钮
+        const renameBtn = document.createElement('button');
+        renameBtn.className = 'btn btn-sm btn-warning';
+        renameBtn.title = '重命名文件';
+        renameBtn.innerHTML = '<i class="fas fa-tag"></i>';
+        renameBtn.onclick = () => renameDatasetFile(file.filename);
+        
+        // 编辑提示词按钮
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn btn-sm btn-info';
+        editBtn.title = '编辑提示词';
+        editBtn.innerHTML = '<i class="fas fa-edit"></i>';
+        editBtn.onclick = () => editFilePrompt(file.filename);
+        
+        // 下载按钮
+        const downloadBtn = document.createElement('button');
+        downloadBtn.className = 'btn btn-sm btn-secondary';
+        downloadBtn.title = '下载文件';
+        downloadBtn.innerHTML = '<i class="fas fa-download"></i>';
+        downloadBtn.onclick = () => downloadHistoryFile(file.filename);
+        
+        // 删除按钮
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'btn btn-sm btn-danger';
+        deleteBtn.title = '删除文件';
+        deleteBtn.innerHTML = '<i class="fas fa-trash"></i>';
+        deleteBtn.onclick = () => deleteHistoryFile(file.filename);
+        
+        fileActions.appendChild(selectBtn);
+        fileActions.appendChild(renameBtn);
+        fileActions.appendChild(editBtn);
+        fileActions.appendChild(downloadBtn);
+        fileActions.appendChild(deleteBtn);
+        
+        // 组装完整的文件项
+        fileItem.appendChild(fileInfo);
+        fileItem.appendChild(fileActions);
+        
+        // 添加到列表
+        historyList.appendChild(fileItem);
+        
+        console.log(`✅ 显示测试集文件 ${index + 1}/${files.length}: ${file.filename}`);
+    });
 }
 
 // 获取文件图标
@@ -661,6 +749,77 @@ async function selectHistoryFile(filename) {
         }
     } catch (error) {
         showError('网络错误：' + error.message);
+    } finally {
+        hideLoading();
+    }
+}
+
+// 重命名测试集文件
+async function renameDatasetFile(originalFilename) {
+    // 提取不含扩展名的文件名作为默认值
+    const nameWithoutExt = originalFilename.replace(/\.[^/.]+$/, "");
+    const extension = originalFilename.slice(originalFilename.lastIndexOf('.'));
+    
+    const newName = prompt('请输入新的文件名（不含扩展名）:', nameWithoutExt);
+    if (newName === null || newName.trim() === '') {
+        return;
+    }
+    
+    const trimmedName = newName.trim();
+    if (trimmedName === nameWithoutExt) {
+        return; // 名称没有变化
+    }
+    
+    // 检查文件名合法性
+    if (!/^[a-zA-Z0-9\u4e00-\u9fa5_\-\s]+$/.test(trimmedName)) {
+        showError('文件名只能包含中英文、数字、下划线、连字符和空格');
+        return;
+    }
+    
+    if (trimmedName.length > 50) {
+        showError('文件名长度不能超过50个字符');
+        return;
+    }
+    
+    const newFilename = trimmedName + extension;
+    
+    // 检查新文件名是否已存在
+    try {
+        const checkResponse = await fetch(`/check_file_exists/${encodeURIComponent(newFilename)}`);
+        const checkResult = await checkResponse.json();
+        
+        if (checkResult.exists) {
+            showError('该文件名已存在，请选择其他名称');
+            return;
+        }
+    } catch (error) {
+        console.error('检查文件名失败:', error);
+    }
+    
+    showLoading('正在重命名文件...');
+    
+    try {
+        const response = await fetch('/api/dataset/rename', {
+            method: 'PUT',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                original_filename: originalFilename,
+                new_filename: newFilename
+            })
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('文件重命名成功');
+            loadHistoryFiles(); // 刷新文件列表
+        } else {
+            showError(result.error || '重命名失败');
+        }
+    } catch (error) {
+        showError('重命名失败: ' + error.message);
     } finally {
         hideLoading();
     }
@@ -715,6 +874,10 @@ async function startEvaluation() {
     
     const evalMode = document.querySelector('input[name="eval-mode"]:checked').value;
     
+    // 获取自定义配置
+    const customName = document.getElementById('result-name').value.trim();
+    const saveToHistory = document.getElementById('save-to-history').checked;
+    
     // 验证必要条件
     if (!fileInfo) {
         showError('请先选择文件');
@@ -729,7 +892,9 @@ async function startEvaluation() {
     const requestData = {
         filename: fileInfo.filename,
         selected_models: selectedModels,
-        force_mode: evalMode
+        force_mode: evalMode,
+        custom_name: customName,
+        save_to_history: saveToHistory
     };
 
     console.log('📤 发送请求数据:', requestData);
@@ -766,32 +931,75 @@ async function startEvaluation() {
 
 // 开始进度监控
 function startProgressMonitoring() {
-    if (!currentTaskId) return;
+    if (!currentTaskId) {
+        console.warn('⚠️ 无法开始进度监控：currentTaskId 为空');
+        return;
+    }
 
-    const interval = setInterval(async () => {
+    console.log(`🔄 开始监控任务进度: ${currentTaskId}`);
+    
+    // 清除之前可能存在的定时器
+    if (window.progressInterval) {
+        clearInterval(window.progressInterval);
+    }
+    
+    let errorCount = 0;  // 错误计数器
+    const maxErrors = 5;  // 最大错误次数
+    
+    window.progressInterval = setInterval(async () => {
         try {
             const response = await fetch(`/task_status/${currentTaskId}`);
             const status = await response.json();
 
             if (response.ok) {
+                // 重置错误计数器
+                errorCount = 0;
+                
                 updateProgressDisplay(status);
 
                 if (status.status === '完成') {
-                    clearInterval(interval);
+                    clearInterval(window.progressInterval);
+                    console.log('✅ 任务完成，停止进度监控');
                     onEvaluationComplete(status);
                 } else if (status.status === '失败') {
-                    clearInterval(interval);
+                    clearInterval(window.progressInterval);
+                    console.log('❌ 任务失败，停止进度监控');
                     onEvaluationFailed(status);
                 }
             } else {
-                clearInterval(interval);
-                showError('获取任务状态失败');
+                errorCount++;
+                console.error(`❌ 获取任务状态失败 (${errorCount}/${maxErrors}):`, response.status);
+                addToLog(`[${new Date().toLocaleTimeString()}] ⚠️ 获取任务状态失败 (${errorCount}/${maxErrors})`);
+                
+                if (errorCount >= maxErrors) {
+                    clearInterval(window.progressInterval);
+                    showError('获取任务状态失败次数过多，已停止监控');
+                }
             }
         } catch (error) {
-            clearInterval(interval);
-            showError('网络错误：' + error.message);
+            errorCount++;
+            console.error(`❌ 网络错误 (${errorCount}/${maxErrors}):`, error);
+            addToLog(`[${new Date().toLocaleTimeString()}] ⚠️ 网络错误 (${errorCount}/${maxErrors}): ${error.message}`);
+            
+            if (errorCount >= maxErrors) {
+                clearInterval(window.progressInterval);
+                showError('网络错误次数过多，已停止监控');
+            }
         }
     }, 2000);
+    
+    // 立即执行一次状态检查
+    setTimeout(async () => {
+        try {
+            const response = await fetch(`/task_status/${currentTaskId}`);
+            const status = await response.json();
+            if (response.ok) {
+                updateProgressDisplay(status);
+            }
+        } catch (error) {
+            console.warn('首次状态检查失败:', error);
+        }
+    }, 100);
 }
 
 // 更新进度显示
@@ -814,8 +1022,38 @@ function updateProgressDisplay(status) {
     evalModeDisplay.textContent = status.evaluation_mode === 'objective' ? '客观题评测' : '主观题评测';
     selectedModelsDisplay.textContent = status.selected_models.join(', ');
 
+    // 根据任务状态更新控制按钮
+    updateTaskControlButtons(status.status);
+
     // 添加到日志
     addToLog(`[${new Date().toLocaleTimeString()}] ${status.current_step}`);
+}
+
+// 更新任务控制按钮的显示状态
+function updateTaskControlButtons(status) {
+    const pauseBtn = document.getElementById('pause-task-btn');
+    const resumeBtn = document.getElementById('resume-task-btn');
+    const cancelBtn = document.getElementById('cancel-task-btn');
+    
+    if (pauseBtn && resumeBtn && cancelBtn) {
+        // 隐藏所有按钮
+        pauseBtn.style.display = 'none';
+        resumeBtn.style.display = 'none';
+        
+        // 根据状态显示相应按钮
+        if (status === '运行中' || status === '评测中') {
+            pauseBtn.style.display = 'inline-block';
+        } else if (status === '已暂停') {
+            resumeBtn.style.display = 'inline-block';
+        }
+        
+        // 取消按钮在未完成时始终显示
+        if (status !== '完成' && status !== '失败') {
+            cancelBtn.style.display = 'inline-block';
+        } else {
+            cancelBtn.style.display = 'none';
+        }
+    }
 }
 
 // 添加到日志
@@ -1664,3 +1902,358 @@ function closeFilePromptModal() {
         modal.remove();
     }
 }
+
+// ==================== 正在进行的任务管理 ====================
+
+// 加载正在进行的任务
+async function loadRunningTasks() {
+    try {
+        const response = await fetch('/api/tasks/running');
+        const result = await response.json();
+        
+        if (result.success && result.tasks.length > 0) {
+            displayRunningTasks(result.tasks);
+        } else {
+            hideRunningTasksSection();
+        }
+    } catch (error) {
+        console.error('获取正在进行的任务失败:', error);
+        hideRunningTasksSection();
+    }
+}
+
+// 显示正在进行的任务
+function displayRunningTasks(tasks) {
+    const section = document.getElementById('running-tasks-section');
+    const tasksList = document.getElementById('running-tasks-list');
+    
+    if (!section || !tasksList) return;
+    
+    let html = '';
+    tasks.forEach(task => {
+        const progress = task.total > 0 ? Math.round((task.progress / task.total) * 100) : 0;
+        const statusClass = task.is_active ? 'task-active' : 'task-inactive';
+        const statusText = task.is_active ? (task.memory_status || task.status) : '已断开';
+        const statusIcon = task.is_active ? 'fa-play-circle' : 'fa-pause-circle';
+        
+        html += `
+            <div class="running-task-item ${statusClass}" style="background: white; border: 1px solid #dee2e6; border-radius: 6px; padding: 12px; margin-bottom: 10px;">
+                <div style="display: flex; justify-content: space-between; align-items: center; gap: 10px;">
+                    <div style="flex: 1;">
+                        <div style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                            <i class="fas ${statusIcon}" style="color: ${task.is_active ? '#28a745' : '#6c757d'};"></i>
+                            <strong style="color: #495057;">${task.task_name}</strong>
+                            <span class="badge" style="background: ${task.is_active ? '#d4edda' : '#f8f9fa'}; color: ${task.is_active ? '#155724' : '#6c757d'}; padding: 2px 8px; border-radius: 12px; font-size: 12px;">
+                                ${statusText}
+                            </span>
+                        </div>
+                        <div style="margin-bottom: 8px;">
+                            <div style="background: #e9ecef; border-radius: 10px; height: 6px; overflow: hidden;">
+                                <div style="background: #007bff; height: 100%; width: ${progress}%; transition: width 0.3s ease;"></div>
+                            </div>
+                            <div style="display: flex; justify-content: space-between; margin-top: 4px; font-size: 12px; color: #6c757d;">
+                                <span>${task.progress}/${task.total} (${progress}%)</span>
+                                <span>${task.evaluation_mode === 'objective' ? '客观题' : '主观题'}</span>
+                            </div>
+                        </div>
+                        <div style="font-size: 13px; color: #6c757d;">
+                            模型: ${task.selected_models.join(', ')}
+                        </div>
+                    </div>
+                    <div style="display: flex; flex-direction: column; gap: 5px;">
+                        <button class="btn btn-sm btn-primary" onclick="connectToTask('${task.task_id}')" 
+                                style="padding: 4px 8px; font-size: 12px; min-width: 60px;">
+                            <i class="fas fa-external-link-alt"></i> 进入
+                        </button>
+                        ${task.is_active && task.status === 'running' ? `
+                            <button class="btn btn-sm btn-warning" onclick="pauseTask('${task.task_id}')" 
+                                    style="padding: 4px 8px; font-size: 12px;">
+                                <i class="fas fa-pause"></i> 暂停
+                            </button>
+                        ` : ''}
+                        ${task.is_active && task.status === 'paused' ? `
+                            <button class="btn btn-sm btn-success" onclick="resumeTask('${task.task_id}')" 
+                                    style="padding: 4px 8px; font-size: 12px;">
+                                <i class="fas fa-play"></i> 继续
+                            </button>
+                        ` : ''}
+                        <button class="btn btn-sm btn-danger" onclick="cancelTask('${task.task_id}')" 
+                                style="padding: 4px 8px; font-size: 12px;">
+                            <i class="fas fa-trash"></i> 删除
+                        </button>
+                    </div>
+                </div>
+            </div>
+        `;
+    });
+    
+    tasksList.innerHTML = html;
+    section.style.display = 'block';
+}
+
+// 隐藏正在进行的任务区域
+function hideRunningTasksSection() {
+    const section = document.getElementById('running-tasks-section');
+    if (section) {
+        section.style.display = 'none';
+    }
+}
+
+// 连接到现有任务
+async function connectToTask(taskId) {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/connect`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            // 设置当前任务ID
+            currentTaskId = taskId;
+            
+            // 切换到进度页面（第3步）
+            currentStep = 3;
+            updateStepDisplay();
+            
+            // 开始监控进度
+            startProgressMonitoring();
+            
+            showSuccess('已重新连接到测评任务');
+        } else {
+            showError(result.error || '连接任务失败');
+        }
+    } catch (error) {
+        console.error('连接任务失败:', error);
+        showError('连接任务失败: ' + error.message);
+    }
+}
+
+// 暂停任务
+async function pauseTask(taskId) {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/pause`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已暂停');
+            // 刷新任务列表
+            setTimeout(() => loadRunningTasks(), 1000);
+        } else {
+            showError(result.error || '暂停任务失败');
+        }
+    } catch (error) {
+        console.error('暂停任务失败:', error);
+        showError('暂停任务失败: ' + error.message);
+    }
+}
+
+// 继续任务
+async function resumeTask(taskId) {
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/resume`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已继续');
+            // 刷新任务列表
+            setTimeout(() => loadRunningTasks(), 1000);
+        } else {
+            showError(result.error || '继续任务失败');
+        }
+    } catch (error) {
+        console.error('继续任务失败:', error);
+        showError('继续任务失败: ' + error.message);
+    }
+}
+
+// 取消/删除任务
+async function cancelTask(taskId) {
+    if (!confirm('确定要删除这个测评任务吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    try {
+        const response = await fetch(`/api/tasks/${taskId}/cancel`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已删除');
+            // 刷新任务列表
+            setTimeout(() => loadRunningTasks(), 1000);
+        } else {
+            showError(result.error || '删除任务失败');
+        }
+    } catch (error) {
+        console.error('删除任务失败:', error);
+        showError('删除任务失败: ' + error.message);
+    }
+}
+
+// ==================== 进度页面任务控制 ====================
+
+// 暂停当前任务
+async function pauseCurrentTask() {
+    if (!currentTaskId) {
+        showError('没有正在进行的任务');
+        return;
+    }
+    
+    const pauseBtn = document.getElementById('pause-task-btn');
+    if (pauseBtn) {
+        pauseBtn.disabled = true;
+        pauseBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 暂停中...';
+    }
+    
+    try {
+        const response = await fetch(`/api/tasks/${currentTaskId}/pause`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已暂停');
+            addToLog(`[${new Date().toLocaleTimeString()}] 用户手动暂停了任务`);
+        } else {
+            showError(result.error || '暂停任务失败');
+        }
+    } catch (error) {
+        console.error('暂停任务失败:', error);
+        showError('暂停任务失败: ' + error.message);
+    } finally {
+        if (pauseBtn) {
+            pauseBtn.disabled = false;
+            pauseBtn.innerHTML = '<i class="fas fa-pause"></i> 暂停测评';
+        }
+    }
+}
+
+// 继续当前任务
+async function resumeCurrentTask() {
+    if (!currentTaskId) {
+        showError('没有正在进行的任务');
+        return;
+    }
+    
+    const resumeBtn = document.getElementById('resume-task-btn');
+    if (resumeBtn) {
+        resumeBtn.disabled = true;
+        resumeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 继续中...';
+    }
+    
+    try {
+        const response = await fetch(`/api/tasks/${currentTaskId}/resume`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已继续');
+            addToLog(`[${new Date().toLocaleTimeString()}] 用户手动继续了任务`);
+        } else {
+            showError(result.error || '继续任务失败');
+        }
+    } catch (error) {
+        console.error('继续任务失败:', error);
+        showError('继续任务失败: ' + error.message);
+    } finally {
+        if (resumeBtn) {
+            resumeBtn.disabled = false;
+            resumeBtn.innerHTML = '<i class="fas fa-play"></i> 继续测评';
+        }
+    }
+}
+
+// 取消当前任务
+async function cancelCurrentTask() {
+    if (!currentTaskId) {
+        showError('没有正在进行的任务');
+        return;
+    }
+    
+    if (!confirm('确定要取消当前的测评任务吗？此操作不可撤销。')) {
+        return;
+    }
+    
+    const cancelBtn = document.getElementById('cancel-task-btn');
+    if (cancelBtn) {
+        cancelBtn.disabled = true;
+        cancelBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 取消中...';
+    }
+    
+    try {
+        const response = await fetch(`/api/tasks/${currentTaskId}/cancel`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const result = await response.json();
+        
+        if (result.success) {
+            showSuccess('任务已取消');
+            addToLog(`[${new Date().toLocaleTimeString()}] 用户取消了任务`);
+            
+            // 清除任务ID和监控
+            currentTaskId = null;
+            
+            // 返回到第一步
+            setTimeout(() => {
+                resetForm();
+            }, 2000);
+        } else {
+            showError(result.error || '取消任务失败');
+        }
+    } catch (error) {
+        console.error('取消任务失败:', error);
+        showError('取消任务失败: ' + error.message);
+    } finally {
+        if (cancelBtn) {
+            cancelBtn.disabled = false;
+            cancelBtn.innerHTML = '<i class="fas fa-times"></i> 取消测评';
+        }
+    }
+}
+
+// 页面加载完成后自动检查正在进行的任务
+document.addEventListener('DOMContentLoaded', function() {
+    // 延迟加载，确保页面完全加载
+    setTimeout(() => {
+        loadRunningTasks();
+        
+        // 每30秒刷新一次任务状态
+        setInterval(() => {
+            loadRunningTasks();
+        }, 30000);
+    }, 1000);
+});
