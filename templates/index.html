@@ -4,7 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>AI模型评测系统</title>
-    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(1, 10000) | random }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
 <body>
@@ -67,6 +67,21 @@
                 <div class="card">
                     <h2><i class="fas fa-upload"></i> 上传评测文件</h2>
                     
+                    <!-- 正在进行的测评任务 -->
+                    <div class="running-tasks-section" id="running-tasks-section" style="display: none; margin-bottom: 20px;">
+                        <div class="card" style="background: #fff3cd; border: 1px solid #ffeaa7; border-radius: 8px;">
+                            <div style="padding: 15px;">
+                                <h4 style="margin: 0 0 10px 0; color: #856404; display: flex; align-items: center; gap: 8px;">
+                                    <i class="fas fa-clock" style="color: #f39c12;"></i>
+                                    正在进行的测评任务
+                                </h4>
+                                <div id="running-tasks-list">
+                                    <!-- 动态加载任务列表 -->
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 快速入口 -->
                     <div class="quick-access" style="margin-bottom: 20px; padding: 15px; background: #f8f9fa; border-radius: 8px; border: 1px solid #e9ecef;">
                         <a href="/history" style="display: inline-flex; align-items: center; gap: 8px; color: #495057; text-decoration: none; font-size: 14px; font-weight: 500; margin-right: 15px;">
@@ -197,6 +212,32 @@
                         </div>
                     </div>
 
+                    <!-- 评测配置 -->
+                    <div class="evaluation-config" style="margin-top: 20px;">
+                        <h3><i class="fas fa-cog"></i> 评测配置</h3>
+                        <div style="display: flex; flex-direction: column; gap: 15px;">
+                            <div class="config-item">
+                                <label for="result-name" style="display: block; margin-bottom: 5px; font-weight: 500; color: #333;">
+                                    <i class="fas fa-tag"></i> 结果名称（可选）
+                                </label>
+                                <input type="text" 
+                                       id="result-name" 
+                                       placeholder="为此次评测起个名字，留空将自动生成" 
+                                       style="width: 100%; padding: 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px;"
+                                       maxlength="100">
+                                <small style="color: #666; font-size: 12px; margin-top: 5px; display: block;">
+                                    建议包含数据集特征、模型对比目的等信息，方便后续查找
+                                </small>
+                            </div>
+                            <div class="config-item">
+                                <label style="display: flex; align-items: center; gap: 8px; font-size: 14px; color: #666;">
+                                    <input type="checkbox" id="save-to-history" checked>
+                                    <i class="fas fa-history"></i> 保存到评测历史
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
                     <div class="action-buttons">
                         <button class="btn btn-secondary" onclick="prevStep()">上一步</button>
                         <button class="btn btn-primary" id="start-btn" disabled>
@@ -243,6 +284,27 @@
                     <div class="log-area">
                         <h4>详细日志：</h4>
                         <div id="log-content" class="log-content"></div>
+                    </div>
+
+                    <!-- 任务控制按钮 -->
+                    <div class="task-controls" style="margin-top: 20px; padding-top: 20px; border-top: 1px solid #dee2e6;">
+                        <div class="control-buttons" style="display: flex; gap: 10px; justify-content: center;">
+                            <button class="btn btn-warning" id="pause-task-btn" onclick="pauseCurrentTask()" style="display: none;">
+                                <i class="fas fa-pause"></i> 暂停测评
+                            </button>
+                            <button class="btn btn-success" id="resume-task-btn" onclick="resumeCurrentTask()" style="display: none;">
+                                <i class="fas fa-play"></i> 继续测评
+                            </button>
+                            <button class="btn btn-danger" id="cancel-task-btn" onclick="cancelCurrentTask()">
+                                <i class="fas fa-times"></i> 取消测评
+                            </button>
+                        </div>
+                        <div style="text-align: center; margin-top: 10px;">
+                            <small style="color: #6c757d;">
+                                <i class="fas fa-info-circle"></i>
+                                您可以暂时离开此页面，任务会在后台继续运行。可随时从主页重新进入查看进度。
+                            </small>
+                        </div>
                     </div>
                 </div>
             </section>
@@ -324,6 +386,45 @@
                                placeholder="输入HKGAI-V2模型API密钥" class="form-control">
                         <small class="form-help">用于调用HKGAI-V2模型</small>
                     </div>
+
+                    <!-- Copilot模型配置分组 -->
+                    <div class="form-section">
+                        <h4><i class="fas fa-rocket"></i> Copilot模型配置 (可选)</h4>
+                        <p class="form-section-desc">配置以下Cookie可启用6个新的Copilot模型。<a href="#" onclick="showCookieHelp()">如何获取Cookie?</a></p>
+                        
+                        <div class="form-group">
+                            <label for="copilot-cookie-prod">
+                                <i class="fas fa-cookie-bite"></i> 生产环境Cookie
+                            </label>
+                            <textarea id="copilot-cookie-prod" name="copilot-cookie-prod" 
+                                    placeholder="输入copilot.hkgai.org的Cookie" class="form-control" rows="3"></textarea>
+                            <small class="form-help">
+                                启用模型: HKGAI-V1-PROD, HKGAI-V1-Thinking-PROD
+                            </small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="copilot-cookie-test">
+                                <i class="fas fa-flask"></i> 测试环境Cookie
+                            </label>
+                            <textarea id="copilot-cookie-test" name="copilot-cookie-test" 
+                                    placeholder="输入copilot-test.hkgai.org的Cookie" class="form-control" rows="3"></textarea>
+                            <small class="form-help">
+                                启用模型: HKGAI-V1-TEST, HKGAI-V1-Thinking-TEST
+                            </small>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="copilot-cookie-net">
+                                <i class="fas fa-network-wired"></i> 备用环境Cookie
+                            </label>
+                            <textarea id="copilot-cookie-net" name="copilot-cookie-net" 
+                                    placeholder="输入copilot.hkgai.net的Cookie" class="form-control" rows="3"></textarea>
+                            <small class="form-help">
+                                启用模型: HKGAI-V1-NET, HKGAI-V1-Thinking-NET
+                            </small>
+                        </div>
+                    </div>
                     
                     <!-- 显示当前状态 -->
                     <div class="env-status-section">
@@ -358,6 +459,70 @@
         </div>
     </div>
     <div class="modal-backdrop" id="api-config-backdrop" style="display: none;" onclick="closeApiConfig()"></div>
+
+    <!-- Cookie获取帮助弹窗 -->
+    <div class="modal" id="cookie-help-modal" style="display: none;">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3><i class="fas fa-question-circle"></i> 如何获取Copilot Cookie</h3>
+                <button class="modal-close" onclick="closeCookieHelp()">&times;</button>
+            </div>
+            <div class="modal-body">
+                <div class="help-section">
+                    <h4>🎯 简单3步获取Cookie：</h4>
+                    
+                    <div class="step">
+                        <span class="step-number">1</span>
+                        <div class="step-content">
+                            <strong>访问Copilot网站</strong>
+                            <div class="links">
+                                <a href="https://copilot.hkgai.org" target="_blank" rel="noopener">🚀 生产环境</a>
+                                <a href="https://copilot-test.hkgai.org" target="_blank" rel="noopener">🧪 测试环境</a>
+                                <a href="https://copilot.hkgai.net" target="_blank" rel="noopener">🌐 备用环境</a>
+                            </div>
+                        </div>
+                    </div>
+                    
+                    <div class="step">
+                        <span class="step-number">2</span>
+                        <div class="step-content">
+                            <strong>打开开发者工具</strong>
+                            <p>按 <kbd>F12</kbd> 或右键选择"检查" → 点击 <strong>Network</strong> 标签页</p>
+                        </div>
+                    </div>
+                    
+                    <div class="step">
+                        <span class="step-number">3</span>
+                        <div class="step-content">
+                            <strong>复制Cookie</strong>
+                            <p>在网站上发送一个对话 → 在Network中找到API请求 → Request Headers中复制完整的 <code>Cookie</code> 值</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <div class="help-section">
+                    <h4>⚠️ 注意事项：</h4>
+                    <ul>
+                        <li>Cookie包含认证信息，请妥善保管</li>
+                        <li>Cookie可能有时效性，失效后需要重新获取</li>
+                        <li>不同环境的Cookie不能混用</li>
+                        <li>配置任意一个Cookie即可启用对应环境的2个模型</li>
+                    </ul>
+                </div>
+                
+                <div class="help-section">
+                    <h4>🔍 示例Cookie格式：</h4>
+                    <div class="code-example">
+                        <code>passport=MTc1NjI4NzM4N3x...; __TRACKER__USER_INFO__={"userUniqueId":"..."};</code>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button class="btn btn-primary" onclick="closeCookieHelp()">了解了</button>
+            </div>
+        </div>
+    </div>
+    <div class="modal-backdrop" id="cookie-help-backdrop" style="display: none;" onclick="closeCookieHelp()"></div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
     <script>

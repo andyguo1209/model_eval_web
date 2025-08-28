@@ -37,11 +37,19 @@ class EvaluationHistoryManager:
             result_id: 保存的结果ID
         """
         try:
-            # 生成结果名称
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            dataset_name = os.path.splitext(os.path.basename(evaluation_data.get('dataset_file', 'unknown')))[0]
-            models_str = "_".join(evaluation_data.get('models', []))[:50]  # 限制长度
-            result_name = f"{dataset_name}_{models_str}_{timestamp}"
+            # 获取或生成结果名称
+            custom_name = evaluation_data.get('custom_name', '').strip()
+            
+            if custom_name:
+                # 使用自定义名称，并添加时间戳以避免冲突
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                result_name = f"{custom_name}_{timestamp}"
+            else:
+                # 自动生成结果名称
+                timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+                dataset_name = os.path.splitext(os.path.basename(evaluation_data.get('dataset_file', 'unknown')))[0]
+                models_str = "_".join(evaluation_data.get('models', []))[:50]  # 限制长度
+                result_name = f"{dataset_name}_{models_str}_{timestamp}"
             
             # 复制结果文件到历史目录
             result_filename = f"{result_name}.csv"
@@ -141,8 +149,25 @@ class EvaluationHistoryManager:
                 'error': str(e)
             }
     
+    def rename_result(self, result_id: str, new_name: str) -> bool:
+        """重命名历史记录"""
+        try:
+            if not new_name.strip():
+                return False
+                
+            # 添加时间戳以避免冲突
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            full_name = f"{new_name.strip()}_{timestamp}"
+            
+            # 更新数据库
+            return db.update_evaluation_result_name(result_id, full_name)
+            
+        except Exception as e:
+            print(f"重命名结果失败: {e}")
+            return False
+    
     def delete_result(self, result_id: str) -> Dict:
-        """删除历史记录"""
+        """删除历史记录和对应的CSV文件"""
         try:
             # 获取结果信息
             detail = self.get_result_detail(result_id)
@@ -150,37 +175,109 @@ class EvaluationHistoryManager:
                 return detail
             
             result = detail['result']
+            deleted_files = []
             
-            # 删除文件 - 修复文件路径
+            # 删除所有相关的CSV文件
             file_path = result['result_file']
-            # 如果是相对路径，添加完整路径
-            if not os.path.isabs(file_path):
-                # 尝试results目录
-                full_path = os.path.join('results', os.path.basename(file_path))
-                if os.path.exists(full_path):
-                    os.remove(full_path)
-                    print(f"✅ 删除文件: {full_path}")
-                # 尝试results_history目录
-                hist_path = os.path.join('results_history', os.path.basename(file_path))
-                if os.path.exists(hist_path):
-                    os.remove(hist_path)
-                    print(f"✅ 删除历史文件: {hist_path}")
-            elif os.path.exists(file_path):
-                os.remove(file_path)
-                print(f"✅ 删除文件: {file_path}")
+            result_name = result['name']
             
-            # 从数据库删除（实际上标记为删除）
+            print(f"🗑️ 开始删除评测结果: {result_name} (ID: {result_id})")
+            
+            # 1. 删除原始文件路径指向的文件
+            if file_path:
+                if os.path.isabs(file_path):
+                    # 绝对路径
+                    if os.path.exists(file_path):
+                        os.remove(file_path)
+                        deleted_files.append(file_path)
+                        print(f"✅ 删除原始文件: {file_path}")
+                else:
+                    # 相对路径，尝试多个可能的位置
+                    possible_paths = [
+                        file_path,  # 原始相对路径
+                        os.path.join('results', os.path.basename(file_path)),
+                        os.path.join('results_history', os.path.basename(file_path)),
+                        os.path.join('results', file_path),
+                        os.path.join('results_history', file_path)
+                    ]
+                    
+                    for path in possible_paths:
+                        if os.path.exists(path):
+                            os.remove(path)
+                            deleted_files.append(path)
+                            print(f"✅ 删除文件: {path}")
+            
+            # 2. 根据结果名称查找可能的文件
+            # 生成可能的文件名模式
+            base_name = result_name.replace(' ', '_')  # 替换空格为下划线
+            possible_filenames = [
+                f"{base_name}.csv",
+                f"{result_name}.csv",
+                f"evaluation_result_{result_name}.csv",
+                # 处理可能的时间戳后缀
+                f"{base_name}*.csv",
+            ]
+            
+            # 搜索可能的目录
+            search_dirs = ['results', 'results_history', '.']
+            
+            for search_dir in search_dirs:
+                if not os.path.exists(search_dir):
+                    continue
+                    
+                try:
+                    for filename in os.listdir(search_dir):
+                        if filename.endswith('.csv'):
+                            # 检查文件名是否匹配
+                            for pattern in possible_filenames:
+                                if pattern.endswith('*.csv'):
+                                    # 模糊匹配
+                                    pattern_prefix = pattern[:-5]  # 移除 '*.csv'
+                                    if filename.startswith(pattern_prefix):
+                                        file_full_path = os.path.join(search_dir, filename)
+                                        if file_full_path not in deleted_files:
+                                            os.remove(file_full_path)
+                                            deleted_files.append(file_full_path)
+                                            print(f"✅ 删除匹配文件: {file_full_path}")
+                                else:
+                                    # 精确匹配
+                                    if filename == pattern:
+                                        file_full_path = os.path.join(search_dir, filename)
+                                        if file_full_path not in deleted_files:
+                                            os.remove(file_full_path)
+                                            deleted_files.append(file_full_path)
+                                            print(f"✅ 删除匹配文件: {file_full_path}")
+                except OSError as e:
+                    print(f"⚠️ 搜索目录 {search_dir} 时出错: {e}")
+                    continue
+            
+            # 3. 从数据库删除（标记为已删除）
             with db._get_connection() as conn:
                 db_cursor = conn.cursor()
                 db_cursor.execute(
-                    'UPDATE evaluation_results SET status = "deleted" WHERE id = ?',
+                    'UPDATE evaluation_results SET status = "deleted", archived_at = CURRENT_TIMESTAMP WHERE id = ?',
                     (result_id,)
                 )
                 conn.commit()
             
-            return {'success': True, 'message': '删除成功'}
+            if deleted_files:
+                file_list = '\n'.join([f"  - {f}" for f in deleted_files])
+                print(f"✅ 评测结果删除完成，共删除 {len(deleted_files)} 个文件:\n{file_list}")
+                return {
+                    'success': True, 
+                    'message': f'删除成功，共删除 {len(deleted_files)} 个相关文件',
+                    'deleted_files': deleted_files
+                }
+            else:
+                print(f"✅ 评测结果从数据库删除完成，但未找到相关的CSV文件")
+                return {
+                    'success': True, 
+                    'message': '删除成功（未找到相关文件）',
+                    'deleted_files': []
+                }
             
         except Exception as e:
+            print(f"❌ 删除评测结果失败: {e}")
             return {'success': False, 'error': str(e)}
     
     def archive_old_results(self, days_threshold: int = 90) -> Dict:
