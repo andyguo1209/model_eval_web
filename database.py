@@ -374,23 +374,37 @@ class EvaluationDatabase:
         """根据结果文件名获取result_id，支持多目录查找和路径修复"""
         import os
         
+        # 处理文件名，去除可能的路径前缀
+        clean_filename = filename
+        if filename.startswith('results_history/'):
+            clean_filename = filename.replace('results_history/', '', 1)
+            print(f"🔍 [数据库] 检测到history路径前缀，清理后: {clean_filename}")
+        elif filename.startswith('results/'):
+            clean_filename = filename.replace('results/', '', 1)
+            print(f"🔍 [数据库] 检测到results路径前缀，清理后: {clean_filename}")
+        
         with sqlite3.connect(self.db_path) as conn:
             db_cursor = conn.cursor()
             
-            # 首先尝试直接匹配
-            db_cursor.execute('''
-                SELECT id, result_file FROM evaluation_results 
-                WHERE result_file = ? OR result_file LIKE ?
-            ''', (filename, f'%/{filename}'))
+            # 首先尝试直接匹配（使用原始文件名和清理后的文件名）
+            search_patterns = [filename, clean_filename, f'%/{clean_filename}', f'%{clean_filename}']
             
-            result = db_cursor.fetchone()
-            if result:
-                result_id, stored_path = result
-                # 检查存储的路径是否真实存在
-                if os.path.exists(stored_path):
-                    return result_id
-                else:
-                    print(f"🔍 [数据库] 存储路径不存在: {stored_path}，开始查找实际位置...")
+            for pattern in search_patterns:
+                db_cursor.execute('''
+                    SELECT id, result_file FROM evaluation_results 
+                    WHERE result_file = ? OR result_file LIKE ?
+                ''', (pattern, f'%/{pattern}'))
+                
+                result = db_cursor.fetchone()
+                if result:
+                    result_id, stored_path = result
+                    print(f"🔍 [数据库] 找到匹配记录: {result_id}, 存储路径: {stored_path}")
+                    # 检查存储的路径是否真实存在
+                    if os.path.exists(stored_path):
+                        return result_id
+                    else:
+                        print(f"🔍 [数据库] 存储路径不存在: {stored_path}，开始查找实际位置...")
+                        break  # 找到记录但路径无效，跳出循环继续修复
             
             # 如果直接匹配失败或文件不存在，尝试在多个目录中查找
             results_folder = 'results'  # 与app.py中的配置保持一致
@@ -402,10 +416,10 @@ class EvaluationDatabase:
             actual_filepath = None
             for search_dir in search_dirs:
                 if os.path.exists(search_dir):
-                    potential_path = os.path.join(search_dir, filename)
+                    potential_path = os.path.join(search_dir, clean_filename)
                     if os.path.exists(potential_path):
                         actual_filepath = potential_path
-                        print(f"✅ [数据库] 在 {search_dir} 中找到文件: {filename}")
+                        print(f"✅ [数据库] 在 {search_dir} 中找到文件: {clean_filename}")
                         break
             
             if actual_filepath:
@@ -427,7 +441,7 @@ class EvaluationDatabase:
                 else:
                     # 尝试通过文件名模糊匹配查找可能的记录
                     # 去掉扩展名和时间戳，尝试匹配dataset_file
-                    base_filename = filename.replace('.csv', '')
+                    base_filename = clean_filename.replace('.csv', '')
                     db_cursor.execute('''
                         SELECT id FROM evaluation_results 
                         WHERE dataset_file LIKE ? OR result_file LIKE ?
@@ -451,7 +465,7 @@ class EvaluationDatabase:
                             print(f"⚠️ [数据库] 修复路径失败: {e}")
                             return result_id
             
-            print(f"❌ [数据库] 未找到文件 {filename} 对应的数据库记录")
+            print(f"❌ [数据库] 未找到文件 {clean_filename} (原始: {filename}) 对应的数据库记录")
             return None
     
     def get_result_by_id(self, result_id: str) -> Optional[Dict]:

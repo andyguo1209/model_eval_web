@@ -2216,7 +2216,7 @@ def update_score():
         result_id = None
         if db:
             try:
-                # 根据文件名查找result_id
+                # 根据文件名查找result_id（传递原始文件名，函数内部会处理路径前缀）
                 result_id = db.get_result_id_by_filename(filename)
                 print(f"🔍 [数据库] 查找结果: result_id = {result_id}")
                 
@@ -2256,25 +2256,46 @@ def update_score():
                 traceback.print_exc()
         
         # 同时更新CSV文件以保持兼容性
-        filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
-        print(f"📁 [CSV文件] 目标文件路径: {filepath}")
+        # 处理文件名，去除可能的路径前缀
+        clean_filename = filename
+        if filename.startswith('results_history/'):
+            clean_filename = filename.replace('results_history/', '', 1)
+            print(f"📁 [文件名处理] 检测到history路径前缀，清理后: {clean_filename}")
+        elif filename.startswith('results/'):
+            clean_filename = filename.replace('results/', '', 1)
+            print(f"📁 [文件名处理] 检测到results路径前缀，清理后: {clean_filename}")
+        
+        # 首先尝试原始路径（适用于传入完整路径的情况）
+        if filename.startswith('results_history/'):
+            filepath = filename  # 直接使用原始路径
+            print(f"📁 [CSV文件] 使用完整路径: {filepath}")
+        else:
+            filepath = os.path.join(app.config['RESULTS_FOLDER'], clean_filename)
+            print(f"📁 [CSV文件] 目标文件路径: {filepath}")
+        
         print(f"📁 [CSV文件] 文件是否存在: {os.path.exists(filepath)}")
         
         # 如果文件不存在，尝试在其他位置查找
         if not os.path.exists(filepath):
-            print(f"🔍 [文件查找] 在主results目录未找到文件，开始在其他位置搜索...")
+            print(f"🔍 [文件查找] 在主路径未找到文件，开始在其他位置搜索...")
             found_filepath = None
             
             # 在results_history目录中查找
             history_path = os.path.join(os.path.dirname(app.config['RESULTS_FOLDER']), 'results_history')
             if os.path.exists(history_path):
-                for file in os.listdir(history_path):
-                    if file == filename:
-                        found_filepath = os.path.join(history_path, file)
-                        print(f"✅ [文件查找] 在results_history中找到文件: {found_filepath}")
-                        break
+                history_filepath = os.path.join(history_path, clean_filename)
+                if os.path.exists(history_filepath):
+                    found_filepath = history_filepath
+                    print(f"✅ [文件查找] 在results_history中找到文件: {found_filepath}")
             
-            # 如果在history中找到，使用该路径
+            # 在results目录中查找（如果原来用的是history路径）
+            if not found_filepath:
+                results_filepath = os.path.join(app.config['RESULTS_FOLDER'], clean_filename)
+                if os.path.exists(results_filepath):
+                    found_filepath = results_filepath
+                    print(f"✅ [文件查找] 在results中找到文件: {found_filepath}")
+            
+            # 如果找到文件，使用该路径
             if found_filepath:
                 filepath = found_filepath
         
