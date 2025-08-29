@@ -1,85 +1,71 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" width="120" height="120">
   <defs>
-    <linearGradient id="premiumGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="borderGradient" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
       <stop offset="50%" style="stop-color:#764ba2;stop-opacity:1" />
       <stop offset="100%" style="stop-color:#f093fb;stop-opacity:1" />
     </linearGradient>
-    <linearGradient id="textShine" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" style="stop-color:#ffffff;stop-opacity:1" />
-      <stop offset="50%" style="stop-color:#f8fafc;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#e2e8f0;stop-opacity:1" />
+    <linearGradient id="textGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#2D3748;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#4A5568;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#667eea;stop-opacity:1" />
     </linearGradient>
-    <filter id="premiumShadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feDropShadow dx="0" dy="6" stdDeviation="8" flood-color="#000" flood-opacity="0.2"/>
-    </filter>
-    <filter id="innerShadow" x="-50%" y="-50%" width="200%" height="200%">
-      <feOffset dx="0" dy="2"/>
-      <feGaussianBlur stdDeviation="2" result="offset-blur"/>
-      <feFlood flood-color="#000" flood-opacity="0.3"/>
-      <feComposite in2="offset-blur" operator="in"/>
-      <feMerge> 
-        <feMergeNode/>
-        <feMergeNode in="SourceGraphic"/>
-      </feMerge>
+    <filter id="textShadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="1" stdDeviation="2" flood-color="#000" flood-opacity="0.1"/>
     </filter>
   </defs>
   
-  <!-- 外圈光环 -->
-  <circle cx="60" cy="60" r="58" 
+  <!-- 外圈装饰环 - 保留作为品牌标识 -->
+  <circle cx="60" cy="60" r="50" 
           fill="none" 
-          stroke="url(#premiumGradient)" 
+          stroke="url(#borderGradient)" 
           stroke-width="2" 
-          opacity="0.3" 
-          stroke-dasharray="5,3"/>
+          opacity="0.6"/>
   
-  <!-- 主背景圆形 -->
-  <circle cx="60" cy="60" r="52" 
-          fill="url(#premiumGradient)" 
-          filter="url(#premiumShadow)"/>
-  
-  <!-- 内部光泽 -->
-  <circle cx="60" cy="60" r="48" 
+  <!-- 内圈细线装饰 -->
+  <circle cx="60" cy="60" r="45" 
           fill="none" 
-          stroke="rgba(255,255,255,0.2)" 
-          stroke-width="1"/>
+          stroke="url(#borderGradient)" 
+          stroke-width="1" 
+          opacity="0.3"/>
   
-  <!-- 品牌名称 HKGAI - 超大字体 -->
-  <text x="60" y="58" text-anchor="middle" 
+  <!-- 品牌名称 HKGAI - 深色文字适合浅背景 -->
+  <text x="60" y="60" text-anchor="middle" 
         font-family="'Inter', 'SF Pro Display', -apple-system, sans-serif" 
-        font-size="24" 
-        font-weight="900" 
-        fill="url(#textShine)"
-        filter="url(#innerShadow)"
-        letter-spacing="0.5px">HKGAI</text>
+        font-size="18" 
+        font-weight="800" 
+        fill="url(#textGradient)"
+        filter="url(#textShadow)"
+        letter-spacing="1px">HKGAI</text>
   
   <!-- 下方装饰线 -->
   <line x1="35" y1="75" x2="85" y2="75" 
-        stroke="rgba(255,255,255,0.6)" 
+        stroke="url(#borderGradient)" 
         stroke-width="2" 
-        stroke-linecap="round"/>
+        stroke-linecap="round"
+        opacity="0.7"/>
   
   <!-- 两侧小装饰点 -->
-  <circle cx="30" cy="75" r="2" fill="rgba(255,255,255,0.8)"/>
-  <circle cx="90" cy="75" r="2" fill="rgba(255,255,255,0.8)"/>
+  <circle cx="30" cy="75" r="2" fill="url(#borderGradient)" opacity="0.8"/>
+  <circle cx="90" cy="75" r="2" fill="url(#borderGradient)" opacity="0.8"/>
   
   <!-- 顶部小图标装饰 -->
-  <g transform="translate(60, 30)" fill="rgba(255,255,255,0.7)">
+  <g transform="translate(60, 30)" fill="url(#borderGradient)" opacity="0.6">
     <polygon points="-3,-2 0,-5 3,-2 3,0 0,3 -3,0" />
   </g>
   
   <!-- 底部小图标装饰 -->
-  <g transform="translate(60, 88)" fill="rgba(255,255,255,0.5)">
+  <g transform="translate(60, 88)" fill="url(#borderGradient)" opacity="0.5">
     <circle cx="0" cy="0" r="1.5"/>
     <circle cx="-4" cy="0" r="1"/>
     <circle cx="4" cy="0" r="1"/>
   </g>
   
-  <!-- 微妙的四角装饰 -->
-  <g stroke="rgba(255,255,255,0.3)" stroke-width="1" fill="none">
-    <path d="M20,25 L25,20 M25,25 L20,30"/>
-    <path d="M95,25 L100,20 M100,25 L95,30"/>
-    <path d="M20,95 L25,100 M25,95 L20,90"/>
-    <path d="M95,95 L100,100 M100,95 L95,90"/>
+  <!-- 四角装饰线条 -->
+  <g stroke="url(#borderGradient)" stroke-width="1" fill="none" opacity="0.4">
+    <path d="M25,25 L30,20 M30,25 L25,30"/>
+    <path d="M90,25 L95,20 M95,25 L90,30"/>
+    <path d="M25,95 L30,100 M30,95 L25,90"/>
+    <path d="M90,95 L95,100 M95,95 L90,90"/>
   </g>
 </svg>

@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HKGAI 小图标设计对比</title>
+    <style>
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            margin: 0;
+            padding: 20px;
+            color: white;
+        }
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            margin-bottom: 40px;
+            font-size: 2.2em;
+            text-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+        .comparison-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 25px;
+            margin-bottom: 40px;
+        }
+        .icon-option {
+            background: rgba(255,255,255,0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 15px;
+            padding: 25px;
+            text-align: center;
+            border: 1px solid rgba(255,255,255,0.2);
+            transition: transform 0.2s, box-shadow 0.2s;
+        }
+        .icon-option:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(0,0,0,0.2);
+        }
+        .icon-preview {
+            margin-bottom: 20px;
+        }
+        .icon-sizes {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+        .icon-large { width: 48px; height: 48px; }
+        .icon-medium { width: 32px; height: 32px; }
+        .icon-small { width: 24px; height: 24px; }
+        .icon-tiny { width: 16px; height: 16px; }
+        
+        .option-title {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        .option-description {
+            font-size: 0.9em;
+            opacity: 0.9;
+            line-height: 1.4;
+            margin-bottom: 15px;
+        }
+        .pros-cons {
+            text-align: left;
+            font-size: 0.85em;
+        }
+        .pros { color: #86EFAC; margin-bottom: 8px; }
+        .cons { color: #FCA5A5; }
+        .current-badge {
+            display: inline-block;
+            background: #10B981;
+            color: white;
+            padding: 3px 8px;
+            border-radius: 12px;
+            font-size: 0.7em;
+            margin-left: 8px;
+        }
+        .test-section {
+            background: rgba(255,255,255,0.1);
+            border-radius: 15px;
+            padding: 25px;
+            margin-top: 30px;
+        }
+        .test-title {
+            font-size: 1.3em;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+        .usage-examples {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+            gap: 20px;
+        }
+        .usage-item {
+            background: rgba(0,0,0,0.2);
+            padding: 15px;
+            border-radius: 10px;
+        }
+        .usage-item h4 {
+            margin: 0 0 10px 0;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 HKGAI 小图标设计方案对比</h1>
+        
+        <div class="comparison-grid">
+            <!-- 当前版本 -->
+            <div class="icon-option">
+                <div class="option-title">
+                    当前版本 <span class="current-badge">CURRENT</span>
+                </div>
+                <div class="icon-preview">
+                    <div class="icon-sizes">
+                        <img src="static/images/hkgai-icon.svg" class="icon-large">
+                        <img src="static/images/hkgai-icon.svg" class="icon-medium">
+                        <img src="static/images/hkgai-icon.svg" class="icon-small">
+                        <img src="static/images/hkgai-icon.svg" class="icon-tiny">
+                    </div>
+                </div>
+                <div class="option-description">
+                    圆形背景 + 完整HKGAI文字
+                </div>
+                <div class="pros-cons">
+                    <div class="pros">✅ 品牌完整展示</div>
+                    <div class="cons">❌ 小尺寸下文字不够清晰</div>
+                </div>
+            </div>
+
+            <!-- 方案A：分层设计 -->
+            <div class="icon-option">
+                <div class="option-title">方案A：分层设计</div>
+                <div class="icon-preview">
+                    <div class="icon-sizes">
+                        <img src="static/images/hkgai-icon-new.svg" class="icon-large">
+                        <img src="static/images/hkgai-icon-new.svg" class="icon-medium">
+                        <img src="static/images/hkgai-icon-new.svg" class="icon-small">
+                        <img src="static/images/hkgai-icon-new.svg" class="icon-tiny">
+                    </div>
+                </div>
+                <div class="option-description">
+                    圆角矩形 + HK/AI分层布局
+                </div>
+                <div class="pros-cons">
+                    <div class="pros">✅ 文字更大更清晰<br>✅ 空间利用率高</div>
+                    <div class="cons">❌ 与圆形logo风格略有差异</div>
+                </div>
+            </div>
+
+            <!-- 方案B：大字体圆形 -->
+            <div class="icon-option">
+                <div class="option-title">方案B：加强版圆形</div>
+                <div class="icon-preview">
+                    <div class="icon-sizes">
+                        <img src="static/images/hkgai-icon-v3.svg" class="icon-large">
+                        <img src="static/images/hkgai-icon-v3.svg" class="icon-medium">
+                        <img src="static/images/hkgai-icon-v3.svg" class="icon-small">
+                        <img src="static/images/hkgai-icon-v3.svg" class="icon-tiny">
+                    </div>
+                </div>
+                <div class="option-description">
+                    圆形背景 + 更大字体 + 发光效果
+                </div>
+                <div class="pros-cons">
+                    <div class="pros">✅ 保持圆形设计<br>✅ 文字更醒目</div>
+                    <div class="cons">❌ 仍然可能在极小尺寸下不够清晰</div>
+                </div>
+            </div>
+
+            <!-- 方案C：徽章设计 -->
+            <div class="icon-option">
+                <div class="option-title">方案C：徽章风格</div>
+                <div class="icon-preview">
+                    <div class="icon-sizes">
+                        <img src="static/images/hkgai-icon-v4.svg" class="icon-large">
+                        <img src="static/images/hkgai-icon-v4.svg" class="icon-medium">
+                        <img src="static/images/hkgai-icon-v4.svg" class="icon-small">
+                        <img src="static/images/hkgai-icon-v4.svg" class="icon-tiny">
+                    </div>
+                </div>
+                <div class="option-description">
+                    现代徽章风格 + HK/AI分离 + 深色渐变
+                </div>
+                <div class="pros-cons">
+                    <div class="pros">✅ 现代感强<br>✅ 文字清晰度高<br>✅ 专业感强</div>
+                    <div class="cons">❌ 风格偏商务</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="test-section">
+            <div class="test-title">📱 实际应用场景测试</div>
+            <div class="usage-examples">
+                <div class="usage-item">
+                    <h4>
+                        <img src="static/images/hkgai-icon.svg" style="width:20px;height:20px;">
+                        页面标题使用
+                    </h4>
+                    <p>AI模型评测系统 - 在标题中的显示效果</p>
+                </div>
+                
+                <div class="usage-item">
+                    <h4>
+                        <img src="static/images/hkgai-icon-v4.svg" style="width:20px;height:20px;">
+                        结果页面标记
+                    </h4>
+                    <p>HKGAI V1 答案 - 在结果项中的标识效果</p>
+                </div>
+                
+                <div class="usage-item">
+                    <h4>
+                        <img src="static/images/hkgai-icon-new.svg" style="width:16px;height:16px;">
+                        16px极小尺寸
+                    </h4>
+                    <p>测试在极小尺寸下的可读性</p>
+                </div>
+                
+                <div class="usage-item">
+                    <h4>
+                        <img src="static/images/hkgai-icon-v3.svg" style="width:24px;height:24px;">
+                        列表项使用
+                    </h4>
+                    <p>参与模型: HKGAI - 在列表中的效果</p>
+                </div>
+            </div>
+        </div>
+        
+        <div style="text-align: center; margin-top: 30px; padding: 20px; background: rgba(255,255,255,0.1); border-radius: 15px;">
+            <h3>💡 设计建议</h3>
+            <p><strong>推荐方案A或方案C</strong>：在小尺寸下文字清晰度更高，更好地突出HKGAI品牌</p>
+            <p>方案A适合保持现有风格，方案C适合追求更现代专业的视觉效果</p>
+        </div>
+    </div>
+</body>
+</html>

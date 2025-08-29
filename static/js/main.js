@@ -122,23 +122,34 @@ function handleFileSelect() {
     const fileInput = document.getElementById('file-input');
     const file = fileInput.files[0];
     
-    if (!file) return;
+    console.log('📁 [文件选择] 文件选择事件触发:', file ? file.name : '无文件');
+    
+    if (!file) {
+        console.log('❌ [文件选择] 没有选择文件');
+        return;
+    }
 
     // 检查文件格式
     const allowedTypes = ['.xlsx', '.xls', '.csv'];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
     
+    console.log('🔍 [文件选择] 文件扩展名:', fileExtension);
+    
     if (!allowedTypes.includes(fileExtension)) {
+        console.log('❌ [文件选择] 不支持的文件格式:', fileExtension);
         showError('不支持的文件格式，请上传 .xlsx、.xls 或 .csv 文件');
         return;
     }
 
+    console.log('✅ [文件选择] 文件格式检查通过，开始上传');
     uploadedFile = file;
     uploadFile(file);
 }
 
 // 上传文件
 async function uploadFile(file, overwrite = false, retryCount = 0) {
+    console.log(`📤 [上传文件] 开始上传: ${file.name}, 覆盖模式: ${overwrite}, 重试次数: ${retryCount}`);
+    
     const maxRetries = 2;
     const formData = new FormData();
     formData.append('file', file);
@@ -148,6 +159,8 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
     const loadingMessage = retryCount > 0 
         ? `正在重试上传文件... (${retryCount}/${maxRetries})` 
         : '正在上传文件...';
+    
+    console.log(`🔄 [上传文件] 显示加载状态: ${loadingMessage}`);
     showLoading(loadingMessage);
 
     try {
@@ -156,21 +169,24 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             body: formData
         });
 
-        // 检查响应状态
-        if (!response.ok) {
-            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
-        }
-
+        // 解析响应内容
         const result = await response.json();
 
-        if (result.success) {
+        // 处理成功响应
+        if (response.ok && result.success) {
             console.log('📤 上传成功，调用displayFileInfo');
             displayFileInfo(result);
             showSuccess('文件上传成功！');
             loadHistoryFiles(); // 刷新测试集列表
-        } else if (result.error === 'file_exists') {
-            // 文件已存在，询问是否覆盖
+        } 
+        // 处理文件已存在的情况（409状态码）
+        else if (response.status === 409 && result.error === 'file_exists') {
+            console.log('📁 文件已存在，显示覆盖确认对话框');
             showFileExistsDialog(result.filename, file);
+        } 
+        // 处理其他错误
+        else if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         } else {
             console.error('❌ 文件上传失败:', result.error);
             
@@ -207,19 +223,29 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
 
 // 显示文件存在对话框
 function showFileExistsDialog(filename, file) {
+    console.log(`📁 [文件覆盖] 显示覆盖确认对话框: ${filename}`);
+    
     const dialogHtml = `
         <div class="custom-alert">
             <div class="custom-alert-content">
                 <div class="custom-alert-header">
-                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <i class="fas fa-file-alt text-info"></i>
                     <h4>文件已存在</h4>
                 </div>
                 <div class="custom-alert-body">
-                    <p>文件 "<strong>${filename}</strong>" 已存在，您要如何处理？</p>
+                    <p>文件 "<strong>${filename}</strong>" 已经存在。</p>
+                    <p>您希望覆盖现有文件还是取消上传？</p>
+                    <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9em; color: #6c757d;">
+                        💡 选择"覆盖文件"将替换现有文件
+                    </div>
                 </div>
                 <div class="custom-alert-footer">
-                    <button class="btn btn-secondary" onclick="closeCustomAlert()">取消</button>
-                    <button class="btn btn-primary" onclick="overwriteFile('${filename}')">覆盖文件</button>
+                    <button class="btn btn-secondary" onclick="closeCustomAlert()">
+                        <i class="fas fa-times"></i> 取消上传
+                    </button>
+                    <button class="btn btn-primary" onclick="overwriteFile('${filename}')">
+                        <i class="fas fa-check"></i> 覆盖文件
+                    </button>
                 </div>
             </div>
         </div>
@@ -236,10 +262,17 @@ function showFileExistsDialog(filename, file) {
 
 // 覆盖文件
 async function overwriteFile(filename) {
+    console.log(`🔄 [文件覆盖] 用户确认覆盖文件: ${filename}`);
     closeCustomAlert();
+    
     if (window.pendingFile) {
+        console.log(`📤 [文件覆盖] 开始以覆盖模式重新上传: ${window.pendingFile.name}`);
         await uploadFile(window.pendingFile, true);
         window.pendingFile = null;
+        console.log(`✅ [文件覆盖] 覆盖上传完成`);
+    } else {
+        console.error(`❌ [文件覆盖] 没有找到待上传的文件`);
+        showError('上传失败：没有找到待上传的文件');
     }
 }
 
