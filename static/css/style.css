@@ -10,7 +10,7 @@
     display: inline-block;
     width: 1em;
     height: 1em;
-    background-image: url('/static/images/hkgai-icon.svg');
+    background-image: url('/static/images/hkgai-icon-v2.svg');
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
@@ -21,7 +21,7 @@
 .hkgai-logo.large {
     width: 80px;
     height: 80px;
-    background-image: url('/static/images/hkgai-logo.svg');
+    background-image: url('/static/images/hkgai-logo-v4.svg');
 }
 
 .hkgai-logo.medium {

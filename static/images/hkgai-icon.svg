@@ -1,15 +1,23 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24">
   <defs>
-    <linearGradient id="iconGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+    <linearGradient id="iconGradientV2" x1="0%" y1="0%" x2="100%" y2="100%">
       <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
-      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#764ba2;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#f093fb;stop-opacity:1" />
     </linearGradient>
   </defs>
   
   <!-- 背景圆形 -->
-  <circle cx="12" cy="12" r="11" fill="url(#iconGradient)"/>
+  <circle cx="12" cy="12" r="11" fill="url(#iconGradientV2)"/>
   
-  <!-- 简化的HKGAI文字 -->
-  <text x="12" y="16" text-anchor="middle" fill="white" font-family="Arial, sans-serif" 
-        font-size="8" font-weight="bold">HKGAI</text>
+  <!-- HKGAI文字 -->
+  <text x="12" y="15" text-anchor="middle" 
+        font-family="'Inter', -apple-system, sans-serif" 
+        font-size="7" 
+        font-weight="900" 
+        fill="white"
+        letter-spacing="0.2px">HKGAI</text>
+  
+  <!-- 简单装饰 -->
+  <circle cx="12" cy="12" r="9.5" fill="none" stroke="rgba(255,255,255,0.2)" stroke-width="0.5"/>
 </svg>
