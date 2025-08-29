@@ -81,6 +81,43 @@ function initializeApp() {
     loadHistoryFiles();
 }
 
+// 存储事件处理函数，用于去重
+const uploadAreaHandlers = {
+    dragover: function(e) {
+        e.preventDefault();
+        document.getElementById('file-upload-area').classList.add('dragover');
+    },
+    dragleave: function(e) {
+        e.preventDefault();
+        document.getElementById('file-upload-area').classList.remove('dragover');
+    },
+    drop: function(e) {
+        e.preventDefault();
+        const uploadArea = document.getElementById('file-upload-area');
+        uploadArea.classList.remove('dragover');
+        
+        const files = e.dataTransfer.files;
+        if (files.length > 0) {
+            document.getElementById('file-input').files = files;
+            handleFileSelect();
+        }
+    },
+    click: function() {
+        console.log('🖱️ [点击上传区域] 触发文件选择对话框');
+        
+        // 防止在文件正在处理时重复打开文件选择器
+        if (window.fileProcessing) {
+            console.log('⚠️ [点击上传区域] 文件正在处理中，忽略点击');
+            return;
+        }
+        
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.click();
+        }
+    }
+};
+
 // 设置文件上传功能
 function setupFileUpload() {
     const fileInput = document.getElementById('file-input');
@@ -90,37 +127,19 @@ function setupFileUpload() {
 
     // 移除可能存在的旧事件监听器，防止重复绑定
     fileInput.removeEventListener('change', handleFileSelect);
+    uploadArea.removeEventListener('dragover', uploadAreaHandlers.dragover);
+    uploadArea.removeEventListener('dragleave', uploadAreaHandlers.dragleave);
+    uploadArea.removeEventListener('drop', uploadAreaHandlers.drop);
+    uploadArea.removeEventListener('click', uploadAreaHandlers.click);
     
-    // 文件输入变化
+    // 重新绑定事件监听器
     fileInput.addEventListener('change', handleFileSelect);
-    console.log('✅ [初始化] 文件选择事件监听器已绑定');
-
-    // 拖拽功能
-    uploadArea.addEventListener('dragover', function(e) {
-        e.preventDefault();
-        uploadArea.classList.add('dragover');
-    });
-
-    uploadArea.addEventListener('dragleave', function(e) {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-    });
-
-    uploadArea.addEventListener('drop', function(e) {
-        e.preventDefault();
-        uploadArea.classList.remove('dragover');
-        
-        const files = e.dataTransfer.files;
-        if (files.length > 0) {
-            fileInput.files = files;
-            handleFileSelect();
-        }
-    });
-
-    // 点击上传区域
-    uploadArea.addEventListener('click', function() {
-        fileInput.click();
-    });
+    uploadArea.addEventListener('dragover', uploadAreaHandlers.dragover);
+    uploadArea.addEventListener('dragleave', uploadAreaHandlers.dragleave);
+    uploadArea.addEventListener('drop', uploadAreaHandlers.drop);
+    uploadArea.addEventListener('click', uploadAreaHandlers.click);
+    
+    console.log('✅ [初始化] 所有文件上传事件监听器已绑定');
 }
 
 // 处理文件选择
@@ -132,8 +151,13 @@ function handleFileSelect() {
     
     if (!file) {
         console.log('❌ [文件选择] 没有选择文件');
+        window.fileProcessing = false; // 清理处理标志
         return;
     }
+
+    // 设置文件处理标志，防止重复操作
+    window.fileProcessing = true;
+    console.log('🔒 [文件选择] 设置文件处理标志');
 
     // 检查文件格式
     const allowedTypes = ['.xlsx', '.xls', '.csv'];
@@ -145,9 +169,10 @@ function handleFileSelect() {
         console.log('❌ [文件选择] 不支持的文件格式:', fileExtension);
         showError('不支持的文件格式，请上传 .xlsx、.xls 或 .csv 文件');
         
-        // 文件格式错误后重置文件输入框
+        // 文件格式错误后重置文件输入框和处理标志
         fileInput.value = '';
-        console.log('🔄 [格式错误] 已重置文件输入框');
+        window.fileProcessing = false;
+        console.log('🔄 [格式错误] 已重置文件输入框和处理标志');
         return;
     }
 
@@ -195,11 +220,17 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
                 fileInput.value = '';
                 console.log('🔄 [上传成功] 已重置文件输入框');
             }
+            
+            // 标记处理完成
+            window.fileProcessing = false;
+            console.log('🔓 [上传成功] 清理文件处理标志');
         } 
         // 处理文件已存在的情况（409状态码）
         else if (response.status === 409 && result.error === 'file_exists') {
             console.log('📁 文件已存在，显示覆盖确认对话框');
             showFileExistsDialog(result.filename, file);
+            // 注意：不要在这里清理处理标志，因为用户可能会选择覆盖
+            return; // 提前返回，避免在finally中清理标志
         } 
         // 处理其他错误
         else if (!response.ok) {
@@ -227,6 +258,10 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
                 fileInput.value = '';
                 console.log('🔄 [上传失败] 已重置文件输入框');
             }
+            
+            // 清理处理标志
+            window.fileProcessing = false;
+            console.log('🔓 [上传失败] 清理文件处理标志');
         }
     } catch (error) {
         console.error('❌ 上传过程中发生错误:', error);
@@ -247,8 +282,18 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             fileInput.value = '';
             console.log('🔄 [网络错误失败] 已重置文件输入框');
         }
+        
+        // 清理处理标志
+        window.fileProcessing = false;
+        console.log('🔓 [网络错误失败] 清理文件处理标志');
     } finally {
         hideLoading();
+        
+        // 最后确保清理处理标志（除非是显示覆盖对话框的情况）
+        if (window.fileProcessing === undefined || window.fileProcessing === null) {
+            window.fileProcessing = false;
+            console.log('🔓 [finally] 确保文件处理标志已清理');
+        }
     }
 }
 
@@ -312,6 +357,10 @@ async function overwriteFile(filename) {
     } else {
         console.error(`❌ [文件覆盖] 没有找到待上传的文件`);
         showError('上传失败：没有找到待上传的文件');
+        
+        // 确保清理处理标志
+        window.fileProcessing = false;
+        console.log('🔓 [文件覆盖错误] 清理文件处理标志');
     }
 }
 
@@ -640,6 +689,10 @@ function closeCustomAlert() {
         console.log('🔄 [弹窗关闭] 重置文件输入框');
         fileInput.value = '';
     }
+    
+    // 清理文件处理标志
+    window.fileProcessing = false;
+    console.log('🔓 [弹窗关闭] 清理文件处理标志');
 }
 
 // 切换上传选项卡
