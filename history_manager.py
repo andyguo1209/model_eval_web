@@ -71,7 +71,8 @@ class EvaluationHistoryManager:
                 result_file=dest_path,
                 evaluation_mode=evaluation_data.get('evaluation_mode', 'unknown'),
                 result_summary=result_summary,
-                tags=tags
+                tags=tags,
+                created_by=evaluation_data.get('created_by', 'system')
             )
             
             print(f"✅ 评测结果已保存: {result_id}")
@@ -85,14 +86,18 @@ class EvaluationHistoryManager:
                         project_id: str = None,
                         tags: List[str] = None,
                         limit: int = 20,
-                        offset: int = 0) -> Dict:
-        """获取历史记录列表"""
+                        offset: int = 0,
+                        created_by: str = None,
+                        include_all_users: bool = False) -> Dict:
+        """获取历史记录列表（支持用户权限过滤）"""
         try:
             results = db.get_evaluation_history(
                 project_id=project_id,
                 tags=tags,
                 limit=limit,
-                offset=offset
+                offset=offset,
+                created_by=created_by,
+                include_all_users=include_all_users
             )
             
             # 添加文件存在性检查和额外信息
@@ -102,6 +107,15 @@ class EvaluationHistoryManager:
                 result['download_url'] = f"/api/history/download/{result['id']}"
                 result['view_url'] = f"/view_history/{result['id']}"
                 result['annotation_url'] = f"/annotate/{result['id']}"
+                
+                # 添加创建者信息
+                if result.get('created_by'):
+                    creator_info = db.get_user_by_id(result['created_by'])
+                    result['creator_name'] = creator_info['display_name'] if creator_info else '未知用户'
+                    result['creator_username'] = creator_info['username'] if creator_info else 'unknown'
+                else:
+                    result['creator_name'] = '系统'
+                    result['creator_username'] = 'system'
             
             return {
                 'success': True,

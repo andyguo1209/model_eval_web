@@ -53,11 +53,13 @@ class EvaluationDatabase:
                     evaluation_mode TEXT, -- 'objective' or 'subjective'
                     status TEXT DEFAULT 'completed', -- 'running', 'completed', 'failed', 'archived'
                     tags TEXT, -- JSON格式存储标签列表
+                    created_by TEXT, -- 创建者用户ID
                     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                     completed_at TIMESTAMP,
                     archived_at TIMESTAMP,
                     metadata TEXT, -- JSON格式存储额外元数据
-                    FOREIGN KEY (project_id) REFERENCES projects (id)
+                    FOREIGN KEY (project_id) REFERENCES projects (id),
+                    FOREIGN KEY (created_by) REFERENCES users (id)
                 )
             ''')
             
@@ -207,16 +209,98 @@ class EvaluationDatabase:
                 )
             ''')
             
+            # 10. 文件上传记录表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS uploaded_files (
+                    id TEXT PRIMARY KEY,
+                    filename TEXT NOT NULL,
+                    original_filename TEXT NOT NULL,
+                    file_path TEXT NOT NULL,
+                    file_size INTEGER,
+                    file_type TEXT, -- 'dataset', 'result', 'other'
+                    mode TEXT, -- 'objective', 'subjective', 'unknown'
+                    total_count INTEGER DEFAULT 0, -- 记录数量
+                    uploaded_by TEXT NOT NULL, -- 上传者用户ID
+                    uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    is_active BOOLEAN DEFAULT 1,
+                    metadata TEXT, -- JSON格式存储文件元数据
+                    FOREIGN KEY (uploaded_by) REFERENCES users (id)
+                )
+            ''')
+            
+            # 执行数据库迁移
+            self._migrate_database(db_cursor)
+            
             # 创建索引提高查询性能
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_project ON evaluation_results(project_id)')
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_results_created ON evaluation_results(created_at)')
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_result ON annotations(result_id)')
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_annotations_annotator ON annotations(annotator)')
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_running_tasks_status ON running_tasks(status)')
-            db_cursor.execute('CREATE INDEX IF NOT EXISTS idx_running_tasks_created ON running_tasks(created_at)')
+            self._create_indexes(db_cursor)
             
             conn.commit()
     
+    def _migrate_database(self, cursor):
+        """执行数据库迁移，安全地添加新字段"""
+        print("🔄 检查数据库迁移...")
+        
+        # 检查并添加 evaluation_results 表的 created_by 字段
+        try:
+            cursor.execute("PRAGMA table_info(evaluation_results)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'created_by' not in columns:
+                print("➕ 添加 evaluation_results.created_by 字段...")
+                cursor.execute("ALTER TABLE evaluation_results ADD COLUMN created_by TEXT")
+                
+                # 为现有记录设置默认值
+                cursor.execute("UPDATE evaluation_results SET created_by = 'legacy' WHERE created_by IS NULL")
+                print("✅ evaluation_results.created_by 字段添加完成")
+        except Exception as e:
+            print(f"⚠️ 迁移 evaluation_results 表时出错: {e}")
+        
+        # 检查并添加 running_tasks 表的 created_by 字段
+        try:
+            cursor.execute("PRAGMA table_info(running_tasks)")
+            columns = [column[1] for column in cursor.fetchall()]
+            
+            if 'created_by' not in columns:
+                print("➕ 添加 running_tasks.created_by 字段...")
+                cursor.execute("ALTER TABLE running_tasks ADD COLUMN created_by TEXT")
+                
+                # 为现有记录设置默认值
+                cursor.execute("UPDATE running_tasks SET created_by = 'legacy' WHERE created_by IS NULL")
+                print("✅ running_tasks.created_by 字段添加完成")
+        except Exception as e:
+            print(f"⚠️ 迁移 running_tasks 表时出错: {e}")
+        
+        print("✅ 数据库迁移完成")
+    
+    def _create_indexes(self, cursor):
+        """创建索引，处理可能的错误"""
+        indexes = [
+            ('idx_results_project', 'evaluation_results', 'project_id'),
+            ('idx_results_created', 'evaluation_results', 'created_at'),
+            ('idx_results_created_by', 'evaluation_results', 'created_by'),
+            ('idx_annotations_result', 'annotations', 'result_id'),
+            ('idx_annotations_annotator', 'annotations', 'annotator'),
+            ('idx_running_tasks_status', 'running_tasks', 'status'),
+            ('idx_running_tasks_created', 'running_tasks', 'created_at'),
+            ('idx_running_tasks_created_by', 'running_tasks', 'created_by'),
+            ('idx_uploaded_files_user', 'uploaded_files', 'uploaded_by'),
+            ('idx_uploaded_files_active', 'uploaded_files', 'is_active'),
+        ]
+        
+        for index_name, table_name, column_name in indexes:
+            try:
+                cursor.execute(f'CREATE INDEX IF NOT EXISTS {index_name} ON {table_name}({column_name})')
+            except Exception as e:
+                print(f"⚠️ 创建索引 {index_name} 失败: {e}")
+        
+        # 复合索引
+        try:
+            cursor.execute('CREATE INDEX IF NOT EXISTS idx_uploaded_files_type ON uploaded_files(file_type, uploaded_by)')
+        except Exception as e:
+            print(f"⚠️ 创建复合索引 idx_uploaded_files_type 失败: {e}")
+        
+        print("✅ 索引创建完成")
+
     def create_project(self, name: str, description: str = "", created_by: str = "system") -> str:
         """创建新项目"""
         project_id = str(uuid.uuid4())
@@ -237,7 +321,8 @@ class EvaluationDatabase:
                              result_file: str,
                              evaluation_mode: str,
                              result_summary: Dict = None,
-                             tags: List[str] = None) -> str:
+                             tags: List[str] = None,
+                             created_by: str = 'system') -> str:
         """保存评测结果"""
         result_id = str(uuid.uuid4())
         
@@ -249,14 +334,15 @@ class EvaluationDatabase:
             db_cursor.execute('''
                 INSERT INTO evaluation_results 
                 (id, project_id, name, dataset_file, dataset_hash, models, result_file, 
-                 result_summary, evaluation_mode, tags, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 result_summary, evaluation_mode, tags, created_by, completed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 result_id, project_id, name, dataset_file, dataset_hash,
                 json.dumps(models), result_file, 
                 json.dumps(result_summary or {}),
                 evaluation_mode,
                 json.dumps(tags or []),
+                created_by,
                 datetime.now().isoformat()
             ))
             conn.commit()
@@ -267,14 +353,16 @@ class EvaluationDatabase:
                              limit: int = 50,
                              offset: int = 0,
                              status: str = None,
-                             tags: List[str] = None) -> List[Dict]:
+                             tags: List[str] = None,
+                             created_by: str = None,
+                             include_all_users: bool = False) -> List[Dict]:
         """获取评测历史记录"""
         with sqlite3.connect(self.db_path) as conn:
             db_cursor = conn.cursor()
             
             query = '''
                 SELECT id, project_id, name, dataset_file, models, result_file,
-                       result_summary, evaluation_mode, status, tags, 
+                       result_summary, evaluation_mode, status, tags, created_by,
                        created_at, completed_at
                 FROM evaluation_results
                 WHERE status != 'deleted'
@@ -288,6 +376,11 @@ class EvaluationDatabase:
             if status:
                 query += ' AND status = ?'
                 params.append(status)
+                
+            # 用户权限过滤
+            if not include_all_users and created_by:
+                query += ' AND created_by = ?'
+                params.append(created_by)
             
             query += ' ORDER BY created_at DESC LIMIT ? OFFSET ?'
             params.extend([limit, offset])
@@ -308,8 +401,9 @@ class EvaluationDatabase:
                     'evaluation_mode': row[7],
                     'status': row[8],
                     'tags': json.loads(row[9]) if row[9] else [],
-                    'created_at': row[10],
-                    'completed_at': row[11]
+                    'created_by': row[10],
+                    'created_at': row[11],
+                    'completed_at': row[12]
                 }
                 
                 # 标签过滤
@@ -1161,6 +1255,165 @@ class EvaluationDatabase:
         except Exception as e:
             print(f"获取运行时任务列表失败: {e}")
             return []
+    
+    # ========== 文件上传记录管理方法 ==========
+    
+    def save_uploaded_file(self, filename: str, original_filename: str, file_path: str, 
+                          uploaded_by: str, file_type: str = 'dataset', mode: str = 'unknown',
+                          total_count: int = 0, file_size: int = 0, metadata: Dict = None) -> str:
+        """保存文件上传记录，如果同用户同名文件已存在则更新记录"""
+        
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 先检查是否已存在相同用户和文件名的记录
+                cursor.execute('''
+                    SELECT id FROM uploaded_files 
+                    WHERE filename = ? AND uploaded_by = ? AND is_active = 1
+                ''', (filename, uploaded_by))
+                
+                existing_record = cursor.fetchone()
+                
+                if existing_record:
+                    # 更新现有记录
+                    file_id = existing_record[0]
+                    cursor.execute('''
+                        UPDATE uploaded_files 
+                        SET original_filename = ?, file_path = ?, file_size = ?, 
+                            mode = ?, total_count = ?, metadata = ?, uploaded_at = CURRENT_TIMESTAMP
+                        WHERE id = ?
+                    ''', (
+                        original_filename, file_path, file_size, mode, total_count,
+                        json.dumps(metadata or {}), file_id
+                    ))
+                    print(f"📝 更新文件记录: {filename} (用户: {uploaded_by})")
+                else:
+                    # 创建新记录
+                    file_id = str(uuid.uuid4())
+                    cursor.execute('''
+                        INSERT INTO uploaded_files 
+                        (id, filename, original_filename, file_path, file_size, file_type, mode, 
+                         total_count, uploaded_by, metadata)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ''', (
+                        file_id, filename, original_filename, file_path, file_size, 
+                        file_type, mode, total_count, uploaded_by, 
+                        json.dumps(metadata or {})
+                    ))
+                    print(f"📁 创建文件记录: {filename} (用户: {uploaded_by})")
+                
+                conn.commit()
+                return file_id
+        except Exception as e:
+            print(f"保存文件上传记录失败: {e}")
+            return None
+    
+    def get_user_uploaded_files(self, uploaded_by: str = None, file_type: str = None, 
+                               include_all_users: bool = False) -> List[Dict]:
+        """获取用户上传的文件列表"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = '''
+                    SELECT id, filename, original_filename, file_path, file_size, file_type, 
+                           mode, total_count, uploaded_by, uploaded_at, metadata
+                    FROM uploaded_files 
+                    WHERE is_active = 1
+                '''
+                params = []
+                
+                # 用户权限过滤
+                if not include_all_users and uploaded_by:
+                    query += ' AND uploaded_by = ?'
+                    params.append(uploaded_by)
+                
+                if file_type:
+                    query += ' AND file_type = ?'
+                    params.append(file_type)
+                
+                query += ' ORDER BY uploaded_at DESC'
+                
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                
+                files = []
+                for row in rows:
+                    file_info = {
+                        'id': row[0],
+                        'filename': row[1],
+                        'original_filename': row[2],
+                        'file_path': row[3],
+                        'file_size': row[4],
+                        'file_type': row[5],
+                        'mode': row[6],
+                        'total_count': row[7],
+                        'uploaded_by': row[8],
+                        'uploaded_at': row[9],
+                        'metadata': json.loads(row[10]) if row[10] else {}
+                    }
+                    files.append(file_info)
+                
+                return files
+        except Exception as e:
+            print(f"获取用户上传文件失败: {e}")
+            return []
+    
+    def delete_uploaded_file_record(self, file_id: str) -> bool:
+        """删除文件上传记录（软删除）"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE uploaded_files SET is_active = 0 
+                    WHERE id = ?
+                ''', (file_id,))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"删除文件上传记录失败: {e}")
+            return False
+    
+    def get_uploaded_file_by_filename(self, filename: str, uploaded_by: str = None) -> Optional[Dict]:
+        """根据文件名获取上传记录"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = '''
+                    SELECT id, filename, original_filename, file_path, file_size, file_type, 
+                           mode, total_count, uploaded_by, uploaded_at, metadata
+                    FROM uploaded_files 
+                    WHERE filename = ? AND is_active = 1
+                '''
+                params = [filename]
+                
+                if uploaded_by:
+                    query += ' AND uploaded_by = ?'
+                    params.append(uploaded_by)
+                
+                cursor.execute(query, params)
+                row = cursor.fetchone()
+                
+                if row:
+                    return {
+                        'id': row[0],
+                        'filename': row[1],
+                        'original_filename': row[2],
+                        'file_path': row[3],
+                        'file_size': row[4],
+                        'file_type': row[5],
+                        'mode': row[6],
+                        'total_count': row[7],
+                        'uploaded_by': row[8],
+                        'uploaded_at': row[9],
+                        'metadata': json.loads(row[10]) if row[10] else {}
+                    }
+                return None
+        except Exception as e:
+            print(f"获取文件上传记录失败: {e}")
+            return None
     
     def delete_running_task(self, task_id: str) -> bool:
         """删除运行时任务记录"""

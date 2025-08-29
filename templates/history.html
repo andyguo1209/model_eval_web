@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>评测历史 - AI模型评测系统</title>
+    <title>评测历史 - HKGAI模型评测系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
     <style>
@@ -433,6 +433,15 @@
                     </select>
                 </div>
                 
+                <!-- 用户筛选（仅管理员可见） -->
+                <div class="filter-group" id="user-filter-group" style="display: none;">
+                    <label>创建者</label>
+                    <select class="filter-input" id="user-filter">
+                        <option value="">所有用户</option>
+                        <!-- 用户选项将通过JavaScript动态加载 -->
+                    </select>
+                </div>
+                
                 <div class="filter-group">
                     <label>时间范围</label>
                     <select class="filter-input" id="time-filter">
@@ -521,6 +530,11 @@
             
             // 筛选器变化
             document.getElementById('mode-filter').addEventListener('change', () => {
+                currentPage = 1;
+                loadHistory();
+            });
+            
+            document.getElementById('user-filter').addEventListener('change', () => {
                 currentPage = 1;
                 loadHistory();
             });
@@ -625,6 +639,9 @@
                 const mode = document.getElementById('mode-filter').value;
                 if (mode) params.append('mode', mode);
                 
+                const selectedUser = document.getElementById('user-filter').value;
+                if (selectedUser) params.append('user_id', selectedUser);
+                
                 const timeRange = document.getElementById('time-filter').value;
                 if (timeRange) params.append('time_range', timeRange);
                 
@@ -639,6 +656,14 @@
                     renderHistoryGrid(data.results);
                     renderPagination(data.total);
                     totalResults = data.total;
+                    
+                    // 如果是管理员，显示用户筛选器并加载用户列表
+                    if (data.is_admin) {
+                        document.getElementById('user-filter-group').style.display = 'block';
+                        if (data.users) {
+                            updateUserFilter(data.users, data.selected_user);
+                        }
+                    }
                 } else {
                     throw new Error(data.error || '加载失败');
                 }
@@ -713,6 +738,12 @@
                             <i class="fas fa-calendar"></i>
                             <span>${createdAt}</span>
                         </div>
+                        ${result.creator_name ? `
+                        <div class="info-item">
+                            <i class="fas fa-user"></i>
+                            <span>${result.creator_name}</span>
+                        </div>
+                        ` : ''}
                         <div class="info-item">
                             <i class="fas fa-file-alt"></i>
                             <span>${result.file_size || '未知'}</span>
@@ -841,7 +872,7 @@
                     <p><strong>完成时间：</strong>${result.completed_at ? new Date(result.completed_at).toLocaleString('zh-CN') : '未完成'}</p>
                 </div>
                 
-                <h4><div class="hkgai-logo small" style="display: inline-block;"></div> 参与模型</h4>
+                <h4>参与模型</h4>
                 <div style="margin-bottom: 20px;">
                     ${result.models?.map(model => `<span class="model-badge">${model}</span>`).join(' ') || '无'}
                 </div>
@@ -1005,10 +1036,24 @@
             alert('导出功能开发中...');
         }
         
+        // 更新用户筛选器
+        function updateUserFilter(users, selectedUserId) {
+            const userFilter = document.getElementById('user-filter');
+            let options = '<option value="">所有用户</option>';
+            
+            users.forEach(user => {
+                const selected = user.id === selectedUserId ? 'selected' : '';
+                options += `<option value="${user.id}" ${selected}>${user.display_name} (${user.username})</option>`;
+            });
+            
+            userFilter.innerHTML = options;
+        }
+        
         // 重置筛选
         function resetFilters() {
             document.getElementById('search-input').value = '';
             document.getElementById('mode-filter').value = '';
+            document.getElementById('user-filter').value = '';
             document.getElementById('time-filter').value = '';
             selectedTags = [];
             updateTagDisplay();

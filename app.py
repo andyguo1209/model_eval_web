@@ -1001,74 +1001,127 @@ def welcome():
 @app.route('/get_uploaded_files', methods=['GET'])
 @login_required
 def get_uploaded_files():
-    """获取已上传的文件列表"""
+    """获取已上传的文件列表（按用户权限过滤）"""
     try:
+        current_user = db.get_user_by_id(session['user_id'])
+        is_admin = current_user and current_user['role'] == 'admin'
+        
+        # 获取用户筛选参数（仅管理员可用）
+        selected_user = request.args.get('user_id') if is_admin else None
+        
         upload_folder = app.config['UPLOAD_FOLDER']
         files = []
         
-        if os.path.exists(upload_folder):
-            # 获取文件列表并确保正确的编码处理
-            print(f"🔍 正在扫描文件夹: {upload_folder}")
+        # 先从数据库获取文件记录
+        if is_admin:
+            if selected_user:
+                # 管理员查看指定用户的文件
+                db_files = db.get_user_uploaded_files(uploaded_by=selected_user, include_all_users=False)
+            else:
+                # 管理员查看所有用户的文件
+                db_files = db.get_user_uploaded_files(include_all_users=True)
+        else:
+            # 普通用户只能看自己的文件
+            db_files = db.get_user_uploaded_files(uploaded_by=session['user_id'], include_all_users=False)
+        
+        # 处理数据库中的文件记录
+        for file_record in db_files:
+            try:
+                filepath = file_record['file_path']
+                if os.path.exists(filepath):
+                    stat = os.stat(filepath)
+                    
+                    # 确保文件有提示词记录
+                    db.create_file_prompt_if_not_exists(file_record['filename'])
+                    
+                    # 获取提示词信息
+                    prompt_info = db.get_file_prompt_info(file_record['filename'])
+                    has_custom_prompt = prompt_info is not None
+                    
+                    # 获取上传者信息
+                    uploader_info = db.get_user_by_id(file_record['uploaded_by'])
+                    uploader_name = uploader_info['display_name'] if uploader_info else '未知用户'
+                    
+                    files.append({
+                        'filename': file_record['filename'],
+                        'original_filename': file_record['original_filename'],
+                        'size': stat.st_size,
+                        'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                        'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
+                        'has_custom_prompt': has_custom_prompt,
+                        'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None,
+                        'uploaded_by': file_record['uploaded_by'],
+                        'uploader_name': uploader_name,
+                        'mode': file_record.get('mode', 'unknown'),
+                        'total_count': file_record.get('total_count', 0)
+                    })
+                    
+                    print(f"✅ 加载测试集文件: {file_record['filename']} (上传者: {uploader_name})")
+            except Exception as file_error:
+                print(f"❌ 处理文件记录 {file_record.get('filename', 'unknown')} 时出错: {file_error}")
+                continue
+        
+        # 如果是管理员且没有选择特定用户，还需要检查文件系统中的遗留文件（没有数据库记录的）
+        if is_admin and not selected_user and os.path.exists(upload_folder):
+            existing_filenames = {f['filename'] for f in files}
+            
             try:
                 filenames = os.listdir(upload_folder)
-                print(f"📂 原始文件列表: {filenames}")
-                # 检查中文文件
-                chinese_files = [f for f in filenames if any('\u4e00' <= char <= '\u9fff' for char in f)]
-                print(f"🔤 包含中文的文件: {chinese_files}")
+                for filename in filenames:
+                    if filename.endswith(('.xlsx', '.xls', '.csv')) and filename not in existing_filenames:
+                        try:
+                            filepath = os.path.join(upload_folder, filename)
+                            if not os.path.exists(filepath):
+                                continue
+                                
+                            stat = os.stat(filepath)
+                            
+                            # 确保文件有提示词记录
+                            db.create_file_prompt_if_not_exists(filename)
+                            
+                            # 获取提示词信息
+                            prompt_info = db.get_file_prompt_info(filename)
+                            has_custom_prompt = prompt_info is not None
+                            
+                            files.append({
+                                'filename': filename,
+                                'original_filename': filename,
+                                'size': stat.st_size,
+                                'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
+                                'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
+                                'has_custom_prompt': has_custom_prompt,
+                                'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None,
+                                'uploaded_by': 'legacy',
+                                'uploader_name': '历史数据',
+                                'mode': 'unknown',
+                                'total_count': 0
+                            })
+                            
+                            print(f"✅ 加载遗留文件: {filename}")
+                            
+                        except Exception as file_error:
+                            print(f"❌ 处理遗留文件 {filename} 时出错: {file_error}")
+                            continue
             except UnicodeDecodeError as e:
                 print(f"⚠️ 编码错误: {e}")
-                # 如果遇到编码问题，尝试用不同编码读取
-                import locale
-                encoding = locale.getpreferredencoding()
-                print(f"🔧 使用系统编码: {encoding}")
-                filenames = [f.encode(encoding).decode('utf-8', errors='ignore') for f in os.listdir(upload_folder)]
-                print(f"📂 编码转换后文件列表: {filenames}")
-            
-            for filename in filenames:
-                if filename.endswith(('.xlsx', '.xls', '.csv')):
-                    try:
-                        filepath = os.path.join(upload_folder, filename)
-                        
-                        # 检查文件是否真实存在（防止编码问题导致的文件不存在）
-                        if not os.path.exists(filepath):
-                            print(f"⚠️ 文件不存在或编码问题: {filename}")
-                            continue
-                            
-                        stat = os.stat(filepath)
-                        
-                        # 确保文件有提示词记录
-                        db.create_file_prompt_if_not_exists(filename)
-                        
-                        # 获取提示词信息
-                        prompt_info = db.get_file_prompt_info(filename)
-                        has_custom_prompt = prompt_info is not None
-                        
-                        # 确保文件名是有效的UTF-8字符串
-                        safe_filename = filename
-                        if isinstance(filename, bytes):
-                            safe_filename = filename.decode('utf-8', errors='replace')
-                        
-                        files.append({
-                            'filename': safe_filename,
-                            'size': stat.st_size,
-                            'upload_time': datetime.fromtimestamp(stat.st_mtime).strftime('%Y-%m-%d %H:%M:%S'),
-                            'size_formatted': f"{stat.st_size / 1024:.1f} KB" if stat.st_size < 1024*1024 else f"{stat.st_size / (1024*1024):.1f} MB",
-                            'has_custom_prompt': has_custom_prompt,
-                            'prompt_updated_at': prompt_info['updated_at'] if prompt_info else None
-                        })
-                        
-                        print(f"✅ 加载测试集文件: {safe_filename}")
-                        
-                    except Exception as file_error:
-                        print(f"❌ 处理文件 {filename} 时出错: {file_error}")
-                        continue
         
         # 按上传时间倒序排列
         files.sort(key=lambda x: x['upload_time'], reverse=True)
         print(f"📋 共找到 {len(files)} 个测试集文件")
         
+        # 获取用户列表（仅管理员需要）
+        users_list = []
+        if is_admin:
+            users_list = db.list_users()
+        
         # 设置正确的响应头确保中文正确传输
-        response = jsonify({'success': True, 'files': files})
+        response = jsonify({
+            'success': True, 
+            'files': files,
+            'is_admin': is_admin,
+            'users': users_list,
+            'selected_user': selected_user
+        })
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
         return response
         
@@ -1196,15 +1249,32 @@ def debug_csv_file_status(filename):
 @app.route('/delete_file/<filename>', methods=['DELETE'])
 @login_required
 def delete_file(filename):
-    """删除上传的文件"""
+    """删除上传的文件（含权限检查）"""
     try:
+        current_user = db.get_user_by_id(session['user_id'])
+        is_admin = current_user and current_user['role'] == 'admin'
+        
         filename = secure_chinese_filename(filename)
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         
         if not os.path.exists(filepath):
             return jsonify({'error': '文件不存在'}), 404
         
+        # 权限检查：查找文件的上传记录
+        file_record = db.get_uploaded_file_by_filename(filename)
+        if file_record:
+            # 普通用户只能删除自己上传的文件
+            if not is_admin and file_record['uploaded_by'] != session['user_id']:
+                return jsonify({'error': '没有权限删除此文件'}), 403
+            
+            # 软删除数据库记录
+            db.delete_uploaded_file_record(file_record['id'])
+        elif not is_admin:
+            # 如果没有数据库记录且用户不是管理员，禁止删除
+            return jsonify({'error': '没有权限删除此文件'}), 403
+        
         os.remove(filepath)
+        print(f"✅ 文件已删除: {filename} (用户: {current_user['display_name']})")
         return jsonify({'success': True, 'message': f'文件 {filename} 已删除'})
     except Exception as e:
         return jsonify({'error': f'删除文件失败: {str(e)}'}), 500
@@ -1328,13 +1398,11 @@ def upload_file():
         filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
         print(f"📤 上传文件: 原始名称='{file.filename}' -> 安全名称='{filename}'")
         
-        # 如果文件存在且不允许覆盖，返回提示
-        if os.path.exists(filepath) and not overwrite:
-            return jsonify({
-                'error': 'file_exists',
-                'message': f'文件 "{filename}" 已存在，是否要覆盖？',
-                'filename': filename
-            }), 409
+        # 检查文件冲突，考虑用户权限
+        current_user_id = session['user_id']
+        file_conflict_result = check_file_conflict(filename, current_user_id, overwrite)
+        if file_conflict_result:
+            return file_conflict_result
         
         file.save(filepath)
         
@@ -1356,10 +1424,36 @@ def upload_file():
             total_count = len(df)
             type_counts = df['type'].value_counts().to_dict() if 'type' in df.columns else {'未分类': total_count}
             
+            # 获取文件大小
+            file_size = os.path.getsize(filepath)
+            
             # 为新上传的文件创建默认提示词记录
             current_user = db.get_user_by_id(session['user_id'])
             created_by = current_user['username'] if current_user else 'system'
             db.create_file_prompt_if_not_exists(filename, created_by=created_by)
+            
+            # 保存文件上传记录到数据库
+            file_id = db.save_uploaded_file(
+                filename=filename,
+                original_filename=file.filename,
+                file_path=filepath,
+                uploaded_by=session['user_id'],
+                file_type='dataset',
+                mode=mode,
+                total_count=total_count,
+                file_size=file_size,
+                metadata={
+                    'type_counts': type_counts,
+                    'has_answer': 'answer' in df.columns,
+                    'has_type': 'type' in df.columns,
+                    'columns': list(df.columns)
+                }
+            )
+            
+            if file_id:
+                print(f"✅ 保存文件上传记录: {filename} (ID: {file_id}, 用户: {current_user['display_name']})")
+            else:
+                print(f"⚠️ 保存文件上传记录失败: {filename}")
             
             return jsonify({
                 'success': True,
@@ -1375,6 +1469,131 @@ def upload_file():
             return jsonify({'error': f'文件解析错误: {str(e)}'}), 400
     
     return jsonify({'error': '不支持的文件格式，请上传 .xlsx、.xls 或 .csv 文件'}), 400
+
+def check_file_conflict(filename, current_user_id, overwrite):
+    """检查文件冲突，考虑用户权限"""
+    filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+    current_user = db.get_user_by_id(current_user_id)
+    is_admin = current_user and current_user['role'] == 'admin'
+    
+    # 检查数据库中的文件记录
+    file_record = db.get_uploaded_file_by_filename(filename)
+    file_exists_in_system = os.path.exists(filepath)
+    
+    if file_record or file_exists_in_system:
+        if not overwrite:
+            # 检查文件所有者
+            if file_record:
+                file_owner_id = file_record['uploaded_by']
+                file_owner = db.get_user_by_id(file_owner_id)
+                file_owner_name = file_owner['display_name'] if file_owner else '未知用户'
+                
+                if file_owner_id != current_user_id and not is_admin:
+                    # 不同用户的文件，建议重命名
+                    current_user = db.get_user_by_id(current_user_id)
+                    current_user_name = current_user['display_name'] if current_user and current_user['display_name'] else current_user['username'] if current_user else 'user'
+                    
+                    # 生成建议的文件名，确保不与现有文件冲突
+                    name_part, ext_part = os.path.splitext(filename)
+                    suggested_filename = f"{name_part}_{current_user_name}{ext_part}"
+                    
+                    # 检查建议的文件名是否也存在冲突
+                    counter = 1
+                    while True:
+                        suggested_filepath = os.path.join(app.config['UPLOAD_FOLDER'], suggested_filename)
+                        suggested_file_record = db.get_uploaded_file_by_filename(suggested_filename)
+                        
+                        # 如果文件不存在，或者是当前用户自己的文件，则可以使用
+                        if not os.path.exists(suggested_filepath) and not suggested_file_record:
+                            break
+                        elif suggested_file_record and suggested_file_record['uploaded_by'] == current_user_id:
+                            break
+                        else:
+                            # 文件名冲突，添加数字后缀
+                            suggested_filename = f"{name_part}_{current_user_name}_{counter}{ext_part}"
+                            counter += 1
+                            if counter > 100:  # 防止无限循环
+                                suggested_filename = f"{name_part}_{current_user_id}_{int(time.time())}{ext_part}"
+                                break
+                    
+                    return jsonify({
+                        'error': 'file_owned_by_other_suggest_rename',
+                        'message': f'文件 "{filename}" 已被用户 "{file_owner_name}" 上传。',
+                        'filename': filename,
+                        'owner': file_owner_name,
+                        'suggested_filename': suggested_filename,
+                        'current_user_name': current_user_name
+                    }), 409
+                elif file_owner_id == current_user_id:
+                    # 自己的文件，询问是否覆盖
+                    return jsonify({
+                        'error': 'file_exists_own',
+                        'message': f'您已上传过文件 "{filename}"，是否要覆盖？',
+                        'filename': filename
+                    }), 409
+                elif is_admin:
+                    # 管理员可以覆盖任何文件，但需要确认
+                    return jsonify({
+                        'error': 'file_exists_admin',
+                        'message': f'文件 "{filename}" 已被用户 "{file_owner_name}" 上传，您是管理员，是否要覆盖？',
+                        'filename': filename,
+                        'owner': file_owner_name
+                    }), 409
+            else:
+                # 文件存在于系统但没有数据库记录（遗留文件）
+                if is_admin:
+                    return jsonify({
+                        'error': 'file_exists_legacy',
+                        'message': f'文件 "{filename}" 已存在（其他用户数据），是否要覆盖？',
+                        'filename': filename
+                    }), 409
+                else:
+                    # 普通用户不能覆盖遗留文件，提供智能重命名建议
+                    current_user = db.get_user_by_id(current_user_id)
+                    current_user_name = current_user['display_name'] if current_user and current_user['display_name'] else current_user['username'] if current_user else 'user'
+                    
+                    # 生成建议的文件名，确保不与现有文件冲突
+                    name_part, ext_part = os.path.splitext(filename)
+                    suggested_filename = f"{name_part}_{current_user_name}{ext_part}"
+                    
+                    # 检查建议的文件名是否也存在冲突
+                    counter = 1
+                    while True:
+                        suggested_filepath = os.path.join(app.config['UPLOAD_FOLDER'], suggested_filename)
+                        suggested_file_record = db.get_uploaded_file_by_filename(suggested_filename)
+                        
+                        # 如果文件不存在，或者是当前用户自己的文件，则可以使用
+                        if not os.path.exists(suggested_filepath) and not suggested_file_record:
+                            break
+                        elif suggested_file_record and suggested_file_record['uploaded_by'] == current_user_id:
+                            break
+                        else:
+                            # 文件名冲突，添加数字后缀
+                            suggested_filename = f"{name_part}_{current_user_name}_{counter}{ext_part}"
+                            counter += 1
+                            if counter > 100:  # 防止无限循环
+                                suggested_filename = f"{name_part}_{current_user_id}_{int(time.time())}{ext_part}"
+                                break
+                    
+                    return jsonify({
+                        'error': 'file_legacy_suggest_rename',
+                        'message': f'文件 "{filename}" 是系统历史数据。',
+                        'filename': filename,
+                        'owner': '历史数据',
+                        'suggested_filename': suggested_filename,
+                        'current_user_name': current_user_name
+                    }), 409
+        else:
+            # 用户确认覆盖，再次检查权限
+            if file_record:
+                file_owner_id = file_record['uploaded_by']
+                if file_owner_id != current_user_id and not is_admin:
+                    return jsonify({
+                        'error': 'permission_denied',
+                        'message': '您没有权限覆盖其他用户的文件。'
+                    }), 403
+    
+    return None  # 没有冲突
 
 def analyze_existing_file(filename):
     """分析已存在的文件"""
@@ -1514,7 +1733,7 @@ def start_evaluation():
         data_list = df.to_dict('records')
         queries = [str(row.get("query", "")) for row in data_list]
         
-        def task():
+        def task(user_id, task_custom_name, task_save_to_history):
             try:
                 # 第一步：获取模型答案
                 model_results = run_async_task(get_multiple_model_answers, queries, selected_models, task_id, headers_dict)
@@ -1531,7 +1750,7 @@ def start_evaluation():
                 db.update_task_status(task_id, "completed", result_file=output_file)
                 
                 # 保存到历史记录
-                if save_to_history:
+                if task_save_to_history:
                     try:
                         evaluation_data = {
                             'dataset_file': filename,
@@ -1540,7 +1759,8 @@ def start_evaluation():
                             'start_time': task_status[task_id].start_time.isoformat(),
                             'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
                             'question_count': len(data_list),
-                            'custom_name': custom_name  # 传递自定义名称
+                            'custom_name': task_custom_name,  # 传递自定义名称
+                            'created_by': user_id  # 使用传递的用户ID
                         }
                         history_manager.save_evaluation_result(evaluation_data, output_file)
                     except Exception as e:
@@ -1555,7 +1775,7 @@ def start_evaluation():
                 db.update_task_status(task_id, "failed", error_message=str(e))
         
         # 在后台运行任务
-        thread = threading.Thread(target=task)
+        thread = threading.Thread(target=task, args=(current_user_id, custom_name, save_to_history))
         thread.start()
         
         return jsonify({'success': True, 'task_id': task_id})
@@ -1598,12 +1818,19 @@ def download_file(filename):
 @app.route('/api/history/download/<result_id>')
 @login_required
 def download_history_result(result_id):
-    """通过result_id下载历史记录结果文件"""
+    """通过result_id下载历史记录结果文件（含权限检查）"""
     try:
+        current_user = db.get_user_by_id(session['user_id'])
+        is_admin = current_user and current_user['role'] == 'admin'
+        
         # 获取数据库中的结果信息
         if db:
             result = db.get_result_by_id(result_id)
             if result and result.get('result_file'):
+                # 权限检查：普通用户只能下载自己的结果
+                if not is_admin and result.get('created_by') != session['user_id']:
+                    return jsonify({'error': '没有权限访问此结果'}), 403
+                
                 result_file = result['result_file']
                 
                 # 检查文件是否存在
@@ -1884,16 +2111,20 @@ def get_history_statistics():
 @app.route('/api/history/list')
 @login_required
 def get_history_list():
-    """获取历史记录列表"""
+    """获取历史记录列表（按用户权限过滤）"""
     if not history_manager:
         return jsonify({'success': False, 'error': '历史管理功能未启用'}), 503
     try:
+        current_user = db.get_user_by_id(session['user_id'])
+        is_admin = current_user and current_user['role'] == 'admin'
+        
         # 获取查询参数
         page = int(request.args.get('page', 1))
         limit = int(request.args.get('limit', 20))
         search = request.args.get('search', '')
         mode = request.args.get('mode', '')
         tags = request.args.get('tags', '')
+        selected_user = request.args.get('user_id') if is_admin else None
         
         # 解析标签
         tag_list = [tag.strip() for tag in tags.split(',') if tag.strip()] if tags else None
@@ -1901,11 +2132,28 @@ def get_history_list():
         # 计算偏移量
         offset = (page - 1) * limit
         
+        # 确定用户过滤参数
+        if is_admin:
+            if selected_user:
+                # 管理员查看指定用户的记录
+                created_by = selected_user
+                include_all_users = False
+            else:
+                # 管理员查看所有用户的记录
+                created_by = None
+                include_all_users = True
+        else:
+            # 普通用户只能看自己的记录
+            created_by = session['user_id']
+            include_all_users = False
+        
         # 获取历史记录
         history = history_manager.get_history_list(
             tags=tag_list,
             limit=limit,
-            offset=offset
+            offset=offset,
+            created_by=created_by,
+            include_all_users=include_all_users
         )
         
         # 简单的搜索过滤（在返回的结果中过滤）
@@ -1921,6 +2169,15 @@ def get_history_list():
         # 模式过滤
         if mode and history['success']:
             history['results'] = [r for r in history['results'] if r['evaluation_mode'] == mode]
+        
+        # 为管理员添加额外信息
+        if is_admin and history.get('success'):
+            users_list = db.list_users()
+            history['users'] = users_list
+            history['is_admin'] = True
+            history['selected_user'] = selected_user
+        else:
+            history['is_admin'] = False
         
         return jsonify(history)
         
@@ -2020,14 +2277,20 @@ def get_annotation_statistics(result_id):
 @app.route('/view_history/<result_id>')
 @login_required
 def view_history(result_id):
-    """查看历史评测结果详情"""
+    """查看历史评测结果详情（含权限检查）"""
     try:
+        current_user = db.get_user_by_id(session['user_id'])
+        is_admin = current_user and current_user['role'] == 'admin'
+        
         # 获取历史记录详情
         result_detail = history_manager.get_result_detail(result_id)
         if not result_detail:
             return jsonify({'error': '结果不存在'}), 404
         
+        # 权限检查：普通用户只能查看自己的结果
         result = result_detail.get('result', {})
+        if not is_admin and result.get('created_by') != session['user_id']:
+            return jsonify({'error': '没有权限访问此结果'}), 403
         result_file = result.get('result_file')
         
         if not result_file:
@@ -3173,6 +3436,162 @@ def set_file_prompt(filename):
     except Exception as e:
         print(f"❌ [提示词编辑] 设置文件提示词错误: {e}")
         return jsonify({'error': f'保存提示词失败: {str(e)}'}), 500
+
+@app.route('/api/file-data/<filename>', methods=['GET'])
+@login_required
+def get_file_data(filename):
+    """获取文件数据内容用于编辑"""
+    try:
+        filename = secure_chinese_filename(filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        if not os.path.exists(filepath):
+            return jsonify({'error': '文件不存在'}), 404
+        
+        # 权限检查
+        current_user_id = session['user_id']
+        current_user = db.get_user_by_id(current_user_id)
+        is_admin = current_user and current_user['role'] == 'admin'
+        
+        # 检查文件所有者
+        file_record = db.get_uploaded_file_by_filename(filename)
+        if file_record:
+            file_owner_id = file_record['uploaded_by']
+            if file_owner_id != current_user_id and not is_admin:
+                return jsonify({'error': '您没有权限编辑此文件'}), 403
+        elif not is_admin:
+            # 历史文件，只有管理员可以编辑
+            return jsonify({'error': '您没有权限编辑历史文件'}), 403
+        
+        # 读取文件数据
+        if filename.endswith('.csv'):
+            df = pd.read_csv(filepath, encoding='utf-8-sig')
+        else:
+            df = pd.read_excel(filepath, engine='openpyxl')
+        
+        # 转换为可编辑的格式
+        columns = df.columns.tolist()
+        data = df.to_dict('records')
+        
+        # 确保所有值都是字符串，避免前端显示问题
+        for row in data:
+            for key in row:
+                if row[key] is None or pd.isna(row[key]):
+                    row[key] = ''
+                else:
+                    row[key] = str(row[key])
+        
+        print(f"📖 用户 {current_user_id} 获取文件 {filename} 数据，包含 {len(data)} 行")
+        
+        return jsonify({
+            'success': True,
+            'filename': filename,
+            'columns': columns,
+            'data': data,
+            'total_rows': len(data)
+        })
+        
+    except Exception as e:
+        print(f"获取文件数据失败: {e}")
+        return jsonify({'error': f'获取文件数据失败: {str(e)}'}), 500
+
+@app.route('/api/file-data/<filename>', methods=['POST'])
+@login_required
+def save_file_data(filename):
+    """保存编辑后的文件数据"""
+    try:
+        filename = secure_chinese_filename(filename)
+        filepath = os.path.join(app.config['UPLOAD_FOLDER'], filename)
+        
+        # 权限检查（与获取数据相同的逻辑）
+        current_user_id = session['user_id']
+        current_user = db.get_user_by_id(current_user_id)
+        is_admin = current_user and current_user['role'] == 'admin'
+        
+        file_record = db.get_uploaded_file_by_filename(filename)
+        if file_record:
+            file_owner_id = file_record['uploaded_by']
+            if file_owner_id != current_user_id and not is_admin:
+                return jsonify({'error': '您没有权限保存此文件'}), 403
+        elif not is_admin:
+            return jsonify({'error': '您没有权限保存历史文件'}), 403
+        
+        # 获取前端发送的数据
+        request_data = request.get_json()
+        if not request_data or 'data' not in request_data:
+            return jsonify({'error': '缺少数据'}), 400
+        
+        data = request_data['data']
+        
+        if not data:
+            return jsonify({'error': '数据为空'}), 400
+        
+        # 验证必需的列
+        if data:
+            first_row = data[0]
+            if 'query' not in first_row:
+                return jsonify({'error': '数据必须包含"query"列'}), 400
+        
+        # 转换为DataFrame
+        df = pd.DataFrame(data)
+        
+        # 创建备份
+        backup_path = filepath + '.backup'
+        if os.path.exists(filepath):
+            import shutil
+            shutil.copy2(filepath, backup_path)
+            print(f"📋 创建文件备份: {backup_path}")
+        
+        # 保存文件
+        try:
+            if filename.endswith('.csv'):
+                df.to_csv(filepath, index=False, encoding='utf-8-sig')
+            else:
+                df.to_excel(filepath, index=False, engine='openpyxl')
+            
+            print(f"💾 用户 {current_user_id} 保存文件 {filename}，包含 {len(data)} 行")
+            
+            # 更新数据库记录
+            if file_record:
+                file_size = os.path.getsize(filepath)
+                # 检测评测模式
+                mode = detect_evaluation_mode(df)
+                
+                # 更新文件记录
+                db.save_uploaded_file(
+                    filename=filename,
+                    original_filename=filename,
+                    file_path=filepath,
+                    uploaded_by=current_user_id,
+                    file_type='dataset',
+                    mode=mode,
+                    total_count=len(df),
+                    file_size=file_size
+                )
+                print(f"📝 更新文件记录: {filename}")
+            
+            return jsonify({
+                'success': True,
+                'message': '文件保存成功',
+                'filename': filename,
+                'total_rows': len(data)
+            })
+            
+        except Exception as save_error:
+            # 如果保存失败，恢复备份
+            if os.path.exists(backup_path):
+                import shutil
+                shutil.move(backup_path, filepath)
+                print(f"🔄 保存失败，已恢复备份")
+            raise save_error
+        finally:
+            # 清理备份文件
+            if os.path.exists(backup_path):
+                os.remove(backup_path)
+                
+    except Exception as e:
+        print(f"保存文件数据失败: {e}")
+        return jsonify({'error': f'保存文件数据失败: {str(e)}'}), 500
 
 @app.route('/api/file-prompts', methods=['GET'])
 @login_required

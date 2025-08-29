@@ -225,12 +225,30 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             window.fileProcessing = false;
             console.log('🔓 [上传成功] 清理文件处理标志');
         } 
-        // 处理文件已存在的情况（409状态码）
-        else if (response.status === 409 && result.error === 'file_exists') {
-            console.log('📁 文件已存在，显示覆盖确认对话框');
-            showFileExistsDialog(result.filename, file);
-            // 注意：不要在这里清理处理标志，因为用户可能会选择覆盖
-            return; // 提前返回，避免在finally中清理标志
+        // 处理文件冲突的情况
+        else if (response.status === 409 || response.status === 403) {
+            console.log(`📁 文件冲突: ${result.error}`, result);
+            console.log(`🔍 [调试] 冲突类型: ${result.error}, 状态码: ${response.status}`);
+            
+            if (result.error === 'file_exists_own' || result.error === 'file_exists_admin' || result.error === 'file_exists_legacy') {
+                // 可以覆盖的情况：自己的文件、管理员覆盖、遗留文件
+                showFileExistsDialog(result.filename, file, result.message, result.owner);
+                return; // 提前返回，避免在finally中清理标志
+            } else if (result.error === 'file_owned_by_other_suggest_rename' || result.error === 'file_legacy_suggest_rename') {
+                // 其他用户的文件或历史文件，提供重命名建议
+                showFileRenameSuggestionDialog(result, file);
+                return; // 提前返回，避免在finally中清理标志
+            } else if (result.error === 'file_owned_by_other' || result.error === 'file_legacy_protected') {
+                // 不能覆盖的情况：其他用户的文件、普通用户不能覆盖遗留文件
+                showFileConflictError(result.message, result.filename, result.owner);
+                // 清理处理标志，因为无法继续上传
+                window.fileProcessing = false;
+                return;
+            } else if (result.error === 'file_exists') {
+                // 兼容旧的错误类型
+                showFileExistsDialog(result.filename, file, result.message);
+                return;
+            }
         } 
         // 处理其他错误
         else if (!response.ok) {
@@ -298,8 +316,16 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
 }
 
 // 显示文件存在对话框
-function showFileExistsDialog(filename, file) {
-    console.log(`📁 [文件覆盖] 显示覆盖确认对话框: ${filename}`);
+function showFileExistsDialog(filename, file, customMessage = null, owner = null) {
+    console.log(`📁 [文件覆盖] 显示覆盖确认对话框: ${filename}`, { customMessage, owner });
+    
+    let messageText = customMessage || `文件 "${filename}" 已经存在。`;
+    let ownerInfo = '';
+    if (owner && owner !== '未知用户') {
+        ownerInfo = `<div style="margin: 10px 0; padding: 8px; background: #e3f2fd; border-radius: 5px; font-size: 0.9em; color: #1976d2;">
+            <i class="fas fa-user"></i> 文件上传者：<strong>${escapeHtml(owner)}</strong>
+        </div>`;
+    }
     
     const dialogHtml = `
         <div class="custom-alert">
@@ -309,7 +335,8 @@ function showFileExistsDialog(filename, file) {
                     <h4>文件已存在</h4>
                 </div>
                 <div class="custom-alert-body">
-                    <p>文件 "<strong>${filename}</strong>" 已经存在。</p>
+                    <p>${escapeHtml(messageText)}</p>
+                    ${ownerInfo}
                     <p>您希望覆盖现有文件还是取消上传？</p>
                     <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9em; color: #6c757d; text-align: center;">
                         💡 选择"覆盖文件"将替换现有文件
@@ -339,12 +366,14 @@ function showFileExistsDialog(filename, file) {
 // 覆盖文件
 async function overwriteFile(filename) {
     console.log(`🔄 [文件覆盖] 用户确认覆盖文件: ${filename}`);
+    
+    // 先保存文件对象，因为 closeCustomAlert 会清理它
+    const fileToUpload = window.pendingFile;
     closeCustomAlert();
     
-    if (window.pendingFile) {
-        console.log(`📤 [文件覆盖] 开始以覆盖模式重新上传: ${window.pendingFile.name}`);
-        await uploadFile(window.pendingFile, true);
-        window.pendingFile = null;
+    if (fileToUpload) {
+        console.log(`📤 [文件覆盖] 开始以覆盖模式重新上传: ${fileToUpload.name}`);
+        await uploadFile(fileToUpload, true);
         
         // 确保文件输入框被重置
         const fileInput = document.getElementById('file-input');
@@ -668,6 +697,65 @@ function showStartButtonDisabledReason(hasFileUploaded, hasAvailableModels, hasS
     });
 }
 
+// 显示文件冲突错误（不可覆盖）
+function showFileConflictError(message, filename, owner = null) {
+    console.log(`🚫 [文件冲突] 显示不可覆盖错误: ${filename}`, { message, owner });
+    
+    let ownerInfo = '';
+    if (owner && owner !== '未知用户') {
+        ownerInfo = `<div style="margin: 10px 0; padding: 8px; background: #ffebee; border-radius: 5px; font-size: 0.9em; color: #c62828;">
+            <i class="fas fa-user"></i> 文件所有者：<strong>${escapeHtml(owner)}</strong>
+        </div>`;
+    }
+    
+    const dialogHtml = `
+        <div class="custom-alert">
+            <div class="custom-alert-content">
+                <div class="custom-alert-header">
+                    <i class="fas fa-exclamation-triangle text-danger"></i>
+                    <h4>无法上传文件</h4>
+                </div>
+                <div class="custom-alert-body">
+                    <p>${escapeHtml(message)}</p>
+                    ${ownerInfo}
+                    <div style="margin-top: 15px; padding: 12px; background: #fff3cd; border: 1px solid #ffecb5; border-radius: 5px; font-size: 0.9em; color: #856404;">
+                        <i class="fas fa-lightbulb"></i> 
+                        <strong>建议解决方案：</strong>
+                        <ul style="margin: 8px 0 0 20px; padding-left: 0;">
+                            <li>为您的文件选择一个不同的名称</li>
+                            <li>在文件名中添加日期或版本号</li>
+                            <li>例如：${escapeHtml(filename)?.replace(/\.(xlsx?|csv)$/i, '_v2.$1') || 'yourfile_v2.xlsx'}</li>
+                        </ul>
+                    </div>
+                </div>
+                <div class="custom-alert-footer">
+                    <button class="btn btn-primary" onclick="closeCustomAlert()">
+                        <i class="fas fa-check"></i> 知道了
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 添加弹窗到页面
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = dialogHtml;
+    alertContainer.id = 'custom-alert-container';
+    document.body.appendChild(alertContainer);
+    
+    // 添加点击背景关闭功能
+    alertContainer.addEventListener('click', function(e) {
+        if (e.target === alertContainer) {
+            closeCustomAlert();
+        }
+    });
+    
+    // 清理待上传文件状态
+    if (window.pendingFile) {
+        window.pendingFile = null;
+    }
+}
+
 // 关闭自定义弹窗
 function closeCustomAlert() {
     console.log('🔄 [弹窗关闭] 关闭自定义弹窗并清理状态');
@@ -681,6 +769,12 @@ function closeCustomAlert() {
     if (window.pendingFile) {
         console.log('🗑️ [弹窗关闭] 清理pendingFile状态');
         window.pendingFile = null;
+    }
+    
+    // 清理重命名相关状态
+    if (window.pendingRenameData) {
+        console.log('🗑️ [弹窗关闭] 清理pendingRenameData状态');
+        window.pendingRenameData = null;
     }
     
     // 重置文件输入框
@@ -727,7 +821,16 @@ async function loadHistoryFiles() {
     
     try {
         console.log('🔄 开始加载测试集列表...');
-        const response = await fetch('/get_uploaded_files');
+        
+        // 构建查询参数（包含用户筛选）
+        const params = new URLSearchParams();
+        const selectedUser = document.getElementById('files-user-filter')?.value;
+        if (selectedUser) {
+            params.append('user_id', selectedUser);
+        }
+        
+        const url = `/get_uploaded_files${params.toString() ? `?${params.toString()}` : ''}`;
+        const response = await fetch(url);
         
         if (!response.ok) {
             throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -747,6 +850,17 @@ async function loadHistoryFiles() {
                 }
             });
             displayHistoryFiles(result.files);
+            
+            // 如果是管理员，显示用户筛选器并更新用户列表
+            if (result.is_admin) {
+                const userFilterContainer = document.getElementById('files-user-filter-container');
+                if (userFilterContainer) {
+                    userFilterContainer.style.display = 'block';
+                    if (result.users) {
+                        updateFilesUserFilter(result.users, result.selected_user);
+                    }
+                }
+            }
         } else {
             console.error('❌ 获取文件列表失败:', result.error);
             historyList.innerHTML = `<div class="no-files">获取文件列表失败: ${result.error || '未知错误'}</div>`;
@@ -811,10 +925,18 @@ function displayHistoryFiles(files) {
         
         const fileMeta = document.createElement('div');
         fileMeta.className = 'file-meta';
-        fileMeta.innerHTML = `
+        
+        let metaContent = `
             <span><i class="fas fa-clock"></i> ${file.upload_time}</span>
             <span><i class="fas fa-hdd"></i> ${file.size_formatted}</span>
         `;
+        
+        // 为管理员显示上传者信息
+        if (file.uploader_name && file.uploader_name !== '历史数据') {
+            metaContent += `<span><i class="fas fa-user"></i> ${escapeHtml(file.uploader_name)}</span>`;
+        }
+        
+        fileMeta.innerHTML = metaContent;
         
         fileDetails.appendChild(fileName);
         fileDetails.appendChild(fileMeta);
@@ -839,6 +961,13 @@ function displayHistoryFiles(files) {
         renameBtn.innerHTML = '<i class="fas fa-tag"></i>';
         renameBtn.onclick = () => renameDatasetFile(file.filename);
         
+        // 编辑数据按钮
+        const editDataBtn = document.createElement('button');
+        editDataBtn.className = 'btn btn-sm btn-success';
+        editDataBtn.title = '编辑数据内容';
+        editDataBtn.innerHTML = '<i class="fas fa-table"></i>';
+        editDataBtn.onclick = () => editFileData(file.filename);
+        
         // 编辑提示词按钮
         const editBtn = document.createElement('button');
         editBtn.className = 'btn btn-sm btn-info';
@@ -862,6 +991,7 @@ function displayHistoryFiles(files) {
         
         fileActions.appendChild(selectBtn);
         fileActions.appendChild(renameBtn);
+        fileActions.appendChild(editDataBtn);
         fileActions.appendChild(editBtn);
         fileActions.appendChild(downloadBtn);
         fileActions.appendChild(deleteBtn);
@@ -1036,6 +1166,20 @@ async function deleteHistoryFile(filename) {
 // 刷新测试集
 function refreshHistoryFiles() {
     loadHistoryFiles();
+}
+
+// 更新文件用户筛选器
+function updateFilesUserFilter(users, selectedUserId) {
+    const userFilter = document.getElementById('files-user-filter');
+    if (!userFilter) return;
+    
+    let options = '<option value="">所有用户</option>';
+    users.forEach(user => {
+        const selected = user.id === selectedUserId ? 'selected' : '';
+        options += `<option value="${user.id}" ${selected}>${escapeHtml(user.display_name)} (${escapeHtml(user.username)})</option>`;
+    });
+    
+    userFilter.innerHTML = options;
 }
 
 // 开始评测
@@ -1486,6 +1630,13 @@ document.head.appendChild(style);
 
 // API配置相关功能
 async function openApiConfig() {
+    // 检查管理员权限
+    const isAdmin = window.currentUserData && window.currentUserData.role === 'admin';
+    if (!isAdmin) {
+        showError('您没有权限访问API配置功能');
+        return;
+    }
+    
     const modal = document.getElementById('api-config-modal');
     const backdrop = document.getElementById('api-config-backdrop');
     
@@ -1735,8 +1886,9 @@ function updateModelDisplay(data) {
     // 检查是否有不可用的模型
     const hasUnavailableModels = data.models.some(model => !model.available) || !data.gemini_available;
     
-    // 显示或隐藏API状态提示
-    if (hasUnavailableModels) {
+    // 显示或隐藏API状态提示（只对管理员显示）
+    const isAdmin = window.currentUserData && window.currentUserData.role === 'admin';
+    if (hasUnavailableModels && isAdmin) {
         apiStatus.style.display = 'block';
     } else {
         apiStatus.style.display = 'none';
@@ -1851,9 +2003,10 @@ function showUserInfo(user) {
     document.getElementById('userInfo').style.display = 'inline-block';
     document.getElementById('displayName').textContent = user.display_name || user.username;
     
-    // 如果是管理员，显示用户管理链接
+    // 如果是管理员，显示管理员功能
     if (user.role === 'admin') {
         document.getElementById('adminLink').style.display = 'inline-block';
+        document.getElementById('apiConfigBtn').style.display = 'inline-block';
     }
 }
 
@@ -1862,6 +2015,7 @@ function hideUserInfo() {
     document.getElementById('loginLink').style.display = 'inline-block';
     document.getElementById('userInfo').style.display = 'none';
     document.getElementById('adminLink').style.display = 'none';
+    document.getElementById('apiConfigBtn').style.display = 'none';
 }
 
 // ========== 已移除查看评分标准功能 ==========
@@ -1877,6 +2031,445 @@ document.addEventListener('click', function(event) {
         closeFilePromptModal();
     }
 });
+
+// ========== 文件数据编辑功能 ==========
+
+// 编辑文件数据内容
+async function editFileData(filename) {
+    try {
+        console.log(`👆 [前端] 用户点击编辑文件 ${filename} 的数据内容`);
+        
+        // 获取文件数据
+        console.log(`🔄 [前端] 正在获取文件 ${filename} 的数据...`);
+        const response = await fetch(`/api/file-data/${encodeURIComponent(filename)}`);
+        if (!response.ok) {
+            if (response.status === 403) {
+                throw new Error('您没有权限编辑此文件');
+            }
+            throw new Error('获取文件数据失败');
+        }
+        
+        const data = await response.json();
+        console.log(`✅ [前端] 成功获取文件数据，包含 ${data.data.length} 行`);
+        
+        // 显示编辑模态框
+        showDataEditModal(filename, data);
+        
+    } catch (error) {
+        console.error(`❌ [前端] 编辑文件数据失败:`, error);
+        showError(`编辑失败: ${error.message}`);
+    }
+}
+
+// 显示数据编辑模态框
+function showDataEditModal(filename, fileData) {
+    const modal = `
+        <div id="data-edit-modal" class="custom-modal" style="
+            display: block;
+            position: fixed;
+            z-index: 1000;
+            left: 0;
+            top: 0;
+            width: 100vw;
+            height: 100vh;
+            background-color: white;
+            margin: 0;
+            padding: 0;
+        ">
+            <!-- 全屏标题栏 -->
+            <div style="
+                background: linear-gradient(135deg, #28a745 0%, #20c997 100%); 
+                color: white; 
+                padding: 15px 25px; 
+                display: flex; 
+                justify-content: space-between; 
+                align-items: center;
+                border-bottom: 1px solid #ddd;
+            ">
+                <h3 style="margin: 0; font-size: 18px; font-weight: 600;">
+                    <i class="fas fa-table"></i> 编辑数据内容 - ${escapeHtml(filename)}
+                </h3>
+                <div style="display: flex; align-items: center; gap: 15px;">
+                    <span style="font-size: 13px; opacity: 0.9;">
+                        <i class="fas fa-keyboard"></i> 快捷键：Ctrl+S保存，ESC退出
+                    </span>
+                    <button onclick="closeDataEditModal()" style="
+                        background: rgba(255,255,255,0.2); 
+                        border: none; 
+                        color: white; 
+                        width: 36px; height: 36px; 
+                        border-radius: 50%; 
+                        cursor: pointer; 
+                        font-size: 20px;
+                        transition: background 0.2s;
+                    " onmouseover="this.style.background='rgba(255,255,255,0.3)'" onmouseout="this.style.background='rgba(255,255,255,0.2)'">×</button>
+                </div>
+            </div>
+            
+            <!-- 全屏内容区域 -->
+            <div style="
+                background: #f8f9fa;
+                height: calc(100vh - 70px);
+                overflow: hidden;
+                display: flex;
+                flex-direction: column;
+            ">
+                <div id="data-edit-toolbar" style="
+                    background: white; 
+                    padding: 15px 25px; 
+                    border-bottom: 1px solid #ddd;
+                    flex-shrink: 0;
+                ">
+                    <button class="btn btn-success" onclick="addNewRow()" style="margin-right: 10px;">
+                        <i class="fas fa-plus"></i> 添加行
+                    </button>
+                    <button class="btn btn-primary" onclick="saveFileData('${escapeAttr(filename)}')" style="margin-right: 10px;">
+                        <i class="fas fa-save"></i> 保存
+                    </button>
+                    <button class="btn btn-secondary" onclick="closeDataEditModal()">
+                        <i class="fas fa-times"></i> 取消
+                    </button>
+                </div>
+                
+                <div id="data-edit-table-container" style="
+                    flex: 1;
+                    overflow: auto;
+                    margin: 15px 25px;
+                    background: white;
+                    border: 1px solid #ddd; 
+                    border-radius: 8px;
+                ">
+                    <!-- 表格将在这里动态生成 -->
+                </div>
+            </div>
+        </div>
+    `;
+    
+    document.body.insertAdjacentHTML('beforeend', modal);
+    
+    // 添加键盘快捷键支持
+    const handleKeyDown = (e) => {
+        if (e.ctrlKey && e.key === 's') {
+            e.preventDefault();
+            saveFileData(filename);
+        } else if (e.key === 'Escape') {
+            closeDataEditModal();
+        }
+    };
+    
+    document.addEventListener('keydown', handleKeyDown);
+    
+    // 存储事件处理器，以便清理
+    document.getElementById('data-edit-modal').setAttribute('data-keyhandler', 'true');
+    window.dataEditKeyHandler = handleKeyDown;
+    
+    // 生成可编辑表格
+    generateEditableTable(fileData);
+}
+
+// 生成可编辑表格
+function generateEditableTable(fileData) {
+    const container = document.getElementById('data-edit-table-container');
+    const columns = fileData.columns;
+    const data = fileData.data;
+    
+    let tableHtml = `
+        <table id="editable-data-table" style="width: 100%; border-collapse: collapse; font-size: 14px;">
+            <thead>
+                <tr style="background: #f8f9fa;">
+                    <th style="padding: 8px; border: 1px solid #ddd; width: 50px;">#</th>
+                    ${columns.map(col => `
+                        <th style="padding: 8px; border: 1px solid #ddd; min-width: 150px;">
+                            ${escapeHtml(col)}
+                        </th>
+                    `).join('')}
+                    <th style="padding: 8px; border: 1px solid #ddd; width: 80px;">操作</th>
+                </tr>
+            </thead>
+            <tbody>
+    `;
+    
+    data.forEach((row, index) => {
+        tableHtml += `
+            <tr data-row-index="${index}">
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #f8f9fa;">
+                    ${index + 1}
+                </td>
+                ${columns.map(col => `
+                    <td style="padding: 4px; border: 1px solid #ddd;">
+                        <textarea 
+                            data-column="${escapeAttr(col)}" 
+                            style="
+                                width: 100%; 
+                                border: none; 
+                                resize: vertical; 
+                                min-height: 40px;
+                                padding: 4px;
+                                font-size: 13px;
+                                line-height: 1.3;
+                            "
+                        >${escapeHtml(String(row[col] || ''))}</textarea>
+                    </td>
+                `).join('')}
+                <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                    <button class="btn btn-sm btn-danger" onclick="deleteRow(${index})" title="删除行">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </td>
+            </tr>
+        `;
+    });
+    
+    tableHtml += `
+            </tbody>
+        </table>
+    `;
+    
+    container.innerHTML = tableHtml;
+}
+
+// 添加新行
+function addNewRow() {
+    const table = document.getElementById('editable-data-table');
+    const tbody = table.querySelector('tbody');
+    const firstRow = tbody.querySelector('tr');
+    
+    if (!firstRow) return;
+    
+    const columns = Array.from(firstRow.querySelectorAll('textarea')).map(ta => ta.dataset.column);
+    const newIndex = tbody.querySelectorAll('tr').length;
+    
+    const newRowHtml = `
+        <tr data-row-index="${newIndex}">
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center; background: #f8f9fa;">
+                ${newIndex + 1}
+            </td>
+            ${columns.map(col => `
+                <td style="padding: 4px; border: 1px solid #ddd;">
+                    <textarea 
+                        data-column="${escapeAttr(col)}" 
+                        style="
+                            width: 100%; 
+                            border: none; 
+                            resize: vertical; 
+                            min-height: 40px;
+                            padding: 4px;
+                            font-size: 13px;
+                            line-height: 1.3;
+                        "
+                    ></textarea>
+                </td>
+            `).join('')}
+            <td style="padding: 8px; border: 1px solid #ddd; text-align: center;">
+                <button class="btn btn-sm btn-danger" onclick="deleteRow(${newIndex})" title="删除行">
+                    <i class="fas fa-trash"></i>
+                </button>
+            </td>
+        </tr>
+    `;
+    
+    tbody.insertAdjacentHTML('beforeend', newRowHtml);
+    updateRowNumbers();
+}
+
+// 删除行
+function deleteRow(index) {
+    if (confirm('确定要删除这一行吗？')) {
+        const row = document.querySelector(`tr[data-row-index="${index}"]`);
+        if (row) {
+            row.remove();
+            updateRowNumbers();
+        }
+    }
+}
+
+// 更新行号
+function updateRowNumbers() {
+    const rows = document.querySelectorAll('#editable-data-table tbody tr');
+    rows.forEach((row, index) => {
+        row.setAttribute('data-row-index', index);
+        row.querySelector('td').textContent = index + 1;
+        const deleteBtn = row.querySelector('button[onclick*="deleteRow"]');
+        if (deleteBtn) {
+            deleteBtn.setAttribute('onclick', `deleteRow(${index})`);
+        }
+    });
+}
+
+// 保存文件数据
+async function saveFileData(filename) {
+    try {
+        const table = document.getElementById('editable-data-table');
+        const rows = table.querySelectorAll('tbody tr');
+        const data = [];
+        
+        // 收集所有数据
+        rows.forEach(row => {
+            const rowData = {};
+            const textareas = row.querySelectorAll('textarea');
+            textareas.forEach(textarea => {
+                const column = textarea.dataset.column;
+                rowData[column] = textarea.value.trim();
+            });
+            data.push(rowData);
+        });
+        
+        console.log(`💾 [前端] 准备保存文件 ${filename}，包含 ${data.length} 行数据`);
+        
+        // 发送到后端保存
+        const response = await fetch(`/api/file-data/${encodeURIComponent(filename)}`, {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({ data: data })
+        });
+        
+        if (!response.ok) {
+            if (response.status === 403) {
+                throw new Error('您没有权限保存此文件');
+            }
+            throw new Error('保存文件失败');
+        }
+        
+        const result = await response.json();
+        console.log(`✅ [前端] 文件保存成功:`, result);
+        
+        showSuccess('文件保存成功！');
+        closeDataEditModal();
+        
+        // 刷新文件列表
+        loadHistoryFiles();
+        
+    } catch (error) {
+        console.error(`❌ [前端] 保存文件失败:`, error);
+        showError(`保存失败: ${error.message}`);
+    }
+}
+
+// 显示文件重命名建议对话框
+function showFileRenameSuggestionDialog(result, file) {
+    console.log(`💡 [文件重命名] 显示重命名建议对话框:`, result);
+    
+    const dialogHtml = `
+        <div class="custom-alert">
+            <div class="custom-alert-content">
+                <div class="custom-alert-header">
+                    <i class="fas fa-exclamation-triangle text-warning"></i>
+                    <h4>文件名冲突</h4>
+                </div>
+                <div class="custom-alert-body">
+                    <p>${escapeHtml(result.message)}</p>
+                    
+                    <div style="margin: 15px 0; padding: 12px; background: #ffebee; border-radius: 5px; font-size: 0.9em; color: #c62828;">
+                        <i class="fas fa-user"></i> 
+                        <strong>文件所有者：</strong>${escapeHtml(result.owner)}
+                    </div>
+                    
+                    <div style="margin: 20px 0; padding: 15px; background: #e8f5e8; border: 1px solid #4caf50; border-radius: 8px;">
+                        <h5 style="margin: 0 0 10px 0; color: #2e7d32;">
+                            <i class="fas fa-lightbulb"></i> 智能解决方案
+                        </h5>
+                        <p style="margin: 0 0 10px 0; color: #2e7d32;">
+                            系统建议将您的文件重命名为：
+                        </p>
+                        <div style="background: #f1f8e9; padding: 10px; border-radius: 4px; font-family: monospace; color: #1b5e20; font-weight: bold; border-left: 4px solid #4caf50;">
+                            ${escapeHtml(result.suggested_filename)}
+                        </div>
+                        <p style="margin: 10px 0 0 0; font-size: 0.85em; color: #558b2f;">
+                            💡 这样可以避免与其他用户的文件冲突，同时保持文件内容不变
+                        </p>
+                    </div>
+                    
+                    <p>您希望如何处理？</p>
+                </div>
+                <div class="custom-alert-footer">
+                    <button class="btn btn-secondary" onclick="closeCustomAlert()">
+                        <i class="fas fa-times"></i> 取消上传
+                    </button>
+                    <button class="btn btn-success" onclick="uploadWithSuggestedName('${escapeAttr(result.suggested_filename)}')">
+                        <i class="fas fa-check"></i> 使用建议名称上传
+                    </button>
+                </div>
+            </div>
+        </div>
+    `;
+    
+    // 添加弹窗到页面
+    const alertContainer = document.createElement('div');
+    alertContainer.innerHTML = dialogHtml;
+    alertContainer.id = 'custom-alert-container';
+    document.body.appendChild(alertContainer);
+    
+    // 添加点击背景关闭功能
+    alertContainer.addEventListener('click', function(e) {
+        if (e.target === alertContainer) {
+            closeCustomAlert();
+        }
+    });
+    
+    // 存储文件对象以便重命名上传时使用
+    window.pendingFile = file;
+    window.pendingRenameData = result;
+}
+
+// 使用建议的文件名上传
+async function uploadWithSuggestedName(suggestedFilename) {
+    console.log(`📝 [重命名上传] 用户同意使用建议文件名: ${suggestedFilename}`);
+    
+    // 先保存文件对象，因为 closeCustomAlert 会清理它
+    const originalFile = window.pendingFile;
+    closeCustomAlert();
+    
+    if (originalFile) {
+        console.log(`📤 [重命名上传] 开始上传，原始文件: ${originalFile.name} -> 新文件名: ${suggestedFilename}`);
+        
+        // 创建一个新的File对象，使用建议的文件名但保持原始文件内容
+        const renamedFile = new File([originalFile], suggestedFilename, {
+            type: originalFile.type,
+            lastModified: originalFile.lastModified
+        });
+        
+        console.log(`🔄 [重命名上传] 文件对象创建成功: ${renamedFile.name}, 大小: ${renamedFile.size} bytes`);
+        
+        // 上传重命名后的文件
+        await uploadFile(renamedFile, false);
+        
+        // 清理状态
+        window.pendingFile = null;
+        window.pendingRenameData = null;
+        
+        // 确保文件输入框被重置
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.value = '';
+            console.log('🔄 [重命名上传] 已重置文件输入框');
+        }
+        
+        console.log(`✅ [重命名上传] 重命名上传完成`);
+    } else {
+        console.error(`❌ [重命名上传] 没有找到待上传的文件`);
+        console.error(`🔍 [重命名上传] 调试信息: window.pendingFile=${window.pendingFile}, originalFile=${originalFile}`);
+        showError('上传失败：没有找到待上传的文件');
+        
+        // 确保清理处理标志
+        window.fileProcessing = false;
+        console.log('🔓 [重命名上传错误] 清理文件处理标志');
+    }
+}
+
+// 关闭数据编辑模态框
+function closeDataEditModal() {
+    const modal = document.getElementById('data-edit-modal');
+    if (modal) {
+        // 清理键盘事件监听器
+        if (window.dataEditKeyHandler) {
+            document.removeEventListener('keydown', window.dataEditKeyHandler);
+            window.dataEditKeyHandler = null;
+        }
+        modal.remove();
+    }
+}
 
 // ========== 文件提示词管理功能 ==========
 

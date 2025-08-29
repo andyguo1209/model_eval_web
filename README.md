@@ -1,6 +1,6 @@
-# 🚀 AI模型评测Web系统
+# 🚀 HKGAI模型评测Web系统
 
-一个功能强大且易于使用的AI模型评测系统，支持主观题和客观题评测，多模型对比分析。
+一个功能强大且易于使用的HKGAI模型评测系统，支持主观题和客观题评测，多模型对比分析。
 
 ## ✨ 主要特性
 
@@ -397,7 +397,7 @@ sudo nano /etc/nginx/sites-available/model-evaluation
 **完整的nginx配置文件** (`/etc/nginx/sites-available/model-evaluation`):
 
 ```nginx
-# AI模型评测系统 Nginx配置
+# HKGAI模型评测系统 Nginx配置
 # 支持HTTP和HTTPS，包含WebSocket支持和性能优化
 
 # HTTP服务器配置 (可重定向到HTTPS)

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>AI模型评测系统</title>
+    <title>HKGAI模型评测系统</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}?v={{ range(1, 10000) | random }}">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
 </head>
@@ -27,7 +27,7 @@
                         <i class="fas fa-history"></i>
                         评测历史
                     </a>
-                    <button class="btn btn-outline" onclick="openApiConfig()" title="API密钥配置">
+                    <button class="btn btn-outline" onclick="openApiConfig()" title="API密钥配置" id="apiConfigBtn" style="display: none;">
                         <i class="fas fa-key"></i> API配置
                     </button>
                     <a href="/admin" class="btn btn-secondary" title="用户管理" id="adminLink" style="display: none;">
@@ -133,9 +133,18 @@
                         <div class="history-files-container">
                             <div class="history-files-header">
                                 <h4><i class="fas fa-database"></i> 测试集</h4>
-                                <button class="btn btn-sm btn-secondary" onclick="refreshHistoryFiles()">
-                                    <i class="fas fa-sync-alt"></i> 刷新
-                                </button>
+                                <div class="header-actions">
+                                    <!-- 用户筛选器（仅管理员可见） -->
+                                    <div class="user-filter-container" id="files-user-filter-container" style="display: none; margin-right: 10px;">
+                                        <select class="form-select" id="files-user-filter" onchange="refreshHistoryFiles()">
+                                            <option value="">所有用户</option>
+                                            <!-- 选项将通过JavaScript动态加载 -->
+                                        </select>
+                                    </div>
+                                    <button class="btn btn-sm btn-secondary" onclick="refreshHistoryFiles()">
+                                        <i class="fas fa-sync-alt"></i> 刷新
+                                    </button>
+                                </div>
                             </div>
                             <div class="history-files-list" id="history-files-list">
                                 <div class="loading-placeholder">
@@ -531,19 +540,23 @@
     <div class="modal-backdrop" id="cookie-help-backdrop" style="display: none;" onclick="closeCookieHelp()"></div>
 
     <script src="{{ url_for('static', filename='js/main.js') }}"></script>
+    {% if current_user %}
+    <script>
+        // 用户数据
+        window.currentUserData = {{ current_user|tojson }};
+        
+        // 初始化用户状态显示
+        document.addEventListener('DOMContentLoaded', function() {
+            showUserInfo(window.currentUserData);
+        });
+    </script>
+    {% else %}
     <script>
         // 初始化用户状态显示
         document.addEventListener('DOMContentLoaded', function() {
-            {% if current_user %}
-                showUserInfo({
-                    username: '{{ current_user.username }}',
-                    display_name: '{{ current_user.display_name }}',
-                    role: '{{ current_user.role }}'
-                });
-            {% else %}
-                hideUserInfo();
-            {% endif %}
+            hideUserInfo();
         });
     </script>
+    {% endif %}
 </body>
 </html>
