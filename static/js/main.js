@@ -86,8 +86,14 @@ function setupFileUpload() {
     const fileInput = document.getElementById('file-input');
     const uploadArea = document.getElementById('file-upload-area');
 
+    console.log('🔧 [初始化] 设置文件上传功能');
+
+    // 移除可能存在的旧事件监听器，防止重复绑定
+    fileInput.removeEventListener('change', handleFileSelect);
+    
     // 文件输入变化
     fileInput.addEventListener('change', handleFileSelect);
+    console.log('✅ [初始化] 文件选择事件监听器已绑定');
 
     // 拖拽功能
     uploadArea.addEventListener('dragover', function(e) {
@@ -128,6 +134,13 @@ function handleFileSelect() {
         console.log('❌ [文件选择] 没有选择文件');
         return;
     }
+
+    // 立即重置文件输入框，以便能重复选择同一文件
+    // 使用setTimeout确保在当前事件处理完成后再重置
+    setTimeout(() => {
+        fileInput.value = '';
+        console.log('🔄 [文件选择] 已重置文件输入框，可重复选择');
+    }, 100);
 
     // 检查文件格式
     const allowedTypes = ['.xlsx', '.xls', '.csv'];
@@ -269,6 +282,14 @@ async function overwriteFile(filename) {
         console.log(`📤 [文件覆盖] 开始以覆盖模式重新上传: ${window.pendingFile.name}`);
         await uploadFile(window.pendingFile, true);
         window.pendingFile = null;
+        
+        // 确保文件输入框被重置
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.value = '';
+            console.log('🔄 [文件覆盖] 已重置文件输入框');
+        }
+        
         console.log(`✅ [文件覆盖] 覆盖上传完成`);
     } else {
         console.error(`❌ [文件覆盖] 没有找到待上传的文件`);
@@ -582,9 +603,24 @@ function showStartButtonDisabledReason(hasFileUploaded, hasAvailableModels, hasS
 
 // 关闭自定义弹窗
 function closeCustomAlert() {
+    console.log('🔄 [弹窗关闭] 关闭自定义弹窗并清理状态');
+    
     const alertContainer = document.getElementById('custom-alert-container');
     if (alertContainer) {
         alertContainer.remove();
+    }
+    
+    // 清理待上传文件状态
+    if (window.pendingFile) {
+        console.log('🗑️ [弹窗关闭] 清理pendingFile状态');
+        window.pendingFile = null;
+    }
+    
+    // 重置文件输入框
+    const fileInput = document.getElementById('file-input');
+    if (fileInput) {
+        console.log('🔄 [弹窗关闭] 重置文件输入框');
+        fileInput.value = '';
     }
 }
 
