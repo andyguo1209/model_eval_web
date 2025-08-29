@@ -1027,7 +1027,12 @@ function displayHistoryFiles(files) {
         
         fileActions.appendChild(selectBtn);
         fileActions.appendChild(renameBtn);
-        fileActions.appendChild(editDataBtn);
+        
+        // 只有admin和reviewer可以编辑数据内容
+        if (window.currentUserData && (window.currentUserData.role === 'admin' || window.currentUserData.role === 'reviewer')) {
+            fileActions.appendChild(editDataBtn);
+        }
+        
         fileActions.appendChild(editBtn);
         fileActions.appendChild(downloadBtn);
         fileActions.appendChild(deleteBtn);
@@ -1386,22 +1391,9 @@ function updateProgressDisplay(status) {
 
 // 更新任务控制按钮的显示状态
 function updateTaskControlButtons(status) {
-    const pauseBtn = document.getElementById('pause-task-btn');
-    const resumeBtn = document.getElementById('resume-task-btn');
     const cancelBtn = document.getElementById('cancel-task-btn');
     
-    if (pauseBtn && resumeBtn && cancelBtn) {
-        // 隐藏所有按钮
-        pauseBtn.style.display = 'none';
-        resumeBtn.style.display = 'none';
-        
-        // 根据状态显示相应按钮
-        if (status === '运行中' || status === '评测中') {
-            pauseBtn.style.display = 'inline-block';
-        } else if (status === '已暂停') {
-            resumeBtn.style.display = 'inline-block';
-        }
-        
+    if (cancelBtn) {
         // 取消按钮在未完成时始终显示
         if (status !== '完成' && status !== '失败') {
             cancelBtn.style.display = 'inline-block';
@@ -2803,18 +2795,6 @@ function displayRunningTasks(tasks) {
                                 style="padding: 4px 8px; font-size: 12px; min-width: 60px;">
                             <i class="fas fa-external-link-alt"></i> 进入
                         </button>
-                        ${task.is_active && task.status === 'running' ? `
-                            <button class="btn btn-sm btn-warning" onclick="pauseTask('${task.task_id}')" 
-                                    style="padding: 4px 8px; font-size: 12px;">
-                                <i class="fas fa-pause"></i> 暂停
-                            </button>
-                        ` : ''}
-                        ${task.is_active && task.status === 'paused' ? `
-                            <button class="btn btn-sm btn-success" onclick="resumeTask('${task.task_id}')" 
-                                    style="padding: 4px 8px; font-size: 12px;">
-                                <i class="fas fa-play"></i> 继续
-                            </button>
-                        ` : ''}
                         <button class="btn btn-sm btn-danger" onclick="cancelTask('${task.task_id}')" 
                                 style="padding: 4px 8px; font-size: 12px;">
                             <i class="fas fa-trash"></i> 删除
@@ -2870,55 +2850,7 @@ async function connectToTask(taskId) {
     }
 }
 
-// 暂停任务
-async function pauseTask(taskId) {
-    try {
-        const response = await fetch(`/api/tasks/${taskId}/pause`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showSuccess('任务已暂停');
-            // 刷新任务列表
-            setTimeout(() => loadRunningTasks(), 1000);
-        } else {
-            showError(result.error || '暂停任务失败');
-        }
-    } catch (error) {
-        console.error('暂停任务失败:', error);
-        showError('暂停任务失败: ' + error.message);
-    }
-}
 
-// 继续任务
-async function resumeTask(taskId) {
-    try {
-        const response = await fetch(`/api/tasks/${taskId}/resume`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showSuccess('任务已继续');
-            // 刷新任务列表
-            setTimeout(() => loadRunningTasks(), 1000);
-        } else {
-            showError(result.error || '继续任务失败');
-        }
-    } catch (error) {
-        console.error('继续任务失败:', error);
-        showError('继续任务失败: ' + error.message);
-    }
-}
 
 // 取消/删除任务
 async function cancelTask(taskId) {
@@ -2951,85 +2883,7 @@ async function cancelTask(taskId) {
 
 // ==================== 进度页面任务控制 ====================
 
-// 暂停当前任务
-async function pauseCurrentTask() {
-    if (!currentTaskId) {
-        showError('没有正在进行的任务');
-        return;
-    }
-    
-    const pauseBtn = document.getElementById('pause-task-btn');
-    if (pauseBtn) {
-        pauseBtn.disabled = true;
-        pauseBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 暂停中...';
-    }
-    
-    try {
-        const response = await fetch(`/api/tasks/${currentTaskId}/pause`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showSuccess('任务已暂停');
-            addToLog(`[${new Date().toLocaleTimeString()}] 用户手动暂停了任务`);
-        } else {
-            showError(result.error || '暂停任务失败');
-        }
-    } catch (error) {
-        console.error('暂停任务失败:', error);
-        showError('暂停任务失败: ' + error.message);
-    } finally {
-        if (pauseBtn) {
-            pauseBtn.disabled = false;
-            pauseBtn.innerHTML = '<i class="fas fa-pause"></i> 暂停测评';
-        }
-    }
-}
 
-// 继续当前任务
-async function resumeCurrentTask() {
-    if (!currentTaskId) {
-        showError('没有正在进行的任务');
-        return;
-    }
-    
-    const resumeBtn = document.getElementById('resume-task-btn');
-    if (resumeBtn) {
-        resumeBtn.disabled = true;
-        resumeBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 继续中...';
-    }
-    
-    try {
-        const response = await fetch(`/api/tasks/${currentTaskId}/resume`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json'
-            }
-        });
-        
-        const result = await response.json();
-        
-        if (result.success) {
-            showSuccess('任务已继续');
-            addToLog(`[${new Date().toLocaleTimeString()}] 用户手动继续了任务`);
-        } else {
-            showError(result.error || '继续任务失败');
-        }
-    } catch (error) {
-        console.error('继续任务失败:', error);
-        showError('继续任务失败: ' + error.message);
-    } finally {
-        if (resumeBtn) {
-            resumeBtn.disabled = false;
-            resumeBtn.innerHTML = '<i class="fas fa-play"></i> 继续测评';
-        }
-    }
-}
 
 // 取消当前任务
 async function cancelCurrentTask() {

@@ -1615,3 +1615,20 @@ kbd {
     padding: 2px 4px;
     white-space: nowrap;
 }
+
+/* 空状态样式 */
+.empty-state {
+    text-align: center;
+    padding: 40px 20px;
+    color: white;
+}
+
+.empty-state h3 {
+    color: white;
+    margin-bottom: 10px;
+}
+
+.empty-state p {
+    color: white;
+    opacity: 0.8;
+}

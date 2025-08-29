@@ -793,37 +793,13 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
             """评测单个问题"""
             async with semaphore:
                 try:
-                    # 检查任务是否被暂停或取消
+                    # 检查任务是否被取消
                     if task_id in task_status:
-                        # 检查内存状态
-                        memory_status = task_status[task_id].status
-                        if memory_status == "已暂停":
-                            # 任务被暂停，等待继续
-                            while task_id in task_status and task_status[task_id].status == "已暂停":
-                                await asyncio.sleep(1)
-                            
-                            # 如果任务被删除，返回空结果
-                            if task_id not in task_status:
-                                print(f"任务 {task_id} 已被删除，跳过第{i+1}题")
-                                return i, []
-                        
                         # 检查数据库状态
                         db_task = db.get_running_task(task_id)
                         if not db_task or db_task['status'] == 'cancelled':
                             print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
                             return i, []
-                        elif db_task['status'] == 'paused':
-                            # 任务被暂停，等待继续
-                            while True:
-                                await asyncio.sleep(1)
-                                db_task = db.get_running_task(task_id)
-                                if not db_task or db_task['status'] != 'paused':
-                                    break
-                            
-                            # 再次检查任务是否存在
-                            if not db_task or db_task['status'] == 'cancelled':
-                                print(f"任务 {task_id} 已被取消，跳过第{i+1}题")
-                                return i, []
                     
                     query = str(row.get("query", ""))
                     question_type = str(row.get("type", "未分类"))
@@ -1919,23 +1895,54 @@ def start_evaluation():
 @login_required
 def get_task_status(task_id):
     """获取任务状态"""
-    if task_id not in task_status:
-        return jsonify({'error': '任务不存在'}), 404
+    # 先检查内存中是否有此任务
+    if task_id in task_status:
+        task = task_status[task_id]
+        elapsed_time = (datetime.now() - task.start_time).total_seconds() if hasattr(task, 'start_time') and task.start_time else 0
+        
+        return jsonify({
+            'status': task.status,
+            'progress': task.progress,
+            'total': task.total,
+            'current_step': task.current_step,
+            'result_file': os.path.basename(task.result_file) if task.result_file else "",
+            'error_message': task.error_message,
+            'evaluation_mode': task.evaluation_mode,
+            'selected_models': task.selected_models,
+            'elapsed_time': f"{elapsed_time:.1f}秒"
+        })
     
-    task = task_status[task_id]
-    elapsed_time = (datetime.now() - task.start_time).total_seconds() if hasattr(task, 'start_time') and task.start_time else 0
-    
-    return jsonify({
-        'status': task.status,
-        'progress': task.progress,
-        'total': task.total,
-        'current_step': task.current_step,
-        'result_file': os.path.basename(task.result_file) if task.result_file else "",
-        'error_message': task.error_message,
-        'evaluation_mode': task.evaluation_mode,
-        'selected_models': task.selected_models,
-        'elapsed_time': f"{elapsed_time:.1f}秒"
-    })
+    # 如果内存中没有，尝试从数据库获取
+    try:
+        current_user_id = session.get('user_id', 'anonymous')
+        db_task = db.get_running_task(task_id)
+        
+        if not db_task:
+            return jsonify({'error': '任务不存在'}), 404
+            
+        if db_task['created_by'] != current_user_id:
+            return jsonify({'error': '无权限访问此任务'}), 403
+        
+        # 任务已完成或失败，返回最终状态
+        if db_task['status'] in ['completed', 'failed']:
+            return jsonify({
+                'status': '完成' if db_task['status'] == 'completed' else '失败',
+                'progress': db_task.get('total', 0),
+                'total': db_task.get('total', 0),
+                'current_step': db_task.get('current_step', ''),
+                'result_file': os.path.basename(db_task.get('result_file', '')) if db_task.get('result_file') else "",
+                'error_message': db_task.get('error_message', ''),
+                'evaluation_mode': db_task.get('evaluation_mode', ''),
+                'selected_models': db_task.get('selected_models', []),
+                'elapsed_time': "已完成"
+            })
+        else:
+            # 任务还在运行但内存中没有（可能是服务器重启了）
+            return jsonify({'error': '任务状态丢失，请重新连接任务'}), 404
+            
+    except Exception as e:
+        print(f"❌ 获取任务状态失败: {e}")
+        return jsonify({'error': '获取任务状态失败'}), 500
 
 @app.route('/download/<filename>')
 @login_required
@@ -2587,6 +2594,10 @@ def debug_score_update():
 def update_score():
     """修改评分"""
     try:
+        # 权限检查：只有admin和reviewer可以修改评分
+        current_user = db.get_user_by_id(session['user_id'])
+        if not current_user or current_user['role'] not in ['admin', 'reviewer']:
+            return jsonify({'success': False, 'error': '您没有权限修改评分'}), 403
         data = request.get_json()
         filename = data.get('filename')
         row_index = data.get('row_index')
@@ -3583,16 +3594,16 @@ def get_file_data(filename):
         # 权限检查
         current_user_id = session['user_id']
         current_user = db.get_user_by_id(current_user_id)
-        is_admin = current_user and current_user['role'] == 'admin'
+        is_admin_or_reviewer = current_user and current_user['role'] in ['admin', 'reviewer']
         
         # 检查文件所有者
         file_record = db.get_uploaded_file_by_filename(filename)
         if file_record:
             file_owner_id = file_record['uploaded_by']
-            if file_owner_id != current_user_id and not is_admin:
+            if file_owner_id != current_user_id and not is_admin_or_reviewer:
                 return jsonify({'error': '您没有权限编辑此文件'}), 403
-        elif not is_admin:
-            # 历史文件，只有管理员可以编辑
+        elif not is_admin_or_reviewer:
+            # 历史文件，只有管理员和reviewer可以编辑
             return jsonify({'error': '您没有权限编辑历史文件'}), 403
         
         # 读取文件数据
@@ -3638,14 +3649,14 @@ def save_file_data(filename):
         # 权限检查（与获取数据相同的逻辑）
         current_user_id = session['user_id']
         current_user = db.get_user_by_id(current_user_id)
-        is_admin = current_user and current_user['role'] == 'admin'
+        is_admin_or_reviewer = current_user and current_user['role'] in ['admin', 'reviewer']
         
         file_record = db.get_uploaded_file_by_filename(filename)
         if file_record:
             file_owner_id = file_record['uploaded_by']
-            if file_owner_id != current_user_id and not is_admin:
+            if file_owner_id != current_user_id and not is_admin_or_reviewer:
                 return jsonify({'error': '您没有权限保存此文件'}), 403
-        elif not is_admin:
+        elif not is_admin_or_reviewer:
             return jsonify({'error': '您没有权限保存历史文件'}), 403
         
         # 获取前端发送的数据
@@ -4076,69 +4087,7 @@ def get_running_tasks():
         print(f"❌ 获取运行任务失败: {e}")
         return jsonify({'error': f'获取任务列表失败: {str(e)}'}), 500
 
-@app.route('/api/tasks/<task_id>/pause', methods=['POST'])
-@login_required
-def pause_task(task_id):
-    """暂停任务"""
-    try:
-        # 检查任务是否存在且属于当前用户
-        current_user_id = session.get('user_id', 'anonymous')
-        task = db.get_running_task(task_id)
-        
-        if not task:
-            return jsonify({'error': '任务不存在'}), 404
-        
-        if task['created_by'] != current_user_id:
-            return jsonify({'error': '无权限操作此任务'}), 403
-        
-        if task['status'] != 'running':
-            return jsonify({'error': '只能暂停正在运行的任务'}), 400
-        
-        # 更新内存和数据库状态
-        if task_id in task_status:
-            task_status[task_id].status = "已暂停"
-        
-        db.update_task_status(task_id, "paused")
-        
-        return jsonify({
-            'success': True,
-            'message': '任务已暂停'
-        })
-    except Exception as e:
-        print(f"❌ 暂停任务失败: {e}")
-        return jsonify({'error': f'暂停任务失败: {str(e)}'}), 500
 
-@app.route('/api/tasks/<task_id>/resume', methods=['POST'])
-@login_required
-def resume_task(task_id):
-    """继续任务"""
-    try:
-        # 检查任务是否存在且属于当前用户
-        current_user_id = session.get('user_id', 'anonymous')
-        task = db.get_running_task(task_id)
-        
-        if not task:
-            return jsonify({'error': '任务不存在'}), 404
-        
-        if task['created_by'] != current_user_id:
-            return jsonify({'error': '无权限操作此任务'}), 403
-        
-        if task['status'] != 'paused':
-            return jsonify({'error': '只能继续已暂停的任务'}), 400
-        
-        # 更新内存和数据库状态
-        if task_id in task_status:
-            task_status[task_id].status = "运行中"
-        
-        db.update_task_status(task_id, "running")
-        
-        return jsonify({
-            'success': True,
-            'message': '任务已继续'
-        })
-    except Exception as e:
-        print(f"❌ 继续任务失败: {e}")
-        return jsonify({'error': f'继续任务失败: {str(e)}'}), 500
 
 @app.route('/api/tasks/<task_id>/cancel', methods=['DELETE'])
 @login_required

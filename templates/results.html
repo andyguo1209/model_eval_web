@@ -1041,6 +1041,9 @@
         let sortDirection = 'asc';
         let columns = {{ columns | tojson }};
         
+        // 用户数据
+        window.currentUserData = {{ current_user | tojson }};
+        
         // 页面初始化
         document.addEventListener('DOMContentLoaded', function() {
             initializeTable();
@@ -1756,9 +1759,11 @@
                         <div class="score-edit-section">
                             <p><strong>评分：</strong>
                                 <span class="score-cell score-${row[key.replace('答案', '评分')]}">${row[key.replace('答案', '评分')]}分</span>
-                                <button class="edit-score-btn" onclick="editScore(${index}, '${key.replace('答案', '评分')}', ${row[key.replace('答案', '评分')]})">
-                                    <i class="fas fa-edit"></i> 修改评分
-                                </button>
+                                ${window.currentUserData && (window.currentUserData.role === 'admin' || window.currentUserData.role === 'reviewer') ? `
+                                    <button class="edit-score-btn" onclick="editScore(${index}, '${key.replace('答案', '评分')}', ${row[key.replace('答案', '评分')]})">
+                                        <i class="fas fa-edit"></i> 修改评分
+                                    </button>
+                                ` : ''}
                             </p>
                         </div>
                     ` : ''}
