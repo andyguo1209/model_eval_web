@@ -8,30 +8,30 @@
 /* HKGAI 图标样式 */
 .hkgai-logo {
     display: inline-block;
-    width: 1em;
-    height: 1em;
-    background-image: url('/static/images/hkgai-icon-v2.svg');
+    width: 1.8em;
+    height: 1.8em;
+    background-image: url('/static/images/hkgai-icon.svg');
     background-size: contain;
     background-repeat: no-repeat;
     background-position: center;
     vertical-align: text-bottom;
-    margin-right: 8px;
+    margin-right: 10px;
 }
 
 .hkgai-logo.large {
-    width: 80px;
-    height: 80px;
-    background-image: url('/static/images/hkgai-logo-v4.svg');
+    width: 120px;
+    height: 120px;
+    background-image: url('/static/images/hkgai-logo.svg');
 }
 
 .hkgai-logo.medium {
-    width: 32px;
-    height: 32px;
+    width: 48px;
+    height: 48px;
 }
 
 .hkgai-logo.small {
-    width: 24px;
-    height: 24px;
+    width: 28px;
+    height: 28px;
 }
 
 /* 加载遮罩样式 */
