@@ -135,13 +135,6 @@ function handleFileSelect() {
         return;
     }
 
-    // 立即重置文件输入框，以便能重复选择同一文件
-    // 使用setTimeout确保在当前事件处理完成后再重置
-    setTimeout(() => {
-        fileInput.value = '';
-        console.log('🔄 [文件选择] 已重置文件输入框，可重复选择');
-    }, 100);
-
     // 检查文件格式
     const allowedTypes = ['.xlsx', '.xls', '.csv'];
     const fileExtension = file.name.toLowerCase().substring(file.name.lastIndexOf('.'));
@@ -151,6 +144,10 @@ function handleFileSelect() {
     if (!allowedTypes.includes(fileExtension)) {
         console.log('❌ [文件选择] 不支持的文件格式:', fileExtension);
         showError('不支持的文件格式，请上传 .xlsx、.xls 或 .csv 文件');
+        
+        // 文件格式错误后重置文件输入框
+        fileInput.value = '';
+        console.log('🔄 [格式错误] 已重置文件输入框');
         return;
     }
 
@@ -191,6 +188,13 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             displayFileInfo(result);
             showSuccess('文件上传成功！');
             loadHistoryFiles(); // 刷新测试集列表
+            
+            // 上传成功后重置文件输入框
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                fileInput.value = '';
+                console.log('🔄 [上传成功] 已重置文件输入框');
+            }
         } 
         // 处理文件已存在的情况（409状态码）
         else if (response.status === 409 && result.error === 'file_exists') {
@@ -216,6 +220,13 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             }
             
             showError(result.error || '文件上传失败');
+            
+            // 最终失败后重置文件输入框
+            const fileInput = document.getElementById('file-input');
+            if (fileInput) {
+                fileInput.value = '';
+                console.log('🔄 [上传失败] 已重置文件输入框');
+            }
         }
     } catch (error) {
         console.error('❌ 上传过程中发生错误:', error);
@@ -229,6 +240,13 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
         }
         
         showError(`上传失败：${error.message}`);
+        
+        // 网络错误最终失败后重置文件输入框
+        const fileInput = document.getElementById('file-input');
+        if (fileInput) {
+            fileInput.value = '';
+            console.log('🔄 [网络错误失败] 已重置文件输入框');
+        }
     } finally {
         hideLoading();
     }
