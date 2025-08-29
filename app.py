@@ -4491,6 +4491,39 @@ def view_shared_result(share_token):
         
         if analytics:
             try:
+                # 预处理数据：清理评分列中的字符串格式
+                print(f"🧹 [分享页面] 开始清理数据...")
+                try:
+                    # 找到所有评分列
+                    score_columns = [col for col in df.columns if isinstance(col, str) and '评分' in col]
+                    print(f"🔍 [分享页面] 发现评分列: {score_columns}")
+                    
+                    # 清理每个评分列的数据
+                    for col in score_columns:
+                        if col in df.columns:
+                            # 清理字符串格式的分数（如"0分"变成0）
+                            def clean_score(x):
+                                if pd.isna(x):
+                                    return x
+                                if isinstance(x, str):
+                                    # 移除"分"字符，尝试转换为数字
+                                    clean_x = x.replace('分', '').strip()
+                                    try:
+                                        return float(clean_x)
+                                    except (ValueError, TypeError):
+                                        return None
+                                return x
+                            
+                            df[col] = df[col].apply(clean_score)
+                            print(f"✅ [分享页面] 清理评分列 {col} 完成")
+                    
+                    # 将清理后的数据保存回临时文件
+                    df.to_csv(result_file_path, index=False, encoding='utf-8')
+                    print(f"✅ [分享页面] 清理后的数据已保存")
+                
+                except Exception as clean_error:
+                    print(f"⚠️ [分享页面] 数据清理过程出错: {clean_error}")
+                
                 evaluation_data = {
                     'evaluation_mode': share_info.get('evaluation_mode', ''),
                     'models': share_info.get('models', []),
@@ -4587,11 +4620,33 @@ def view_shared_result(share_token):
                                 scores_count = len(scores_series)
                                 if scores_count > 0:
                                     avg_score = float(scores_series.mean())
+                                    median_score = float(scores_series.median())
+                                    std_dev = float(scores_series.std()) if scores_count > 1 else 0.0
+                                    min_score = float(scores_series.min())
+                                    max_score = float(scores_series.max())
+                                    
+                                    # 计算分位数
+                                    try:
+                                        percentiles = {
+                                            '25th': float(scores_series.quantile(0.25)),
+                                            '75th': float(scores_series.quantile(0.75)),
+                                            '90th': float(scores_series.quantile(0.90))
+                                        }
+                                    except:
+                                        percentiles = {'25th': min_score, '75th': max_score, '90th': max_score}
+                                    
                                     model_scores[model_name] = avg_score
                                     basic_stats['score_analysis']['model_performance'][model_name] = {
-                                        'avg_score': avg_score,
+                                        'mean_score': avg_score,  # 模板期望的字段名
+                                        'avg_score': avg_score,   # 保持兼容性
+                                        'median_score': median_score,
+                                        'std_dev': std_dev,
+                                        'min_score': min_score,
+                                        'max_score': max_score,
+                                        'score_count': scores_count,
                                         'total_score': float(scores_series.sum()),
-                                        'question_count': scores_count
+                                        'question_count': scores_count,
+                                        'percentiles': percentiles
                                     }
                                     print(f"✅ [分享页面] {model_name}: 平均分={avg_score:.2f}, 题数={scores_count}")
                         except Exception as col_error:
