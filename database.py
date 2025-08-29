@@ -228,6 +228,58 @@ class EvaluationDatabase:
                 )
             ''')
             
+            # 11. 分享链接表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS shared_links (
+                    id TEXT PRIMARY KEY,
+                    share_token TEXT UNIQUE NOT NULL, -- 分享令牌，用于生成公开链接
+                    result_id TEXT NOT NULL, -- 关联的评测结果ID
+                    share_type TEXT NOT NULL, -- 'public', 'user_specific'
+                    shared_by TEXT NOT NULL, -- 分享者用户ID
+                    shared_to TEXT, -- 被分享者用户ID（仅user_specific类型使用）
+                    
+                    -- 分享设置
+                    title TEXT, -- 自定义分享标题
+                    description TEXT, -- 分享描述
+                    allow_download BOOLEAN DEFAULT 0, -- 是否允许下载原始数据
+                    password_protected TEXT, -- 访问密码（可选）
+                    
+                    -- 时间控制
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    expires_at TIMESTAMP, -- 过期时间（NULL表示永不过期）
+                    
+                    -- 访问统计
+                    view_count INTEGER DEFAULT 0, -- 访问次数
+                    last_accessed TIMESTAMP, -- 最后访问时间
+                    access_limit INTEGER DEFAULT 0, -- 访问次数限制（0表示无限制）
+                    
+                    -- 状态管理
+                    is_active BOOLEAN DEFAULT 1, -- 是否激活
+                    revoked_at TIMESTAMP, -- 撤销时间
+                    revoked_by TEXT, -- 撤销者用户ID
+                    
+                    FOREIGN KEY (result_id) REFERENCES evaluation_results (id),
+                    FOREIGN KEY (shared_by) REFERENCES users (id),
+                    FOREIGN KEY (shared_to) REFERENCES users (id),
+                    FOREIGN KEY (revoked_by) REFERENCES users (id)
+                )
+            ''')
+            
+            # 12. 分享访问记录表
+            db_cursor.execute('''
+                CREATE TABLE IF NOT EXISTS shared_access_logs (
+                    id TEXT PRIMARY KEY,
+                    share_id TEXT NOT NULL, -- 分享链接ID
+                    accessed_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    ip_address TEXT, -- 访问者IP
+                    user_agent TEXT, -- 浏览器信息
+                    user_id TEXT, -- 如果是登录用户访问
+                    
+                    FOREIGN KEY (share_id) REFERENCES shared_links (id),
+                    FOREIGN KEY (user_id) REFERENCES users (id)
+                )
+            ''')
+            
             # 执行数据库迁移
             self._migrate_database(db_cursor)
             
@@ -285,6 +337,11 @@ class EvaluationDatabase:
             ('idx_running_tasks_created_by', 'running_tasks', 'created_by'),
             ('idx_uploaded_files_user', 'uploaded_files', 'uploaded_by'),
             ('idx_uploaded_files_active', 'uploaded_files', 'is_active'),
+            ('idx_shared_links_token', 'shared_links', 'share_token'),
+            ('idx_shared_links_result', 'shared_links', 'result_id'),
+            ('idx_shared_links_shared_by', 'shared_links', 'shared_by'),
+            ('idx_shared_links_active', 'shared_links', 'is_active'),
+            ('idx_shared_access_logs_share', 'shared_access_logs', 'share_id'),
         ]
         
         for index_name, table_name, column_name in indexes:
@@ -1442,6 +1499,244 @@ class EvaluationDatabase:
                 return cursor.rowcount
         except Exception as e:
             print(f"清理已完成任务失败: {e}")
+            return 0
+    
+    # ========== 分享管理方法 ==========
+    
+    def create_share_link(self, result_id: str, shared_by: str, share_type: str = 'public',
+                         title: str = None, description: str = None, expires_hours: int = None,
+                         allow_download: bool = False, password: str = None, 
+                         access_limit: int = 0, shared_to: str = None) -> Dict:
+        """创建分享链接"""
+        import secrets
+        import hashlib
+        
+        try:
+            share_id = str(uuid.uuid4())
+            share_token = secrets.token_urlsafe(32)  # 生成安全的分享令牌
+            
+            # 计算过期时间
+            expires_at = None
+            if expires_hours and expires_hours > 0:
+                expires_at = (datetime.now() + timedelta(hours=expires_hours)).isoformat()
+            
+            # 处理密码保护
+            password_hash = None
+            if password:
+                password_hash = hashlib.sha256(password.encode()).hexdigest()
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    INSERT INTO shared_links 
+                    (id, share_token, result_id, share_type, shared_by, shared_to,
+                     title, description, allow_download, password_protected,
+                     expires_at, access_limit)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ''', (
+                    share_id, share_token, result_id, share_type, shared_by, shared_to,
+                    title, description, allow_download, password_hash,
+                    expires_at, access_limit
+                ))
+                conn.commit()
+                
+                return {
+                    'share_id': share_id,
+                    'share_token': share_token,
+                    'result_id': result_id,
+                    'share_type': share_type,
+                    'expires_at': expires_at,
+                    'access_limit': access_limit
+                }
+        except Exception as e:
+            print(f"创建分享链接失败: {e}")
+            return None
+    
+    def get_share_link_by_token(self, share_token: str) -> Optional[Dict]:
+        """根据分享令牌获取分享信息"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sl.*, er.name as result_name, er.evaluation_mode, 
+                           er.models, er.created_at as result_created_at, er.result_file,
+                           u.display_name as shared_by_name, u.username as shared_by_username
+                    FROM shared_links sl
+                    LEFT JOIN evaluation_results er ON sl.result_id = er.id
+                    LEFT JOIN users u ON sl.shared_by = u.id
+                    WHERE sl.share_token = ? AND sl.is_active = 1
+                ''', (share_token,))
+                
+                row = cursor.fetchone()
+                if row:
+                    columns = [description[0] for description in cursor.description]
+                    share_info = dict(zip(columns, row))
+                    
+                    # 解析JSON字段
+                    if share_info.get('models'):
+                        share_info['models'] = json.loads(share_info['models'])
+                    
+                    return share_info
+                return None
+        except Exception as e:
+            print(f"获取分享链接失败: {e}")
+            return None
+    
+    def verify_share_access(self, share_token: str, password: str = None) -> Dict:
+        """验证分享链接访问权限"""
+        share_info = self.get_share_link_by_token(share_token)
+        
+        if not share_info:
+            return {'valid': False, 'reason': '分享链接不存在或已失效'}
+        
+        # 检查是否过期
+        if share_info['expires_at']:
+            expire_time = datetime.fromisoformat(share_info['expires_at'])
+            if datetime.now() > expire_time:
+                return {'valid': False, 'reason': '分享链接已过期'}
+        
+        # 检查访问次数限制
+        if share_info['access_limit'] > 0:
+            if share_info['view_count'] >= share_info['access_limit']:
+                return {'valid': False, 'reason': '分享链接访问次数已达上限'}
+        
+        # 检查密码保护
+        if share_info['password_protected']:
+            if not password:
+                return {'valid': False, 'reason': '需要访问密码', 'require_password': True}
+            
+            import hashlib
+            password_hash = hashlib.sha256(password.encode()).hexdigest()
+            if password_hash != share_info['password_protected']:
+                return {'valid': False, 'reason': '访问密码错误', 'require_password': True}
+        
+        return {'valid': True, 'share_info': share_info}
+    
+    def record_share_access(self, share_token: str, ip_address: str = None,
+                           user_agent: str = None, user_id: str = None) -> bool:
+        """记录分享链接访问"""
+        try:
+            share_info = self.get_share_link_by_token(share_token)
+            if not share_info:
+                return False
+            
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                # 记录访问日志
+                log_id = str(uuid.uuid4())
+                cursor.execute('''
+                    INSERT INTO shared_access_logs 
+                    (id, share_id, ip_address, user_agent, user_id)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (log_id, share_info['id'], ip_address, user_agent, user_id))
+                
+                # 更新分享链接的访问统计
+                cursor.execute('''
+                    UPDATE shared_links 
+                    SET view_count = view_count + 1, last_accessed = CURRENT_TIMESTAMP
+                    WHERE id = ?
+                ''', (share_info['id'],))
+                
+                conn.commit()
+                return True
+        except Exception as e:
+            print(f"记录分享访问失败: {e}")
+            return False
+    
+    def get_user_shared_links(self, user_id: str, include_revoked: bool = False) -> List[Dict]:
+        """获取用户创建的分享链接列表"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                
+                query = '''
+                    SELECT sl.*, er.name as result_name, er.evaluation_mode,
+                           er.models, er.created_at as result_created_at
+                    FROM shared_links sl
+                    LEFT JOIN evaluation_results er ON sl.result_id = er.id
+                    WHERE sl.shared_by = ?
+                '''
+                params = [user_id]
+                
+                if not include_revoked:
+                    query += ' AND sl.is_active = 1'
+                
+                query += ' ORDER BY sl.created_at DESC'
+                
+                cursor.execute(query, params)
+                rows = cursor.fetchall()
+                
+                shares = []
+                for row in rows:
+                    columns = [description[0] for description in cursor.description]
+                    share_info = dict(zip(columns, row))
+                    
+                    # 解析JSON字段
+                    if share_info.get('models'):
+                        share_info['models'] = json.loads(share_info['models'])
+                    
+                    shares.append(share_info)
+                
+                return shares
+        except Exception as e:
+            print(f"获取用户分享链接失败: {e}")
+            return []
+    
+    def revoke_share_link(self, share_id: str, revoked_by: str) -> bool:
+        """撤销分享链接"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE shared_links 
+                    SET is_active = 0, revoked_at = CURRENT_TIMESTAMP, revoked_by = ?
+                    WHERE id = ?
+                ''', (revoked_by, share_id))
+                conn.commit()
+                return cursor.rowcount > 0
+        except Exception as e:
+            print(f"撤销分享链接失败: {e}")
+            return False
+    
+    def get_share_access_logs(self, share_id: str, limit: int = 50) -> List[Dict]:
+        """获取分享链接访问日志"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    SELECT sal.*, u.display_name as user_name, u.username
+                    FROM shared_access_logs sal
+                    LEFT JOIN users u ON sal.user_id = u.id
+                    WHERE sal.share_id = ?
+                    ORDER BY sal.accessed_at DESC
+                    LIMIT ?
+                ''', (share_id, limit))
+                
+                rows = cursor.fetchall()
+                columns = [description[0] for description in cursor.description]
+                
+                return [dict(zip(columns, row)) for row in rows]
+        except Exception as e:
+            print(f"获取分享访问日志失败: {e}")
+            return []
+    
+    def cleanup_expired_shares(self) -> int:
+        """清理过期的分享链接"""
+        try:
+            with sqlite3.connect(self.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute('''
+                    UPDATE shared_links 
+                    SET is_active = 0
+                    WHERE expires_at IS NOT NULL 
+                    AND expires_at < CURRENT_TIMESTAMP 
+                    AND is_active = 1
+                ''')
+                conn.commit()
+                return cursor.rowcount
+        except Exception as e:
+            print(f"清理过期分享链接失败: {e}")
             return 0
 
 

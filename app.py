@@ -2101,13 +2101,26 @@ def view_results(filename):
             except Exception as e:
                 print(f"⚠️ [view_results] 生成基础统计数据失败: {e}")
         
+        # 查找结果详情以支持分享功能
+        result_detail = None
+        try:
+            result_id = db.get_result_id_by_filename(filename)
+            if result_id:
+                result_detail = db.get_result_by_id(result_id)
+                print(f"✅ [view_results] 找到结果详情: {result_id}")
+            else:
+                print(f"⚠️ [view_results] 未找到文件 {filename} 对应的数据库记录")
+        except Exception as e:
+            print(f"⚠️ [view_results] 查找结果详情失败: {e}")
+        
         current_user = db.get_user_by_id(session['user_id'])
         return render_template('results.html', 
                              filename=filename,
                              columns=df.columns.tolist(),
                              data=df.to_dict('records'),
                              advanced_stats=advanced_stats,
-                             current_user=current_user)
+                             current_user=current_user,
+                             result_detail=result_detail)
     except Exception as e:
         return jsonify({'error': f'读取结果文件错误: {str(e)}'}), 400
 
@@ -4159,10 +4172,575 @@ def connect_to_task(task_id):
         return jsonify({'error': f'连接任务失败: {str(e)}'}), 500
 
 
+# ========== 分享功能路由 ==========
+
+@app.route('/api/share/create', methods=['POST'])
+@login_required
+def create_share():
+    """创建分享链接"""
+    try:
+        data = request.get_json()
+        result_id = data.get('result_id')
+        share_type = data.get('share_type', 'public')  # 'public' 或 'user_specific'
+        title = data.get('title', '')
+        description = data.get('description', '')
+        expires_hours = data.get('expires_hours', 0)  # 0表示永不过期
+        allow_download = data.get('allow_download', False)
+        password = data.get('password', '')
+        access_limit = data.get('access_limit', 0)  # 0表示无限制
+        shared_to = data.get('shared_to', None)  # 特定用户分享
+        
+        if not result_id:
+            return jsonify({'error': '缺少结果ID'}), 400
+        
+        # 验证result_id存在且用户有权限分享
+        result_detail = db.get_result_by_id(result_id)
+        if not result_detail:
+            return jsonify({'error': '评测结果不存在'}), 404
+        
+        current_user_id = session['user_id']
+        current_user = db.get_user_by_id(current_user_id)
+        
+        # 检查权限：只有结果创建者或管理员可以分享
+        if (result_detail['created_by'] != current_user_id and 
+            current_user['role'] != 'admin'):
+            return jsonify({'error': '您没有权限分享此结果'}), 403
+        
+        # 创建分享链接
+        share_info = db.create_share_link(
+            result_id=result_id,
+            shared_by=current_user_id,
+            share_type=share_type,
+            title=title or result_detail['name'],
+            description=description,
+            expires_hours=expires_hours if expires_hours > 0 else None,
+            allow_download=allow_download,
+            password=password if password else None,
+            access_limit=access_limit,
+            shared_to=shared_to
+        )
+        
+        if share_info:
+            # 生成分享URL
+            share_url = url_for('view_shared_result', 
+                              share_token=share_info['share_token'], 
+                              _external=True)
+            
+            return jsonify({
+                'success': True,
+                'share_id': share_info['share_id'],
+                'share_url': share_url,
+                'share_token': share_info['share_token'],
+                'expires_at': share_info['expires_at'],
+                'message': '分享链接创建成功'
+            })
+        else:
+            return jsonify({'error': '创建分享链接失败'}), 500
+            
+    except Exception as e:
+        print(f"❌ 创建分享链接错误: {e}")
+        return jsonify({'error': f'创建分享链接失败: {str(e)}'}), 500
+
+@app.route('/api/share/my-shares', methods=['GET'])
+@login_required
+def get_my_shares():
+    """获取当前用户的分享链接"""
+    try:
+        current_user_id = session['user_id']
+        include_revoked = request.args.get('include_revoked', 'false').lower() == 'true'
+        
+        shares = db.get_user_shared_links(current_user_id, include_revoked)
+        
+        # 为每个分享添加完整的URL
+        for share in shares:
+            share['share_url'] = url_for('view_shared_result', 
+                                       share_token=share['share_token'], 
+                                       _external=True)
+            
+            # 检查是否过期
+            if share['expires_at']:
+                expire_time = datetime.fromisoformat(share['expires_at'])
+                share['is_expired'] = datetime.now() > expire_time
+            else:
+                share['is_expired'] = False
+        
+        return jsonify({
+            'success': True,
+            'shares': shares
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取分享列表错误: {e}")
+        return jsonify({'error': f'获取分享列表失败: {str(e)}'}), 500
+
+@app.route('/api/share/<share_id>/revoke', methods=['POST'])
+@login_required
+def revoke_share(share_id):
+    """撤销分享链接"""
+    try:
+        current_user_id = session['user_id']
+        current_user = db.get_user_by_id(current_user_id)
+        
+        # TODO: 验证分享所有权（可以加个检查）
+        
+        success = db.revoke_share_link(share_id, current_user_id)
+        
+        if success:
+            return jsonify({
+                'success': True,
+                'message': '分享链接已撤销'
+            })
+        else:
+            return jsonify({'error': '撤销分享链接失败'}), 500
+            
+    except Exception as e:
+        print(f"❌ 撤销分享链接错误: {e}")
+        return jsonify({'error': f'撤销分享链接失败: {str(e)}'}), 500
+
+@app.route('/api/share/<share_id>/logs', methods=['GET'])
+@login_required
+def get_share_logs(share_id):
+    """获取分享链接访问日志"""
+    try:
+        current_user_id = session['user_id']
+        # TODO: 验证分享所有权
+        
+        limit = int(request.args.get('limit', 50))
+        logs = db.get_share_access_logs(share_id, limit)
+        
+        return jsonify({
+            'success': True,
+            'logs': logs
+        })
+        
+    except Exception as e:
+        print(f"❌ 获取分享日志错误: {e}")
+        return jsonify({'error': f'获取分享日志失败: {str(e)}'}), 500
+
+@app.route('/share/<share_token>')
+def view_shared_result(share_token):
+    """查看分享的评测结果（公开访问）"""
+    try:
+        # 获取请求信息
+        ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        user_agent = request.headers.get('User-Agent', '')
+        user_id = session.get('user_id', None)
+        
+        # 检查是否需要密码验证
+        password = request.args.get('password', '')
+        
+        # 验证分享链接访问权限
+        access_result = db.verify_share_access(share_token, password)
+        
+        if not access_result['valid']:
+            if access_result.get('require_password'):
+                # 显示密码输入页面
+                return render_template('shared_password.html', 
+                                     share_token=share_token,
+                                     error_message=access_result['reason'])
+            else:
+                # 显示错误信息
+                return render_template('shared_error.html', 
+                                     error_message=access_result['reason']), 403
+        
+        share_info = access_result['share_info']
+        
+        # 记录访问
+        db.record_share_access(share_token, ip_address, user_agent, user_id)
+        
+        # 读取评测结果文件
+        result_file_path = share_info.get('result_file')
+        if not result_file_path:
+            return render_template('shared_error.html', 
+                                 error_message='分享链接缺少结果文件信息'), 404
+        
+        if not os.path.exists(result_file_path):
+            # 尝试不同的路径查找
+            alternative_paths = [
+                result_file_path,
+                os.path.join('results', os.path.basename(result_file_path)),
+                os.path.join('results_history', os.path.basename(result_file_path)),
+                os.path.join(app.config.get('RESULTS_FOLDER', 'results'), os.path.basename(result_file_path))
+            ]
+            
+            found_path = None
+            for path in alternative_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    print(f"🔍 在备用路径找到文件: {path}")
+                    break
+            
+            if found_path:
+                result_file_path = found_path
+            else:
+                return render_template('shared_error.html', 
+                                     error_message=f'结果文件不存在: {os.path.basename(result_file_path)}'), 404
+        
+        # 读取CSV数据
+        try:
+            df = pd.read_csv(result_file_path, encoding='utf-8-sig')
+            print(f"📊 [分享页面] 成功读取CSV文件，数据形状: {df.shape}")
+        except Exception as e:
+            print(f"❌ [分享页面] 读取CSV文件失败: {e}")
+            return render_template('shared_error.html', 
+                                 error_message=f'读取结果文件失败: {str(e)}'), 500
+        
+        # 验证DataFrame
+        if df is None or df.empty:
+            return render_template('shared_error.html', 
+                                 error_message='结果文件为空或无效'), 500
+        
+        # 准备数据
+        try:
+            # 安全地处理 models 字段
+            models_data = share_info.get('models', [])
+            if not isinstance(models_data, list):
+                print(f"⚠️ [分享页面] models字段类型异常: {type(models_data)}, 值: {models_data}")
+                if isinstance(models_data, str):
+                    try:
+                        # 尝试JSON解析
+                        import json
+                        models_data = json.loads(models_data)
+                        if not isinstance(models_data, list):
+                            models_data = []
+                    except:
+                        models_data = []
+                else:
+                    models_data = []
+            
+            # 清理DataFrame数据，确保所有值都是安全的类型
+            cleaned_data = []
+            for record in df.to_dict('records'):
+                cleaned_record = {}
+                for key, value in record.items():
+                    # 将所有值转换为安全的字符串或数字
+                    if pd.isna(value) or value is None:
+                        cleaned_record[key] = ''
+                    elif isinstance(value, (int, float)):
+                        cleaned_record[key] = value
+                    else:
+                        cleaned_record[key] = str(value)
+                cleaned_data.append(cleaned_record)
+            
+            result_data = {
+                'filename': os.path.basename(result_file_path),
+                'columns': df.columns.tolist(),
+                'data': cleaned_data,  # 使用清理后的数据
+                'share_info': {
+                    'title': share_info.get('title', share_info.get('result_name', '未知结果')),
+                    'description': share_info.get('description', ''),
+                    'shared_by_name': share_info.get('shared_by_name', '未知用户'),
+                    'created_at': share_info.get('created_at', ''),
+                    'evaluation_mode': share_info.get('evaluation_mode', ''),
+                    'models': models_data,  # 确保是列表类型
+                    'allow_download': share_info.get('allow_download', False)
+                }
+            }
+            
+            # 验证数据结构
+            print(f"📝 [分享页面] 数据准备完成:")
+            print(f"  - 列数: {len(df.columns)}")
+            print(f"  - 行数: {len(df)}")
+            print(f"  - models类型: {type(result_data['share_info']['models'])}")
+            print(f"  - models内容: {result_data['share_info']['models']}")
+            print(f"  - columns类型: {type(result_data['columns'])}")
+            print(f"  - data类型: {type(result_data['data'])}")
+            
+        except Exception as e:
+            print(f"❌ [分享页面] 数据准备失败: {e}")
+            import traceback
+            print(f"🐛 [分享页面] 错误堆栈: {traceback.format_exc()}")
+            return render_template('shared_error.html', 
+                                 error_message=f'数据处理失败: {str(e)}'), 500
+        
+        # 获取统计分析（如果analytics可用）
+        advanced_stats = None
+        print(f"🔍 [分享页面] Analytics 模块状态: {'可用' if analytics else '不可用'}")
+        
+        if analytics:
+            try:
+                evaluation_data = {
+                    'evaluation_mode': share_info.get('evaluation_mode', ''),
+                    'models': share_info.get('models', []),
+                    'question_count': len(df),
+                    'start_time': share_info.get('result_created_at', ''),
+                    'end_time': share_info.get('result_created_at', '')
+                }
+                
+                print(f"🔄 [分享页面] 开始分析评测结果...")
+                analysis_result = analytics.analyze_evaluation_results(
+                    result_file=result_file_path,
+                    evaluation_data=evaluation_data
+                )
+                
+                if analysis_result.get('success'):
+                    advanced_stats = analysis_result['analysis']
+                    print(f"✅ [分享页面] 成功生成高级统计分析")
+                    
+                    # 验证和修复高级分析数据结构
+                    if advanced_stats:
+                        print(f"🔍 [分享页面] 高级分析数据结构: {type(advanced_stats)}")
+                        print(f"🔍 [分享页面] 高级分析内容: {advanced_stats}")
+                        
+                        # 确保 total_responses 字段存在且为数字
+                        if 'total_responses' not in advanced_stats or not isinstance(advanced_stats.get('total_responses'), (int, float)):
+                            print(f"⚠️ [分享页面] 高级分析缺少或类型错误的 total_responses，正在修复...")
+                            
+                            # 尝试从分数分布计算总响应数
+                            total_responses = 0
+                            if (advanced_stats.get('score_analysis') and 
+                                isinstance(advanced_stats['score_analysis'], dict) and
+                                advanced_stats['score_analysis'].get('score_distribution')):
+                                
+                                score_dist = advanced_stats['score_analysis']['score_distribution']
+                                if isinstance(score_dist, dict):
+                                    total_responses = sum(v for v in score_dist.values() if isinstance(v, (int, float)))
+                            
+                            # 如果还是0，使用DataFrame行数
+                            if total_responses == 0:
+                                total_responses = len(df)
+                            
+                            advanced_stats['total_responses'] = total_responses
+                            print(f"✅ [分享页面] 设置 total_responses = {total_responses}")
+                else:
+                    print(f"❌ [分享页面] 分析失败: {analysis_result.get('error', '未知错误')}")
+            except Exception as e:
+                print(f"❌ [分享页面] 分析过程出错: {e}")
+        
+        # 如果没有高级统计，生成基础的统计数据用于前端显示
+        if not advanced_stats:
+            print(f"📝 [分享页面] 生成基础统计数据作为后备方案")
+            try:
+                # 确保df是有效的DataFrame
+                if not isinstance(df, pd.DataFrame):
+                    print(f"❌ [分享页面] df不是DataFrame类型: {type(df)}")
+                    raise ValueError(f"数据类型错误: {type(df)}")
+                    
+                # 简单的分数统计
+                score_columns = [col for col in df.columns if isinstance(col, str) and ('评分' in col or 'score' in col.lower())]
+                print(f"🔍 [分享页面] 找到评分列: {score_columns}")
+                
+                basic_stats = {
+                    'basic_stats': {
+                        'total_questions': len(df),
+                        'response_rate': 100.0
+                    },
+                    'score_analysis': {
+                        'model_performance': {},
+                        'score_distribution': {}
+                    },
+                    'model_rankings': [],
+                    'performance_metrics': {
+                        'estimated_time_per_question': '30秒 (估算)',
+                        'throughput': 120  # 每小时120题
+                    },
+                    'total_responses': 0  # 默认值，后续会更新
+                }
+                
+                if score_columns:
+                    # 为每个模型计算基础统计
+                    model_scores = {}
+                    for col in score_columns:
+                        try:
+                            if '评分' in col:
+                                model_name = col.replace('_评分', '').replace('评分', '').strip()
+                                print(f"🔄 [分享页面] 处理模型: {model_name}, 列: {col}")
+                                
+                                # 安全地处理分数数据
+                                scores_series = pd.to_numeric(df[col], errors='coerce').dropna()
+                                if not isinstance(scores_series, pd.Series):
+                                    print(f"⚠️ [分享页面] scores_series 类型异常: {type(scores_series)}")
+                                    continue
+                                    
+                                scores_count = len(scores_series)
+                                if scores_count > 0:
+                                    avg_score = float(scores_series.mean())
+                                    model_scores[model_name] = avg_score
+                                    basic_stats['score_analysis']['model_performance'][model_name] = {
+                                        'avg_score': avg_score,
+                                        'total_score': float(scores_series.sum()),
+                                        'question_count': scores_count
+                                    }
+                                    print(f"✅ [分享页面] {model_name}: 平均分={avg_score:.2f}, 题数={scores_count}")
+                        except Exception as col_error:
+                            print(f"⚠️ [分享页面] 处理列 {col} 时出错: {col_error}")
+                            continue
+                    
+                    # 生成模型排名
+                    if model_scores:
+                        try:
+                            sorted_models = sorted(model_scores.items(), key=lambda x: x[1], reverse=True)
+                            basic_stats['model_rankings'] = [
+                                {'model': model, 'avg_score': score} 
+                                for model, score in sorted_models
+                            ]
+                            print(f"📊 [分享页面] 模型排名生成完成: {len(basic_stats['model_rankings'])} 个模型")
+                        except Exception as ranking_error:
+                            print(f"⚠️ [分享页面] 生成模型排名时出错: {ranking_error}")
+                    
+                    # 分数分布统计
+                    try:
+                        all_scores = []
+                        for col in score_columns:
+                            scores_series = pd.to_numeric(df[col], errors='coerce').dropna()
+                            if isinstance(scores_series, pd.Series):
+                                scores_list = scores_series.tolist()
+                                all_scores.extend(scores_list)
+                        
+                        if all_scores and len(all_scores) > 0:
+                            from collections import Counter
+                            # 过滤有效分数（0-5分）
+                            valid_scores = [int(score) for score in all_scores 
+                                          if isinstance(score, (int, float)) and 0 <= score <= 5]
+                            score_counts = Counter(valid_scores)
+                            basic_stats['score_analysis']['score_distribution'] = dict(score_counts)
+                            basic_stats['total_responses'] = len(all_scores)
+                            print(f"📈 [分享页面] 分数分布统计完成: {len(valid_scores)} 个有效分数")
+                    except Exception as dist_error:
+                        print(f"⚠️ [分享页面] 生成分数分布时出错: {dist_error}")
+                else:
+                    # 没有评分列时，设置基础的 total_responses
+                    basic_stats['total_responses'] = len(df)
+                    print(f"📝 [分享页面] 没有评分列，设置 total_responses = {len(df)}")
+                
+                advanced_stats = basic_stats
+                print(f"✅ [分享页面] 基础统计数据生成成功")
+                print(f"📊 [分享页面] 统计数据内容: {advanced_stats}")
+                print(f"📊 [分享页面] model_rankings: {advanced_stats.get('model_rankings', [])}")
+                print(f"📊 [分享页面] score_distribution: {advanced_stats.get('score_analysis', {}).get('score_distribution', {})}")
+                
+            except Exception as e:
+                print(f"❌ [分享页面] 生成基础统计数据失败: {e}")
+                import traceback
+                print(f"🐛 [分享页面] 详细错误堆栈: {traceback.format_exc()}")
+                # 提供最基本的统计数据
+                print(f"🚨 [分享页面] 使用最小化统计数据作为最后备用方案")
+                advanced_stats = {
+                    'basic_stats': {
+                        'total_questions': len(df) if isinstance(df, pd.DataFrame) else 0,
+                        'response_rate': 100.0
+                    },
+                    'score_analysis': {'model_performance': {}, 'score_distribution': {}},
+                    'model_rankings': [],
+                    'performance_metrics': {'estimated_time_per_question': '未知', 'throughput': 0},
+                    'total_responses': 0
+                }
+        
+        # 渲染分享页面
+        try:
+            print(f"🎨 [分享页面] 开始渲染模板...")
+            return render_template('shared_result.html', 
+                                 result_data=result_data,
+                                 advanced_stats=advanced_stats,
+                                 share_token=share_token)
+        except Exception as render_error:
+            print(f"❌ [分享页面] 模板渲染失败: {render_error}")
+            import traceback
+            print(f"🐛 [分享页面] 渲染错误堆栈: {traceback.format_exc()}")
+            return render_template('shared_error.html', 
+                                 error_message=f'页面渲染失败: {str(render_error)}'), 500
+        
+    except Exception as e:
+        print(f"❌ 查看分享结果错误: {e}")
+        return render_template('shared_error.html', 
+                             error_message=f'加载分享内容失败: {str(e)}'), 500
+
+@app.route('/share/<share_token>/download')
+def download_shared_result(share_token):
+    """下载分享的评测结果文件"""
+    try:
+        # 验证分享链接访问权限
+        password = request.args.get('password', '')
+        access_result = db.verify_share_access(share_token, password)
+        
+        if not access_result['valid']:
+            return jsonify({'error': access_result['reason']}), 403
+        
+        share_info = access_result['share_info']
+        
+        # 检查是否允许下载
+        if not share_info.get('allow_download', False):
+            return jsonify({'error': '此分享不允许下载文件'}), 403
+        
+        # 记录访问
+        ip_address = request.environ.get('HTTP_X_FORWARDED_FOR', request.environ.get('REMOTE_ADDR'))
+        user_agent = request.headers.get('User-Agent', '')
+        user_id = session.get('user_id', None)
+        db.record_share_access(share_token, ip_address, user_agent, user_id)
+        
+        # 提供文件下载
+        result_file_path = share_info.get('result_file')
+        if not result_file_path:
+            return jsonify({'error': '分享链接缺少结果文件信息'}), 404
+        
+        if not os.path.exists(result_file_path):
+            # 尝试不同的路径查找
+            alternative_paths = [
+                result_file_path,
+                os.path.join('results', os.path.basename(result_file_path)),
+                os.path.join('results_history', os.path.basename(result_file_path)),
+                os.path.join(app.config.get('RESULTS_FOLDER', 'results'), os.path.basename(result_file_path))
+            ]
+            
+            found_path = None
+            for path in alternative_paths:
+                if os.path.exists(path):
+                    found_path = path
+                    print(f"🔍 下载时在备用路径找到文件: {path}")
+                    break
+            
+            if found_path:
+                result_file_path = found_path
+            else:
+                return jsonify({'error': f'文件不存在: {os.path.basename(result_file_path)}'}), 404
+        
+        return send_file(
+            result_file_path,
+            as_attachment=True,
+            download_name=f"shared_{os.path.basename(result_file_path)}"
+        )
+        
+    except Exception as e:
+        print(f"❌ 下载分享文件错误: {e}")
+        return jsonify({'error': f'下载失败: {str(e)}'}), 500
+
+# ========== 后台任务：清理过期分享链接 ==========
+
+def cleanup_expired_shares():
+    """清理过期的分享链接"""
+    try:
+        expired_count = db.cleanup_expired_shares()
+        if expired_count > 0:
+            print(f"🧹 清理了 {expired_count} 个过期的分享链接")
+    except Exception as e:
+        print(f"⚠️ 清理过期分享链接失败: {e}")
+
+def start_background_tasks():
+    """启动后台任务"""
+    import threading
+    import time
+    
+    def background_worker():
+        while True:
+            try:
+                # 每小时清理一次过期分享链接
+                cleanup_expired_shares()
+                time.sleep(3600)  # 1小时
+            except Exception as e:
+                print(f"⚠️ 后台任务执行失败: {e}")
+                time.sleep(300)  # 5分钟后重试
+    
+    # 启动后台线程
+    cleanup_thread = threading.Thread(target=background_worker, daemon=True)
+    cleanup_thread.start()
+    print("🔄 后台清理任务已启动")
+
 # 初始化默认管理员账户
 try:
     if db:
         db.init_default_admin()
+        # 启动后台任务
+        start_background_tasks()
 except Exception as e:
     print(f"⚠️ 初始化默认管理员失败: {e}")
 

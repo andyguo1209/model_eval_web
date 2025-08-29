@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>访问出错 - 分享链接</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/style.css') }}">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <style>
+        body {
+            background: linear-gradient(135deg, #ff6b6b 0%, #ffa500 100%);
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC', 'Hiragino Sans GB', sans-serif;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0;
+            padding: 20px;
+        }
+        
+        .error-container {
+            background: white;
+            border-radius: 20px;
+            padding: 50px 40px;
+            box-shadow: 0 20px 60px rgba(0,0,0,0.15);
+            max-width: 500px;
+            width: 100%;
+            text-align: center;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .error-container::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 6px;
+            background: linear-gradient(90deg, #ff6b6b, #ffa500);
+        }
+        
+        .error-icon {
+            width: 100px;
+            height: 100px;
+            background: linear-gradient(135deg, #ff6b6b, #ffa500);
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 0 auto 30px;
+            color: white;
+            font-size: 40px;
+            box-shadow: 0 8px 25px rgba(255, 107, 107, 0.3);
+            animation: shake 0.5s ease-in-out;
+        }
+        
+        @keyframes shake {
+            0%, 100% { transform: translateX(0); }
+            25% { transform: translateX(-5px); }
+            75% { transform: translateX(5px); }
+        }
+        
+        .error-title {
+            font-size: 2em;
+            font-weight: 700;
+            color: #333;
+            margin: 0 0 20px 0;
+        }
+        
+        .error-message {
+            color: #666;
+            font-size: 1.1em;
+            margin: 0 0 30px 0;
+            line-height: 1.6;
+            padding: 20px;
+            background: #fff5f5;
+            border-radius: 12px;
+            border-left: 4px solid #ff6b6b;
+        }
+        
+        .error-details {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 12px;
+            margin: 20px 0;
+            text-align: left;
+        }
+        
+        .error-details h3 {
+            margin: 0 0 15px 0;
+            color: #333;
+            font-size: 1.1em;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+        
+        .error-details ul {
+            margin: 0;
+            padding-left: 20px;
+            color: #666;
+        }
+        
+        .error-details li {
+            margin: 8px 0;
+            line-height: 1.5;
+        }
+        
+        .action-buttons {
+            display: flex;
+            gap: 15px;
+            justify-content: center;
+            flex-wrap: wrap;
+            margin: 30px 0 20px 0;
+        }
+        
+        .btn {
+            padding: 12px 24px;
+            border-radius: 12px;
+            border: none;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            text-decoration: none;
+            font-size: 14px;
+        }
+        
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+        }
+        
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 25px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-secondary {
+            background: white;
+            color: #667eea;
+            border: 2px solid #667eea;
+        }
+        
+        .btn-secondary:hover {
+            background: #667eea;
+            color: white;
+            transform: translateY(-2px);
+        }
+        
+        .help-section {
+            margin-top: 30px;
+            padding-top: 30px;
+            border-top: 1px solid #e0e0e0;
+        }
+        
+        .help-title {
+            font-size: 1.2em;
+            font-weight: 600;
+            color: #333;
+            margin: 0 0 15px 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+        }
+        
+        .help-text {
+            color: #666;
+            font-size: 14px;
+            line-height: 1.6;
+        }
+        
+        .contact-info {
+            background: #f0f8ff;
+            padding: 15px;
+            border-radius: 8px;
+            margin: 15px 0;
+            border-left: 4px solid #2196F3;
+        }
+        
+        /* 移动端优化 */
+        @media (max-width: 480px) {
+            .error-container {
+                padding: 40px 25px;
+                margin: 20px;
+            }
+            
+            .error-title {
+                font-size: 1.6em;
+            }
+            
+            .error-icon {
+                width: 80px;
+                height: 80px;
+                font-size: 32px;
+                margin-bottom: 20px;
+            }
+            
+            .action-buttons {
+                flex-direction: column;
+                gap: 10px;
+            }
+            
+            .btn {
+                width: 100%;
+                justify-content: center;
+            }
+        }
+        
+        /* 微信浏览器优化 */
+        @media screen and (max-width: 414px) {
+            body {
+                padding: 15px;
+            }
+            
+            .error-container {
+                padding: 30px 20px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="error-container">
+        <div class="error-icon">
+            <i class="fas fa-exclamation-triangle"></i>
+        </div>
+        
+        <h1 class="error-title">访问出错</h1>
+        
+        <div class="error-message">
+            {{ error_message or '分享链接无法访问，请检查链接是否正确或已过期。' }}
+        </div>
+        
+        <div class="error-details">
+            <h3>
+                <i class="fas fa-lightbulb"></i>
+                可能的原因
+            </h3>
+            <ul>
+                <li>分享链接已过期</li>
+                <li>分享链接已被撤销</li>
+                <li>访问次数已达到上限</li>
+                <li>需要输入正确的访问密码</li>
+                <li>网络连接问题</li>
+            </ul>
+        </div>
+        
+        <div class="action-buttons">
+            <button onclick="history.back()" class="btn btn-secondary">
+                <i class="fas fa-arrow-left"></i> 返回上页
+            </button>
+            <button onclick="location.reload()" class="btn btn-primary">
+                <i class="fas fa-redo"></i> 重新加载
+            </button>
+        </div>
+        
+        <div class="help-section">
+            <h3 class="help-title">
+                <i class="fas fa-question-circle"></i>
+                需要帮助？
+            </h3>
+            <p class="help-text">
+                如果您认为这是一个错误，请尝试以下操作：
+            </p>
+            <div class="contact-info">
+                <strong>建议操作：</strong><br>
+                1. 确认分享链接是否完整<br>
+                2. 联系分享者确认链接状态<br>
+                3. 检查网络连接是否正常<br>
+                4. 稍后重试访问
+            </div>
+        </div>
+        
+        <!-- 页脚 -->
+        <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e0e0e0; color: #999; font-size: 12px;">
+            <i class="fas fa-shield-alt"></i>
+            HKGAI模型评测系统
+        </div>
+    </div>
+
+    <script>
+        // 记录错误信息用于调试
+        console.log('分享链接访问错误:', '{{ error_message }}');
+        
+        // 自动聚焦到主要操作按钮
+        document.addEventListener('DOMContentLoaded', function() {
+            const primaryBtn = document.querySelector('.btn-primary');
+            if (primaryBtn) {
+                primaryBtn.focus();
+            }
+        });
+        
+        // 如果是移动端，添加触摸反馈
+        if ('ontouchstart' in window) {
+            document.querySelectorAll('.btn').forEach(btn => {
+                btn.addEventListener('touchstart', function() {
+                    this.style.transform = 'scale(0.98)';
+                });
+                btn.addEventListener('touchend', function() {
+                    this.style.transform = '';
+                });
+            });
+        }
+        
+        // 检测微信环境
+        if (navigator.userAgent.includes('MicroMessenger')) {
+            console.log('检测到微信环境');
+            // 在微信环境中可以添加特殊处理
+        }
+        
+        // 添加键盘快捷键支持
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'r' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault();
+                location.reload();
+            } else if (e.key === 'Escape') {
+                history.back();
+            }
+        });
+        
+        // 错误上报（可选）
+        function reportError() {
+            // 这里可以添加错误上报逻辑
+            console.log('错误已上报');
+        }
+    </script>
+</body>
+</html>
