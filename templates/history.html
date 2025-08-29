@@ -841,7 +841,7 @@
                     <p><strong>完成时间：</strong>${result.completed_at ? new Date(result.completed_at).toLocaleString('zh-CN') : '未完成'}</p>
                 </div>
                 
-                <h4><i class="fas fa-robot"></i> 参与模型</h4>
+                <h4><div class="hkgai-logo small" style="display: inline-block;"></div> 参与模型</h4>
                 <div style="margin-bottom: 20px;">
                     ${result.models?.map(model => `<span class="model-badge">${model}</span>`).join(' ') || '无'}
                 </div>

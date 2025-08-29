@@ -1738,7 +1738,7 @@
                 
                 ${Object.keys(row).filter(key => key.includes('答案') && !key.includes('标准')).map(key => `
                 <div class="detail-section">
-                    <h4><i class="fas fa-robot"></i> ${key}</h4>
+                    <h4><div class="hkgai-logo small" style="display: inline-block;"></div> ${key}</h4>
                     <div class="content-container" style="margin-bottom: 15px;">
                         <div class="content-text markdown-rendered" id="answer-${index}-${key.replace(/[^a-zA-Z0-9]/g, '-')}">${renderMarkdown(row[key] || '无答案')}</div>
                         <div class="content-actions" style="margin-top: 10px;">

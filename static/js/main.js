@@ -138,18 +138,28 @@ function handleFileSelect() {
 }
 
 // 上传文件
-async function uploadFile(file, overwrite = false) {
+async function uploadFile(file, overwrite = false, retryCount = 0) {
+    const maxRetries = 2;
     const formData = new FormData();
     formData.append('file', file);
     formData.append('overwrite', overwrite.toString());
 
-    showLoading('正在上传文件...');
+    // 显示适当的加载消息
+    const loadingMessage = retryCount > 0 
+        ? `正在重试上传文件... (${retryCount}/${maxRetries})` 
+        : '正在上传文件...';
+    showLoading(loadingMessage);
 
     try {
         const response = await fetch('/upload_file', {
             method: 'POST',
             body: formData
         });
+
+        // 检查响应状态
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
 
         const result = await response.json();
 
@@ -163,10 +173,33 @@ async function uploadFile(file, overwrite = false) {
             showFileExistsDialog(result.filename, file);
         } else {
             console.error('❌ 文件上传失败:', result.error);
+            
+            // 如果是网络错误且还有重试次数，则重试
+            if (retryCount < maxRetries && (
+                result.error.includes('网络') || 
+                result.error.includes('超时') || 
+                result.error.includes('连接')
+            )) {
+                console.log(`🔄 准备重试上传 (${retryCount + 1}/${maxRetries})`);
+                hideLoading();
+                await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒后重试
+                return uploadFile(file, overwrite, retryCount + 1);
+            }
+            
             showError(result.error || '文件上传失败');
         }
     } catch (error) {
-        showError('网络错误：' + error.message);
+        console.error('❌ 上传过程中发生错误:', error);
+        
+        // 网络错误重试机制
+        if (retryCount < maxRetries) {
+            console.log(`🔄 网络错误，准备重试 (${retryCount + 1}/${maxRetries})`);
+            hideLoading();
+            await new Promise(resolve => setTimeout(resolve, 1000)); // 等待1秒后重试
+            return uploadFile(file, overwrite, retryCount + 1);
+        }
+        
+        showError(`上传失败：${error.message}`);
     } finally {
         hideLoading();
     }
@@ -1167,13 +1200,47 @@ function hideNotification(type) {
 
 // 加载和隐藏指示器
 function showLoading(message) {
-    // 可以在这里添加加载指示器
     console.log('Loading:', message);
+    
+    // 创建或更新加载遮罩
+    let loadingOverlay = document.getElementById('loading-overlay');
+    if (!loadingOverlay) {
+        loadingOverlay = document.createElement('div');
+        loadingOverlay.id = 'loading-overlay';
+        loadingOverlay.innerHTML = `
+            <div class="loading-content">
+                <div class="loading-spinner">
+                    <i class="fas fa-spinner fa-spin"></i>
+                </div>
+                <div class="loading-message"></div>
+            </div>
+        `;
+        document.body.appendChild(loadingOverlay);
+    }
+    
+    loadingOverlay.querySelector('.loading-message').textContent = message;
+    loadingOverlay.style.display = 'flex';
+    
+    // 禁用文件输入和上传区域
+    const fileInput = document.getElementById('file-input');
+    const uploadArea = document.getElementById('file-upload-area');
+    if (fileInput) fileInput.disabled = true;
+    if (uploadArea) uploadArea.style.pointerEvents = 'none';
 }
 
 function hideLoading() {
-    // 隐藏加载指示器
     console.log('Loading finished');
+    
+    const loadingOverlay = document.getElementById('loading-overlay');
+    if (loadingOverlay) {
+        loadingOverlay.style.display = 'none';
+    }
+    
+    // 重新启用文件输入和上传区域
+    const fileInput = document.getElementById('file-input');
+    const uploadArea = document.getElementById('file-upload-area');
+    if (fileInput) fileInput.disabled = false;
+    if (uploadArea) uploadArea.style.pointerEvents = 'auto';
 }
 
 // 添加CSS样式到页面
