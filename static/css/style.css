@@ -911,6 +911,7 @@ body {
     border-bottom: 1px solid #e9ecef;
     display: flex;
     align-items: center;
+    justify-content: center;
     gap: 12px;
 }
 
@@ -922,11 +923,13 @@ body {
 
 .custom-alert-body {
     padding: 20px 24px;
+    text-align: center;
 }
 
 .custom-alert-body p {
     margin-bottom: 15px;
     color: #666;
+    text-align: center;
 }
 
 .custom-alert-body ul {
@@ -946,7 +949,8 @@ body {
 .custom-alert-footer {
     padding: 15px 24px 20px;
     display: flex;
-    justify-content: flex-end;
+    justify-content: center;
+    gap: 12px;
 }
 
 .text-warning { color: #f39c12 !important; }

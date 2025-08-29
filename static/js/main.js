@@ -235,7 +235,7 @@ function showFileExistsDialog(filename, file) {
                 <div class="custom-alert-body">
                     <p>文件 "<strong>${filename}</strong>" 已经存在。</p>
                     <p>您希望覆盖现有文件还是取消上传？</p>
-                    <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9em; color: #6c757d;">
+                    <div style="margin-top: 10px; padding: 10px; background: #f8f9fa; border-radius: 5px; font-size: 0.9em; color: #6c757d; text-align: center;">
                         💡 选择"覆盖文件"将替换现有文件
                     </div>
                 </div>
