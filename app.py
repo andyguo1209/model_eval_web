@@ -571,7 +571,12 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
         models_text += f"模型{i}({model_name})回答: {answer}\n\n"
     
     model_keys = list(answers.keys())
-    json_format = {f"模型{i+1}": {"评分": "0-5", "理由": "评分理由"} for i in range(len(model_keys))}
+    
+    # 默认评分范围和格式
+    default_score_range = "按提示词中的评分标准"
+    score_instruction = "请严格按照上述提示词中定义的评分标准进行评分"
+    score_validation = "评分必须符合提示词中定义的评分标准和范围"
+    json_format = {f"模型{i+1}": {"评分": "按提示词标准", "理由": "评分理由"} for i in range(len(model_keys))}
     
     # 获取自定义提示词
     custom_prompt = """你是一位专业的大模型测评工程师，请根据以下标准对模型回答进行客观、公正的评测：
@@ -601,6 +606,10 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
                 prompt_length = len(file_prompt)
                 print(f"✅ [评测引擎] 使用文件 {filename} 的自定义提示词，长度: {prompt_length} 字符")
                 custom_prompt = file_prompt
+                
+                # 如果使用自定义提示词，更新评分指导
+                score_instruction = "请严格按照上述自定义提示词中定义的评分标准进行评分"
+                score_validation = "评分必须符合自定义提示词中定义的评分标准和范围"
             else:
                 print(f"📝 [评测引擎] 文件 {filename} 未设置自定义提示词，使用系统默认提示词")
         except Exception as e:
@@ -617,7 +626,7 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 {models_text}
 
 === 评测要求 ===
-1. 请为每个模型的回答打分（0-5分，整数）
+1. {score_instruction}
 2. 提供详细的评分理由
 3. 确保评分客观公正，基于事实和逻辑
 
@@ -636,7 +645,7 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
 ⚠️ 格式检查清单：
 1. 输出必须以 {{ 开始，以 }} 结束
 2. 所有字符串必须用双引号包围
-3. 评分必须是0-5之间的整数
+3. {score_validation}
 4. 理由字段不能为空
 5. JSON结构必须完整且有效
 
@@ -652,7 +661,11 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
         models_text += f"模型{i}({model_name})回答: {answer}\n\n"
     
     model_keys = list(answers.keys())
-    json_format = {f"模型{i+1}": {"评分": "0-5", "准确性": "正确/部分正确/错误", "理由": "评分理由"} for i in range(len(model_keys))}
+    
+    # 默认评分范围和格式
+    score_instruction = "请严格按照上述提示词中定义的评分标准进行评分"
+    score_validation = "评分必须符合提示词中定义的评分标准和范围"
+    json_format = {f"模型{i+1}": {"评分": "按提示词标准", "准确性": "正确/部分正确/错误", "理由": "评分理由"} for i in range(len(model_keys))}
     
     # 获取自定义提示词（与主观题相同的逻辑）
     custom_prompt = """你是一位专业的大模型测评工程师，请根据标准答案对模型回答进行客观、精确的评测。
@@ -685,6 +698,10 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
                 prompt_length = len(file_prompt)
                 print(f"✅ [客观题评测引擎] 使用文件 {filename} 的自定义提示词，长度: {prompt_length} 字符")
                 custom_prompt = file_prompt
+                
+                # 如果使用自定义提示词，更新评分指导
+                score_instruction = "请严格按照上述自定义提示词中定义的评分标准进行评分"
+                score_validation = "评分必须符合自定义提示词中定义的评分标准和范围"
             else:
                 print(f"📝 [客观题评测引擎] 文件 {filename} 未设置自定义提示词，使用系统默认提示词")
         except Exception as e:
@@ -702,7 +719,7 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
 {models_text}
 
 === 评测要求 ===
-1. 严格对照标准答案进行评分
+1. {score_instruction}
 2. 重点评估内容的准确性、完整性和语言本地化程度  
 3. 提供详细的评分依据和理由
 4. 客观公正，基于事实判断
@@ -722,7 +739,7 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
 ⚠️ 格式检查清单：
 1. 输出必须以 {{ 开始，以 }} 结束
 2. 所有字符串必须用双引号包围
-3. 评分必须是0-5之间的整数
+3. {score_validation}
 4. 准确性必须是"正确"、"部分正确"或"错误"之一
 5. 理由字段不能为空
 6. JSON结构必须完整且有效
@@ -2623,9 +2640,9 @@ def update_score():
         if not filename or row_index is None or not score_column or new_score is None:
             return jsonify({'success': False, 'error': '缺少必要参数'}), 400
         
-        # 验证评分范围
-        if not isinstance(new_score, int) or new_score < 0 or new_score > 5:
-            return jsonify({'success': False, 'error': '评分必须在0-5分之间'}), 400
+        # 验证评分范围（放宽限制以支持自定义评分标准）
+        if not isinstance(new_score, int) or new_score < 0 or new_score > 10:
+            return jsonify({'success': False, 'error': '评分必须在0-10分之间的整数'}), 400
         
         # 计算理由列名（确保在所有执行路径中都定义）
         reason_column = score_column.replace('评分', '理由')
@@ -3112,7 +3129,22 @@ def generate_complete_report(filename, format_type='excel'):
                     models = [col.replace('_评分', '') for col in score_columns]
                     distribution_data = []
                     
-                    for score in range(6):  # 0-5分
+                    # 动态确定分数范围
+                    all_scores = []
+                    for col in score_columns:
+                        scores = df[col].dropna()
+                        all_scores.extend([s for s in scores if isinstance(s, (int, float)) and not pd.isna(s)])
+                    
+                    if all_scores:
+                        min_score = int(min(all_scores))
+                        max_score = int(max(all_scores))
+                        # 确保范围合理
+                        min_score = max(0, min_score)
+                        max_score = min(10, max_score)
+                    else:
+                        min_score, max_score = 0, 5
+                    
+                    for score in range(min_score, max_score + 1):
                         row = [f"{score}分"]
                         for col in score_columns:
                             count = (df[col] == score).sum()
@@ -4589,9 +4621,9 @@ def view_shared_result(share_token):
                         
                         if all_scores and len(all_scores) > 0:
                             from collections import Counter
-                            # 过滤有效分数（0-5分）
+                            # 过滤有效分数（0-10分）
                             valid_scores = [int(score) for score in all_scores 
-                                          if isinstance(score, (int, float)) and 0 <= score <= 5]
+                                          if isinstance(score, (int, float)) and 0 <= score <= 10]
                             score_counts = Counter(valid_scores)
                             basic_stats['score_analysis']['score_distribution'] = dict(score_counts)
                             basic_stats['total_responses'] = len(all_scores)

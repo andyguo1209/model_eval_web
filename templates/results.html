@@ -1013,8 +1013,8 @@
             <h3><i class="fas fa-edit"></i> 修改评分</h3>
             <p id="edit-model-name">模型名称</p>
             <div style="text-align: center; margin: 20px 0;">
-                <label for="new-score">新评分 (0-5分):</label>
-                <input type="number" id="new-score" class="score-input" min="0" max="5" step="1">
+                <label for="new-score">新评分:</label>
+                <input type="number" id="new-score" class="score-input" min="0" max="10" step="1">
             </div>
             <div>
                 <label for="edit-reason">评分理由 (可基于原有理由编辑):</label>
@@ -1236,7 +1236,7 @@
                         score = parseInt(rawScore.trim());
                     }
                     
-                    if (!isNaN(score) && score >= 0 && score <= 5) {
+                    if (!isNaN(score) && score >= 0 && score <= 10) {
                         distribution[modelName][score]++;
                         validScoreCount++;
                     } else {
@@ -1989,8 +1989,8 @@
             const newScore = parseInt(document.getElementById('new-score').value);
             const reason = document.getElementById('edit-reason').value;
             
-            if (isNaN(newScore) || newScore < 0 || newScore > 5) {
-                alert('⚠️ 评分必须在0-5分之间的整数');
+            if (isNaN(newScore) || newScore < 0 || newScore > 10) {
+                alert('⚠️ 评分必须在0-10分之间的整数');
                 return;
             }
             
@@ -2224,7 +2224,12 @@
                         <div class="score-bars">
                 `;
                 
-                for (let score = 0; score <= 5; score++) {
+                // 动态确定分数范围
+                const existingScores = Object.keys(distribution).map(s => parseInt(s)).filter(s => !isNaN(s));
+                const minScore = existingScores.length > 0 ? Math.min(...existingScores) : 0;
+                const maxScore = existingScores.length > 0 ? Math.max(...existingScores) : 5;
+                
+                for (let score = minScore; score <= maxScore; score++) {
                     const count = distribution[score] || 0;
                     const percentage = total > 0 ? (count / total * 100).toFixed(1) : 0;
                     

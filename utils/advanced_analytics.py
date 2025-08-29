@@ -262,7 +262,7 @@ class AdvancedAnalytics:
         
         for col in score_columns:
             scores = df[col].dropna()
-            valid_count = ((scores >= 0) & (scores <= 5)).sum()
+            valid_count = ((scores >= 0) & (scores <= 10)).sum()
             valid_scores += valid_count
             total_scores += len(scores)
         
