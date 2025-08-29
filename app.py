@@ -998,6 +998,101 @@ def welcome():
     """欢迎页面"""
     return render_template('welcome.html')
 
+def auto_fix_file_path(file_record):
+    """
+    自动修复文件路径 - 当数据库中的文件路径不存在时，尝试在uploads目录中找到匹配的文件
+    """
+    try:
+        upload_folder = app.config['UPLOAD_FOLDER']
+        if not os.path.exists(upload_folder):
+            return None
+            
+        db_filename = file_record['filename']
+        uploaded_by = file_record['uploaded_by']
+        
+        print(f"🔍 搜索匹配文件: {db_filename}")
+        
+        # 获取uploads目录中的所有文件
+        actual_files = [f for f in os.listdir(upload_folder) 
+                       if f.endswith(('.xlsx', '.xls', '.csv'))]
+        
+        # 获取用户信息以便匹配
+        uploader_info = db.get_user_by_id(uploaded_by)
+        username = uploader_info['username'] if uploader_info else None
+        display_name = uploader_info['display_name'] if uploader_info else None
+        
+        print(f"🔍 用户信息: username={username}, display_name={display_name}")
+        
+        # 匹配策略
+        def calculate_similarity(actual_file, db_file):
+            """计算文件名相似度"""
+            score = 0
+            
+            # 1. 如果用户名在文件名中，优先匹配
+            if username and username in actual_file:
+                score += 50
+            if display_name and display_name in actual_file:
+                score += 50
+                
+            # 2. 去除用户名后的文件名相似度
+            clean_actual = actual_file.replace(username or '', '').replace(display_name or '', '')
+            clean_db = db_file.replace(username or '', '').replace(display_name or '', '')
+            
+            # 去除数字和特殊字符进行比较
+            import re
+            clean_actual = re.sub(r'[0-9_\-]+', '', clean_actual)
+            clean_db = re.sub(r'[0-9_\-]+', '', clean_db)
+            
+            if clean_actual.lower() in clean_db.lower() or clean_db.lower() in clean_actual.lower():
+                score += 30
+                
+            # 3. 扩展名匹配
+            if actual_file.split('.')[-1] == db_file.split('.')[-1]:
+                score += 10
+                
+            return score
+        
+        # 寻找最佳匹配
+        best_match = None
+        best_score = 0
+        
+        for actual_file in actual_files:
+            score = calculate_similarity(actual_file, db_filename)
+            print(f"  📊 {actual_file}: 匹配分数 {score}")
+            
+            if score > best_score and score >= 40:  # 最低匹配阈值
+                best_match = actual_file
+                best_score = score
+        
+        if best_match:
+            new_filepath = os.path.join(upload_folder, best_match)
+            
+            # 更新数据库记录
+            try:
+                with sqlite3.connect(db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE uploaded_files 
+                        SET filename = ?, file_path = ?, original_filename = ?
+                        WHERE id = ?
+                    ''', (best_match, new_filepath, best_match, file_record['id']))
+                    conn.commit()
+                    
+                print(f"✅ 数据库更新成功: {db_filename} -> {best_match}")
+                return new_filepath
+                
+            except Exception as e:
+                print(f"❌ 数据库更新失败: {e}")
+                return None
+        else:
+            print(f"❌ 未找到匹配文件")
+            return None
+            
+    except Exception as e:
+        print(f"❌ 自动修复失败: {e}")
+        return None
+
+
 @app.route('/get_uploaded_files', methods=['GET'])
 @login_required
 def get_uploaded_files():
@@ -1028,6 +1123,20 @@ def get_uploaded_files():
         for file_record in db_files:
             try:
                 filepath = file_record['file_path']
+                
+                # 🔧 自动文件名同步检查
+                if not os.path.exists(filepath):
+                    print(f"🔍 文件不存在，尝试自动修复: {file_record['filename']}")
+                    
+                    # 尝试在uploads目录中找到匹配的文件
+                    fixed_filepath = auto_fix_file_path(file_record)
+                    if fixed_filepath:
+                        filepath = fixed_filepath
+                        print(f"✅ 自动修复成功: {file_record['filename']} -> {filepath}")
+                    else:
+                        print(f"❌ 无法自动修复: {file_record['filename']}")
+                        continue
+                
                 if os.path.exists(filepath):
                     stat = os.stat(filepath)
                     
@@ -1332,6 +1441,29 @@ def rename_dataset_file():
         # 重命名文件
         os.rename(original_path, new_path)
         print(f"✅ 文件重命名成功: {original_filename} -> {new_filename}")
+        
+        # 🔧 更新数据库中的uploaded_files记录
+        try:
+            if db:
+                # 更新uploaded_files表中的记录
+                import sqlite3
+                with sqlite3.connect(db.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute('''
+                        UPDATE uploaded_files 
+                        SET filename = ?, file_path = ?, original_filename = ?
+                        WHERE filename = ? AND is_active = 1
+                    ''', (new_filename, new_path, new_filename, original_filename))
+                    
+                    if cursor.rowcount > 0:
+                        conn.commit()
+                        print(f"✅ 数据库记录已更新: {original_filename} -> {new_filename}")
+                    else:
+                        print(f"⚠️ 未找到数据库记录: {original_filename}")
+                        
+        except Exception as e:
+            print(f"⚠️ 更新数据库记录时出现警告: {e}")
+            # 不阻断重命名操作，仅记录警告
         
         # 更新数据库中的文件提示词关联（如果存在）
         try:

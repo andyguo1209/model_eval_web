@@ -212,7 +212,8 @@ async function uploadFile(file, overwrite = false, retryCount = 0) {
             console.log('📤 上传成功，调用displayFileInfo');
             displayFileInfo(result);
             showSuccess('文件上传成功！');
-            loadHistoryFiles(); // 刷新测试集列表
+            // 立即刷新测试集列表，确保用户能看到新文件
+            refreshFileListWithFeedback('文件上传成功，正在更新列表...');
             
             // 上传成功后重置文件输入框
             const fileInput = document.getElementById('file-input');
@@ -812,6 +813,41 @@ function switchUploadTab(tabName) {
     }
 }
 
+// 通用的文件列表刷新函数，带用户反馈
+function refreshFileListWithFeedback(message = '正在更新文件列表...') {
+    console.log(`🔄 [文件刷新] ${message}`);
+    
+    // 先显示刷新提示（如果有历史列表容器）
+    const historyList = document.getElementById('history-files-list');
+    if (historyList) {
+        // 保存当前内容以便出错时恢复
+        const originalContent = historyList.innerHTML;
+        
+        // 显示刷新状态
+        historyList.innerHTML = `<div class="loading-placeholder">
+            <i class="fas fa-sync fa-spin"></i> ${message}
+        </div>`;
+        
+        // 延迟执行刷新，给用户看到刷新提示的时间
+        setTimeout(() => {
+            loadHistoryFiles().catch(error => {
+                console.error('❌ 刷新文件列表失败:', error);
+                // 出错时恢复原内容
+                historyList.innerHTML = originalContent;
+                showError('刷新文件列表失败');
+            });
+        }, 150); // 给用户足够时间看到刷新提示
+    } else {
+        // 没有历史列表容器时直接刷新
+        setTimeout(() => {
+            loadHistoryFiles().catch(error => {
+                console.error('❌ 刷新文件列表失败:', error);
+                showError('刷新文件列表失败');
+            });
+        }, 100);
+    }
+}
+
 // 加载测试集列表
 async function loadHistoryFiles() {
     const historyList = document.getElementById('history-files-list');
@@ -1117,7 +1153,8 @@ async function renameDatasetFile(originalFilename) {
         
         if (result.success) {
             showSuccess('文件重命名成功');
-            loadHistoryFiles(); // 刷新文件列表
+            // 立即刷新文件列表，确保用户能看到更新
+            refreshFileListWithFeedback('文件重命名成功，正在更新列表...');
         } else {
             showError(result.error || '重命名失败');
         }
@@ -1148,7 +1185,8 @@ async function deleteHistoryFile(filename) {
         
         if (result.success) {
             showSuccess(result.message);
-            loadHistoryFiles(); // 刷新文件列表
+            // 立即刷新文件列表，确保用户能看到更新
+            refreshFileListWithFeedback('文件删除成功，正在更新列表...');
             
             // 如果删除的是当前选中的文件，清除文件信息
             if (fileInfo && fileInfo.filename === filename) {

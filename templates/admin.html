@@ -344,6 +344,20 @@
             box-shadow: 0 4px 12px rgba(33, 150, 243, 0.3);
         }
         
+        /* 修改密码按钮 */
+        .users-table .btn-password {
+            background: #fff3cd;
+            border: 2px solid #ffc107;
+            color: #856404;
+        }
+        
+        .users-table .btn-password:hover {
+            background: #ffc107;
+            color: #212529;
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(255, 193, 7, 0.3);
+        }
+        
         /* 状态切换按钮 */
         .users-table .btn-toggle-active {
             background: #e8f5e8;
@@ -543,6 +557,62 @@
         </div>
     </div>
 
+    <!-- 修改密码模态框 -->
+    <div id="changePasswordModal" class="modal">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h3 id="passwordModalTitle">修改密码</h3>
+                <button class="modal-close" onclick="closeChangePasswordModal()">&times;</button>
+            </div>
+            
+            <div class="modal-body">
+                <form id="changePasswordForm">
+                    <input type="hidden" id="changePasswordUserId" name="userId">
+                    
+                    <div class="form-group">
+                        <label for="userDisplayInfo">用户</label>
+                        <input type="text" id="userDisplayInfo" readonly style="background: #f8f9fa; border-color: #dee2e6;">
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="newPassword">新密码 *</label>
+                        <div style="position: relative;">
+                            <input type="password" id="newPassword" name="newPassword" required minlength="6" 
+                                   placeholder="请输入新密码（至少6位）">
+                            <button type="button" onclick="togglePasswordVisibility('newPassword')" 
+                                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); 
+                                           background: none; border: none; color: #6c757d; cursor: pointer;">
+                                <i class="fas fa-eye" id="newPasswordToggle"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="form-group">
+                        <label for="confirmPassword">确认新密码 *</label>
+                        <div style="position: relative;">
+                            <input type="password" id="confirmPassword" name="confirmPassword" required minlength="6" 
+                                   placeholder="请再次输入新密码">
+                            <button type="button" onclick="togglePasswordVisibility('confirmPassword')" 
+                                    style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); 
+                                           background: none; border: none; color: #6c757d; cursor: pointer;">
+                                <i class="fas fa-eye" id="confirmPasswordToggle"></i>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div class="btn-group">
+                        <button type="submit" class="btn btn-primary">
+                            <i class="fas fa-save"></i> 修改密码
+                        </button>
+                        <button type="button" class="btn btn-secondary" onclick="closeChangePasswordModal()">
+                            取消
+                        </button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
     <script>
         let currentUsers = [];
         
@@ -589,6 +659,9 @@
                             <button class="btn btn-sm btn-edit" onclick="editUser('${user.id}')" title="编辑用户">
                                 <i class="fas fa-edit"></i>
                             </button>
+                            <button class="btn btn-sm btn-password" onclick="openChangePasswordModal('${user.id}', '${user.username}')" title="修改密码">
+                                <i class="fas fa-key"></i>
+                            </button>
                             <button class="btn btn-sm ${user.is_active ? 'btn-toggle-active' : 'btn-toggle-inactive'}" 
                                     onclick="toggleUserStatus('${user.id}', ${user.is_active})" 
                                     title="${user.is_active ? '禁用用户' : '启用用户'}">
@@ -632,6 +705,35 @@
             document.getElementById('userModal').style.display = 'none';
         }
         
+        // 打开修改密码模态框
+        function openChangePasswordModal(userId, username) {
+            document.getElementById('changePasswordUserId').value = userId;
+            document.getElementById('userDisplayInfo').value = username;
+            document.getElementById('changePasswordForm').reset();
+            document.getElementById('changePasswordUserId').value = userId; // 重新设置因为reset会清空
+            document.getElementById('userDisplayInfo').value = username; // 重新设置因为reset会清空
+            document.getElementById('changePasswordModal').style.display = 'block';
+        }
+        
+        // 关闭修改密码模态框
+        function closeChangePasswordModal() {
+            document.getElementById('changePasswordModal').style.display = 'none';
+        }
+        
+        // 切换密码可见性
+        function togglePasswordVisibility(inputId) {
+            const input = document.getElementById(inputId);
+            const toggle = document.getElementById(inputId + 'Toggle');
+            
+            if (input.type === 'password') {
+                input.type = 'text';
+                toggle.className = 'fas fa-eye-slash';
+            } else {
+                input.type = 'password';
+                toggle.className = 'fas fa-eye';
+            }
+        }
+        
         // 提交用户表单
         document.getElementById('userForm').addEventListener('submit', async function(e) {
             e.preventDefault();
@@ -664,6 +766,50 @@
             } catch (error) {
                 console.error('用户操作错误:', error);
                 showAlert('操作过程中发生错误', 'danger');
+            }
+        });
+        
+        // 提交修改密码表单
+        document.getElementById('changePasswordForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const newPassword = document.getElementById('newPassword').value;
+            const confirmPassword = document.getElementById('confirmPassword').value;
+            const userId = document.getElementById('changePasswordUserId').value;
+            
+            // 验证密码
+            if (newPassword !== confirmPassword) {
+                showAlert('两次输入的密码不一致', 'danger');
+                return;
+            }
+            
+            if (newPassword.length < 6) {
+                showAlert('密码长度不能少于6位', 'danger');
+                return;
+            }
+            
+            try {
+                const response = await fetch(`/admin/users/${userId}/password`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({
+                        password: newPassword
+                    })
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert('密码修改成功', 'success');
+                    closeChangePasswordModal();
+                } else {
+                    showAlert(result.message || '密码修改失败', 'danger');
+                }
+            } catch (error) {
+                console.error('修改密码错误:', error);
+                showAlert('修改密码过程中发生错误', 'danger');
             }
         });
         
@@ -734,9 +880,13 @@
         
         // 点击模态框外部关闭
         window.onclick = function(event) {
-            const modal = document.getElementById('userModal');
-            if (event.target === modal) {
+            const userModal = document.getElementById('userModal');
+            const passwordModal = document.getElementById('changePasswordModal');
+            
+            if (event.target === userModal) {
                 closeUserModal();
+            } else if (event.target === passwordModal) {
+                closeChangePasswordModal();
             }
         }
     </script>
