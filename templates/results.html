@@ -1147,7 +1147,7 @@
         function generateModelComparison(comparison) {
             // 兼容新的数据结构
             if (!comparison) {
-                // 尝试从全局 advanced_stats 中获取数据
+                                        // 尝试从全局 advanced_stats 中获取数据
                 if (window.advancedStats && window.advancedStats.score_analysis && window.advancedStats.score_analysis.model_performance) {
                     const performance = window.advancedStats.score_analysis.model_performance;
                     const models = Object.keys(performance);
@@ -1155,7 +1155,7 @@
                         // 根据平均分排序
                         const sortedModels = models
                             .map(name => ({
-                                model: name,
+                                model: cleanModelName(name), // 清理模型名称
                                 avg_score: performance[name].avg_score,
                                 completion_rate: 100.0 // 默认完成率
                             }))
@@ -1181,7 +1181,7 @@
             return comparison.ranking.map((model, index) => `
                 <div class="model-rank-item">
                     <span class="rank-number">#${index + 1}</span>
-                    <span class="model-name">${model.model}</span>
+                    <span class="model-name">${cleanModelName(model.model)}</span>
                     <span class="model-score">${model.avg_score.toFixed(2)}分</span>
                     <div class="completion-rate">完成率: ${model.completion_rate.toFixed(1)}%</div>
                 </div>
@@ -1217,7 +1217,7 @@
             console.log(`🔍 [分数分布] 使用数据源: originalData，共 ${originalData.length} 行`);
             
             scoreColumns.forEach(col => {
-                const modelName = col.replace('_评分', '').replace('评分', '');
+                const modelName = cleanModelName(col.replace('_评分', '').replace('评分', ''));
                 distribution[modelName] = {}; // 动态分布，不预设分数范围
                 
                 let validScoreCount = 0;
@@ -1390,17 +1390,18 @@
                         ${columns.map(col => {
                             const value = row[col] !== null && row[col] !== undefined ? row[col] : '';
                             const cellClass = getCellClass(col, value);
-                            const isExpandable = String(value).length > 50;
+                            const formattedValue = formatCellValue(col, value);
+                            const isExpandable = String(formattedValue).length > 50;
                             
                             if (isExpandable) {
                                 return `
                                     <td class="expandable-cell ${cellClass}">
-                                        ${String(value).substring(0, 50)}...
+                                        ${String(formattedValue).substring(0, 50)}...
                                         <span class="expand-hint">点击展开</span>
                                     </td>
                                 `;
                             } else {
-                                return `<td class="${cellClass}">${value}</td>`;
+                                return `<td class="${cellClass}">${formattedValue}</td>`;
                             }
                         }).join('')}
                     </tr>
@@ -1411,15 +1412,35 @@
             renderPagination();
         }
         
-        // 获取单元格样式类
+        // 获取单元格样式类和处理评分显示
         function getCellClass(column, value) {
             if (column.includes('评分')) {
-                const score = parseInt(value);
+                const score = parseFloat(value);
                 if (!isNaN(score)) {
-                    return `score-cell score-${score}`;
+                    return `score-cell score-${Math.round(score)}`;
                 }
             }
             return '';
+        }
+        
+        // 格式化单元格值（统一评分显示）
+        function formatCellValue(column, value) {
+            if (column.includes('评分') && value !== null && value !== undefined && value !== '') {
+                // 确保评分列显示统一的"分"单位
+                const numValue = parseFloat(value);
+                if (!isNaN(numValue)) {
+                    return `${numValue}分`;
+                }
+            }
+            return value;
+        }
+        
+        // 清理模型名称，移除可能的多余下划线或格式问题
+        function cleanModelName(modelName) {
+            if (!modelName || typeof modelName !== 'string') return modelName;
+            
+            // 移除开头和结尾的下划线，但保留中间的下划线
+            return modelName.replace(/^_+|_+$/g, '').trim();
         }
         
         // 渲染分页
@@ -1989,7 +2010,7 @@
         
         function editScore(rowIndex, scoreColumn, currentScore) {
             const row = filteredData[rowIndex];
-            const modelName = scoreColumn.replace('_评分', '').replace('评分', '');
+            const modelName = cleanModelName(scoreColumn.replace('_评分', '').replace('评分', ''));
             
             // 获取对应的评分理由列名
             const reasonColumn = scoreColumn.replace('评分', '理由');
@@ -2295,7 +2316,7 @@
             const modelPerformance = [];
             
             scoreColumns.forEach(col => {
-                const modelName = col.replace('_评分', '').replace('评分', '');
+                const modelName = cleanModelName(col.replace('_评分', '').replace('评分', ''));
                 const scores = originalData.map(row => parseInt(row[col])).filter(score => !isNaN(score));
                 
                 if (scores.length > 0) {

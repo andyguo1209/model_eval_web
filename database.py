@@ -1091,7 +1091,46 @@ class EvaluationDatabase:
         """如果文件提示词不存在则创建默认的"""
         if self.get_file_prompt(filename) is None:
             if default_prompt is None:
-                default_prompt = """请为此文件设置自定义的评测提示词。
+                # 尝试根据文件内容判断是否为客观题
+                is_objective = self._detect_objective_questions(filename)
+                
+                if is_objective:
+                    # 客观题默认提示词
+                    default_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行客观、公正的评测：
+
+1. **评分标准**
+
+   * 如果模型回答与参考答案一致，给 1 分；
+   * 如果模型回答与参考答案不一致，给 0 分。
+
+2. **评测要求**
+
+   * 必须明确给出分数（只能是 0 或 1）；
+   * 必须提供合理、简洁、逻辑自洽的理由；
+   * 理由必须基于答案是否与参考答案一致，而不是主观评价。
+
+3. **示例**
+
+* 示例 1：
+  题目：北京是中国的首都吗？
+  参考答案：是
+  模型回答：是
+  评测结果：评分 1，理由：模型回答与参考答案一致，正确指出北京是中国的首都。
+
+* 示例 2：
+  题目：2+2 等于几？
+  参考答案：4
+  模型回答：5
+  评测结果：评分 0，理由：模型回答与参考答案不符，参考答案是 4，但模型回答为 5，因此错误。
+
+* 示例 3：
+  题目：美国总统是谁？（截至2025年8月）
+  参考答案：乔·拜登
+  模型回答：特朗普
+  评测结果：评分 0，理由：参考答案是乔·拜登，但模型回答为特朗普，与事实不符。"""
+                else:
+                    # 主观题或其他类型的通用指导提示词
+                    default_prompt = """请为此文件设置自定义的评测提示词。
 
 ⚠️ 重要提示：
 - 系统不再提供默认的评分标准
@@ -1119,6 +1158,52 @@ class EvaluationDatabase:
                 conn.commit()
                 return cursor.rowcount > 0
         return False
+    
+    def _detect_objective_questions(self, filename: str) -> bool:
+        """检测文件是否包含客观题（通过检查是否有标准答案列）"""
+        try:
+            import pandas as pd
+            import os
+            
+            # 构建可能的文件路径
+            possible_paths = [
+                filename,
+                f"uploads/{filename}",
+                f"results/{filename}",
+                f"data/{filename}"
+            ]
+            
+            filepath = None
+            for path in possible_paths:
+                if os.path.exists(path):
+                    filepath = path
+                    break
+            
+            if not filepath:
+                return False
+                
+            # 读取文件的列名
+            df = pd.read_csv(filepath, nrows=0)  # 只读取列名，不读取数据
+            columns = [col.lower() for col in df.columns]
+            
+            # 检查是否包含标准答案相关的列名
+            objective_indicators = [
+                '标准答案', '参考答案', '正确答案', '答案',
+                'standard_answer', 'reference_answer', 'correct_answer', 'answer',
+                '标准', '参考', '正确'
+            ]
+            
+            for indicator in objective_indicators:
+                for col in columns:
+                    if indicator.lower() in col:
+                        return True
+                        
+            return False
+            
+        except Exception as e:
+            print(f"⚠️ [检测客观题] 检测失败: {e}")
+            # 如果检测失败，默认返回False（使用通用提示词）
+            return False
     
     def delete_file_prompt(self, filename: str) -> bool:
         """删除文件的提示词记录"""

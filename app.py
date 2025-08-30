@@ -9,6 +9,9 @@ import re
 import csv
 import sqlite3
 from datetime import datetime, timedelta
+
+# 注册分析API蓝图
+from routes.analytics_api import analytics_bp
 from flask import Flask, render_template, request, jsonify, send_file, send_from_directory, redirect, url_for, session
 from werkzeug.utils import secure_filename
 # Removed google.generativeai import as we're using direct API calls
@@ -102,6 +105,9 @@ app = Flask(__name__)
 app.config['SECRET_KEY'] = 'model-evaluation-web-2024'
 app.config['UPLOAD_FOLDER'] = 'uploads'
 app.config['RESULTS_FOLDER'] = 'results'
+
+# 注册分析API蓝图
+app.register_blueprint(analytics_bp)
 app.config['DATA_FOLDER'] = 'data'
 
 # 确保文件夹存在
