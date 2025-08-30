@@ -557,10 +557,7 @@
                         <span class="stat-number">${stats.total_evaluations || 0}</span>
                         <div class="stat-label">总评测次数</div>
                     </div>
-                    <div class="stat-card">
-                        <span class="stat-number">${stats.total_annotations || 0}</span>
-                        <div class="stat-label">总标注数</div>
-                    </div>
+                    <!-- 标注功能已移除 -->
                     <div class="stat-card">
                         <span class="stat-number">${stats.total_result_files || 0}</span>
                         <div class="stat-label">结果文件数</div>
@@ -844,7 +841,6 @@
             const modalBody = document.getElementById('modal-body');
             
             const summary = result.result_summary || {};
-            const annotations = result.annotations || [];
             
             modalBody.innerHTML = `
                 <div class="summary-grid">
@@ -856,10 +852,7 @@
                         <div class="summary-value">${result.models?.length || 0}</div>
                         <div class="summary-label">模型数</div>
                     </div>
-                    <div class="summary-item">
-                        <div class="summary-value">${annotations.length}</div>
-                        <div class="summary-label">标注数</div>
-                    </div>
+                    <!-- 标注功能已移除 -->
                     <div class="summary-item">
                         <div class="summary-value">${result.total_rows || 0}</div>
                         <div class="summary-label">数据行数</div>

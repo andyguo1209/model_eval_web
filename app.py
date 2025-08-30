@@ -92,13 +92,11 @@ else:
 try:
     from database import db
     from history_manager import history_manager
-    from annotation_system import annotation_system
     from utils.advanced_analytics import analytics
 except ImportError as e:
     print(f"警告: 无法导入高级功能模块: {e}")
     db = None
     history_manager = None
-    annotation_system = None
     analytics = None
 
 app = Flask(__name__)
@@ -2386,69 +2384,7 @@ def get_available_tags():
 
 # ===== 标注系统相关路由 =====
 
-@app.route('/annotate/<result_id>')
-@login_required
-def annotate_page(result_id):
-    """标注页面"""
-    if not annotation_system:
-        return "标注功能未启用", 503
-    current_user = db.get_user_by_id(session['user_id'])
-    return render_template('annotate.html', result_id=result_id, current_user=current_user)
-
-@app.route('/api/annotation/data/<result_id>')
-@login_required
-def get_annotation_data(result_id):
-    """获取标注数据"""
-    if not annotation_system:
-        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
-    try:
-        data = annotation_system.get_annotation_data(result_id)
-        return jsonify(data)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/annotation/save', methods=['POST'])
-@login_required
-def save_annotation():
-    """保存标注"""
-    if not annotation_system:
-        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
-    try:
-        data = request.get_json()
-        result = annotation_system.save_annotation(
-            result_id=data['result_id'],
-            question_index=data['question_index'],
-            model_name=data['model_name'],
-            annotation_data=data['annotation_data'],
-            annotator=data.get('annotator', 'default')
-        )
-        return jsonify(result)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/annotation/progress/<result_id>')
-@login_required
-def get_annotation_progress(result_id):
-    """获取标注进度"""
-    if not annotation_system:
-        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
-    try:
-        progress = annotation_system.get_annotation_progress(result_id)
-        return jsonify(progress)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
-
-@app.route('/api/annotation/statistics/<result_id>')
-@login_required
-def get_annotation_statistics(result_id):
-    """获取标注统计"""
-    if not annotation_system:
-        return jsonify({'success': False, 'error': '标注功能未启用'}), 503
-    try:
-        stats = annotation_system.get_annotation_statistics(result_id)
-        return jsonify(stats)
-    except Exception as e:
-        return jsonify({'success': False, 'error': str(e)}), 500
+# 标注功能已移除
 
 @app.route('/view_history/<result_id>')
 @login_required
@@ -2486,38 +2422,148 @@ def view_history(result_id):
         df = pd.read_csv(filepath, encoding='utf-8-sig')
         
         # 获取高级分析结果
-        task_data = result_detail.get('result', {})
-        evaluation_data = {
-            'start_time': task_data.get('start_time'),
-            'end_time': task_data.get('end_time'),
-            'question_count': len(df)
-        }
-        
-        # 如果没有时间数据，使用文件的创建和修改时间作为估算
-        if not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
-            try:
-                file_stat = os.stat(filepath)
-                # 估算：假设每题需要30秒处理时间
-                estimated_duration = len(df) * 30
-                file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
-                estimated_start = file_mtime - timedelta(seconds=estimated_duration)
-                
-                evaluation_data.update({
-                    'start_time': estimated_start.isoformat(),
-                    'end_time': file_mtime.isoformat(),
-                    'is_estimated': True
-                })
-            except Exception as e:
-                pass  # 静默处理文件时间获取错误
-        
-        analysis_result = analytics.analyze_evaluation_results(
-            result_file=filepath,
-            evaluation_data=evaluation_data
-        )
-        
         advanced_stats = None
-        if analysis_result.get('success'):
-            advanced_stats = analysis_result['analysis']
+        print(f"🔍 [view_history] 正在为结果 {result_id} 生成统计分析...")
+        print(f"📊 [view_history] Analytics 模块状态: {'可用' if analytics else '不可用'}")
+        
+        if analytics:
+            try:
+                # 优先从数据库获取持久化的时间数据
+                evaluation_data = None
+                if result_detail and result_detail.get('metadata'):
+                    try:
+                        metadata = json.loads(result_detail['metadata']) if isinstance(result_detail['metadata'], str) else result_detail['metadata']
+                        if metadata and metadata.get('start_time') and metadata.get('end_time'):
+                            evaluation_data = {
+                                'start_time': metadata['start_time'],
+                                'end_time': metadata['end_time'],
+                                'question_count': metadata.get('question_count', len(df)),
+                                'from_database': True
+                            }
+                            print(f"✅ [view_history] 从数据库获取到持久化时间数据")
+                    except Exception as e:
+                        print(f"⚠️ [view_history] 解析数据库元数据失败: {e}")
+                
+                # 如果没有数据库数据，尝试从result_detail获取时间数据
+                if not evaluation_data:
+                    task_data = result_detail.get('result', {}) if result_detail else {}
+                    evaluation_data = {
+                        'start_time': task_data.get('start_time'),
+                        'end_time': task_data.get('end_time'),
+                        'question_count': len(df),
+                        'from_result_detail': True
+                    }
+                    print(f"📋 [view_history] 从结果详情获取时间数据")
+                
+                # 如果还是没有时间数据，使用文件的创建和修改时间作为估算
+                if not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
+                    try:
+                        file_stat = os.stat(filepath)
+                        # 估算：假设每题需要30秒处理时间
+                        estimated_duration = len(df) * 30
+                        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                        estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+                        
+                        evaluation_data.update({
+                            'start_time': estimated_start.isoformat(),
+                            'end_time': file_mtime.isoformat(),
+                            'is_estimated': True
+                        })
+                        print(f"⏰ [view_history] 使用估算时间数据")
+                    except Exception as e:
+                        print(f"⚠️ [view_history] 获取文件时间失败: {e}")
+                        evaluation_data = {'question_count': len(df)}
+                
+                print(f"🔄 [view_history] 开始分析评测结果...")
+                analysis_result = analytics.analyze_evaluation_results(
+                    result_file=filepath,
+                    evaluation_data=evaluation_data
+                )
+                
+                if analysis_result.get('success'):
+                    advanced_stats = analysis_result['analysis']
+                    print(f"✅ [view_history] 成功生成高级统计分析")
+                else:
+                    print(f"❌ [view_history] 分析失败: {analysis_result.get('error', '未知错误')}")
+            
+            except Exception as e:
+                print(f"❌ [view_history] 分析过程出错: {e}")
+                advanced_stats = None
+        
+        # 如果没有高级统计，也要确保有基础的统计数据用于前端显示
+        if not advanced_stats:
+            print(f"📝 [view_history] 生成基础统计数据作为后备方案")
+            try:
+                # 简单的分数统计
+                score_columns = [col for col in df.columns if '评分' in col or 'score' in col.lower()]
+                if score_columns:
+                    basic_stats = {
+                        'basic_stats': {
+                            'total_questions': len(df),
+                            'response_rate': 100.0
+                        },
+                        'score_analysis': {
+                            'model_performance': {},
+                            'score_distribution': {}
+                        },
+                        'model_rankings': [],
+                        'performance_metrics': {
+                            'estimated_time_per_question': '30秒 (估算)',
+                            'throughput': 120  # 每小时120题
+                        },
+                        'total_responses': 0  # 默认值，后续会更新
+                    }
+                    
+                    # 为每个模型计算基础统计
+                    model_performance = {}
+                    total_scores = 0
+                    
+                    for col in score_columns:
+                        model_name = col.replace('_评分', '').replace('评分', '').strip()
+                        scores = pd.to_numeric(df[col], errors='coerce').dropna()
+                        if len(scores) > 0:
+                            avg_score = float(scores.mean())
+                            total_score = float(scores.sum())
+                            question_count = len(scores)
+                            
+                            model_performance[model_name] = {
+                                'avg_score': avg_score,
+                                'total_score': total_score,
+                                'question_count': question_count,
+                                'mean_score': avg_score,  # 为模板兼容性添加
+                                'median_score': float(scores.median()),
+                                'std_dev': float(scores.std()),
+                                'min_score': float(scores.min()),
+                                'max_score': float(scores.max()),
+                                'score_count': question_count,
+                                'percentiles': {
+                                    '25': float(scores.quantile(0.25)),
+                                    '50': float(scores.quantile(0.50)),
+                                    '75': float(scores.quantile(0.75))
+                                }
+                            }
+                            
+                            total_scores += question_count
+                    
+                    basic_stats['score_analysis']['model_performance'] = model_performance
+                    basic_stats['total_responses'] = total_scores
+                    
+                    # 生成模型排名
+                    model_rankings = []
+                    for model_name, perf in model_performance.items():
+                        model_rankings.append({
+                            'model': model_name,
+                            'avg_score': perf['avg_score'],
+                            'completion_rate': (perf['question_count'] / len(df)) * 100
+                        })
+                    
+                    model_rankings.sort(key=lambda x: x['avg_score'], reverse=True)
+                    basic_stats['model_rankings'] = model_rankings
+                    
+                    advanced_stats = basic_stats
+                    print(f"✅ [view_history] 生成基础统计数据成功")
+            except Exception as e:
+                print(f"⚠️ [view_history] 生成基础统计数据失败: {e}")
         
         current_user = db.get_user_by_id(session['user_id'])
         return render_template('results.html', 
@@ -2654,49 +2700,8 @@ def update_score():
         # 计算理由列名（确保在所有执行路径中都定义）
         reason_column = score_column.replace('评分', '理由')
         
-        # 首先尝试更新数据库
-        print(f"🔍 [数据库] 开始查找文件 {filename} 对应的数据库记录...")
-        result_id = None
-        if db:
-            try:
-                # 根据文件名查找result_id（传递原始文件名，函数内部会处理路径前缀）
-                result_id = db.get_result_id_by_filename(filename)
-                print(f"🔍 [数据库] 查找结果: result_id = {result_id}")
-                
-                if result_id:
-                    # 根据评分列确定评分类型
-                    if '评分' in score_column:
-                        score_type = 'correctness'  # 默认为正确性评分，可以根据具体列名细化
-                        if '相关' in score_column:
-                            score_type = 'relevance'
-                        elif '安全' in score_column:
-                            score_type = 'safety'
-                        elif '创意' in score_column or '创造' in score_column:
-                            score_type = 'creativity'
-                    
-                    print(f"📝 [数据库] 准备更新: result_id={result_id}, 行={row_index}, 模型={model_name}, 类型={score_type}, 评分={new_score}")
-                    
-                    # 更新数据库中的评分
-                    success = db.update_annotation_score(
-                        result_id=result_id,
-                        question_index=row_index,
-                        model_name=model_name,
-                        score_type=score_type,
-                        new_score=new_score,
-                        reason=reason,
-                        annotator='manual_edit'
-                    )
-                    
-                    if success:
-                        print(f"✅ 数据库评分已更新: {filename} 第{row_index+1}行 {model_name} -> {new_score}分")
-                    else:
-                        print(f"⚠️ 数据库更新失败，继续更新CSV文件")
-                else:
-                    print(f"⚠️ 数据库中未找到文件 {filename} 的记录，跳过数据库更新")
-            except Exception as e:
-                print(f"⚠️ 数据库更新异常: {e}")
-                import traceback
-                traceback.print_exc()
+        # 标注功能已移除，仅更新CSV文件
+        print(f"📝 [编辑评分] 准备更新CSV文件: {filename} 第{row_index+1}行 {model_name} -> {new_score}分")
         
         # 同时更新CSV文件以保持兼容性
         # 处理文件名，去除可能的路径前缀
@@ -3801,6 +3806,27 @@ def list_file_prompts():
     except Exception as e:
         print(f"❌ 获取文件提示词列表错误: {e}")
         return jsonify({'error': f'获取提示词列表失败: {str(e)}'}), 500
+
+@app.route('/api/file-prompts/update-objective-defaults', methods=['POST'])
+@admin_required
+def update_objective_default_prompts():
+    """批量更新客观题的默认提示词为新版本（仅管理员）"""
+    try:
+        current_user = db.get_user_by_id(session['user_id'])
+        username = current_user['username'] if current_user else 'admin'
+        
+        print(f"🚀 [批量更新] 管理员 {username} 开始批量更新客观题默认提示词...")
+        updated_count = db.update_default_objective_prompts(updated_by=username)
+        
+        return jsonify({
+            'success': True,
+            'message': f'成功更新了 {updated_count} 个客观题文件的默认提示词',
+            'updated_count': updated_count
+        })
+        
+    except Exception as e:
+        print(f"❌ 批量更新提示词失败: {e}")
+        return jsonify({'error': f'批量更新提示词失败: {str(e)}'}), 500
 
 
 # ========== 系统配置管理路由 ==========

@@ -87,7 +87,6 @@ class ComparisonAnalysis:
         try:
             # 获取结果数据
             results_data = []
-            annotations_data = []
             
             for result_id in result_ids:
                 # 获取评测结果
@@ -95,13 +94,9 @@ class ComparisonAnalysis:
                 result = next((r for r in results if r['id'] == result_id), None)
                 if result:
                     results_data.append(result)
-                    
-                    # 获取标注数据
-                    annotations = db.get_annotations(result_id)
-                    annotations_data.extend(annotations)
             
-            # 生成报告
-            report = self._generate_comprehensive_report(results_data, annotations_data)
+            # 生成报告（标注功能已移除）
+            report = self._generate_comprehensive_report(results_data)
             
             return {'success': True, 'report': report}
             
@@ -238,7 +233,7 @@ class ComparisonAnalysis:
         
         return trend_data
     
-    def _generate_comprehensive_report(self, results_data: List[Dict], annotations_data: List[Dict]) -> Dict:
+    def _generate_comprehensive_report(self, results_data: List[Dict]) -> Dict:
         """生成综合性能报告"""
         report = {
             'basic_stats': {},
@@ -250,7 +245,7 @@ class ComparisonAnalysis:
         # 基础统计
         report['basic_stats'] = {
             'total_evaluations': len(results_data),
-            'total_annotations': len(annotations_data),
+            'total_annotations': 0,  # 标注功能已移除
             'evaluation_period': '',
             'total_questions': sum(r.get('result_summary', {}).get('total_questions', 0) for r in results_data)
         }
@@ -259,49 +254,8 @@ class ComparisonAnalysis:
             dates = [r['created_at'] for r in results_data]
             report['basic_stats']['evaluation_period'] = f"{min(dates)[:10]} 至 {max(dates)[:10]}"
         
-        # 模型排名分析
-        if annotations_data:
-            model_performance = {}
-            for ann in annotations_data:
-                model = ann['model_name']
-                if model not in model_performance:
-                    model_performance[model] = {
-                        'scores': {'correctness': [], 'relevance': [], 'safety': [], 'creativity': []},
-                        'count': 0
-                    }
-                
-                model_performance[model]['count'] += 1
-                for dimension in ['correctness', 'relevance', 'safety', 'creativity']:
-                    score = ann.get(f'{dimension}_score')
-                    if score:
-                        model_performance[model]['scores'][dimension].append(score)
-            
-            # 计算平均分和排名
-            model_rankings = []
-            for model, data in model_performance.items():
-                avg_scores = {}
-                overall_score = 0
-                valid_dimensions = 0
-                
-                for dimension, scores in data['scores'].items():
-                    if scores:
-                        avg_score = np.mean(scores)
-                        avg_scores[dimension] = round(avg_score, 2)
-                        overall_score += avg_score
-                        valid_dimensions += 1
-                
-                if valid_dimensions > 0:
-                    overall_score = round(overall_score / valid_dimensions, 2)
-                    
-                model_rankings.append({
-                    'model': model,
-                    'overall_score': overall_score,
-                    'dimension_scores': avg_scores,
-                    'annotation_count': data['count']
-                })
-            
-            model_rankings.sort(key=lambda x: x['overall_score'], reverse=True)
-            report['model_rankings'] = model_rankings
+        # 模型排名分析（标注功能已移除，使用基础数据）
+        report['model_rankings'] = []
         
         # 生成建议
         report['recommendations'] = self._generate_recommendations(report)

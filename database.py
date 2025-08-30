@@ -63,55 +63,7 @@ class EvaluationDatabase:
                 )
             ''')
             
-            # 3. 人工标注表
-            db_cursor.execute('''
-                CREATE TABLE IF NOT EXISTS annotations (
-                    id TEXT PRIMARY KEY,
-                    result_id TEXT NOT NULL,
-                    question_index INTEGER NOT NULL,
-                    question_text TEXT,
-                    model_name TEXT NOT NULL,
-                    model_answer TEXT,
-                    
-                    -- 标注维度
-                    correctness_score INTEGER, -- 0-5分
-                    relevance_score INTEGER, -- 0-5分
-                    safety_score INTEGER, -- 0-5分
-                    creativity_score INTEGER, -- 0-5分
-                    logic_consistency BOOLEAN, -- 逻辑一致性
-                    
-                    -- 标注元信息
-                    annotator TEXT NOT NULL, -- 标注员ID
-                    annotation_time TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    annotation_notes TEXT, -- 标注备注
-                    confidence_level INTEGER, -- 标注信心程度 0-5
-                    
-                    -- 审核信息
-                    reviewer TEXT, -- 审核员ID
-                    review_status TEXT DEFAULT 'pending', -- 'pending', 'approved', 'rejected'
-                    review_time TIMESTAMP,
-                    review_notes TEXT,
-                    
-                    FOREIGN KEY (result_id) REFERENCES evaluation_results (id)
-                )
-            ''')
-            
-            # 4. 标注标准表
-            db_cursor.execute('''
-                CREATE TABLE IF NOT EXISTS annotation_standards (
-                    id TEXT PRIMARY KEY,
-                    project_id TEXT,
-                    dimension_name TEXT NOT NULL,
-                    dimension_type TEXT NOT NULL, -- 'score', 'boolean', 'categorical'
-                    description TEXT,
-                    scale_definition TEXT, -- JSON格式存储评分标准定义
-                    examples TEXT, -- JSON格式存储示例
-                    weight REAL DEFAULT 1.0, -- 权重
-                    is_active BOOLEAN DEFAULT TRUE,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                    FOREIGN KEY (project_id) REFERENCES projects (id)
-                )
-            ''')
+            # 标注功能已移除
             
             # 5. 对比分析表
             db_cursor.execute('''
@@ -330,8 +282,7 @@ class EvaluationDatabase:
             ('idx_results_project', 'evaluation_results', 'project_id'),
             ('idx_results_created', 'evaluation_results', 'created_at'),
             ('idx_results_created_by', 'evaluation_results', 'created_by'),
-            ('idx_annotations_result', 'annotations', 'result_id'),
-            ('idx_annotations_annotator', 'annotations', 'annotator'),
+# 标注索引已移除
             ('idx_running_tasks_status', 'running_tasks', 'status'),
             ('idx_running_tasks_created', 'running_tasks', 'created_at'),
             ('idx_running_tasks_created_by', 'running_tasks', 'created_by'),
@@ -475,53 +426,7 @@ class EvaluationDatabase:
             
             return results
     
-    def save_annotation(self,
-                       result_id: str,
-                       question_index: int,
-                       question_text: str,
-                       model_name: str,
-                       model_answer: str,
-                       annotator: str,
-                       **annotation_data) -> str:
-        """保存人工标注"""
-        annotation_id = str(uuid.uuid4())
-        
-        with sqlite3.connect(self.db_path) as conn:
-            db_cursor = conn.cursor()
-            db_cursor.execute('''
-                INSERT INTO annotations 
-                (id, result_id, question_index, question_text, model_name, model_answer,
-                 correctness_score, relevance_score, safety_score, creativity_score,
-                 logic_consistency, annotator, annotation_notes, confidence_level)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ''', (
-                annotation_id, result_id, question_index, question_text, 
-                model_name, model_answer,
-                annotation_data.get('correctness_score'),
-                annotation_data.get('relevance_score'),
-                annotation_data.get('safety_score'),
-                annotation_data.get('creativity_score'),
-                annotation_data.get('logic_consistency'),
-                annotator,
-                annotation_data.get('annotation_notes', ''),
-                annotation_data.get('confidence_level', 3)
-            ))
-            conn.commit()
-        return annotation_id
-    
-    def get_annotations(self, result_id: str) -> List[Dict]:
-        """获取评测结果的所有标注"""
-        with sqlite3.connect(self.db_path) as conn:
-            db_cursor = conn.cursor()
-            db_cursor.execute('''
-                SELECT * FROM annotations WHERE result_id = ?
-                ORDER BY question_index, model_name
-            ''', (result_id,))
-            
-            rows = db_cursor.fetchall()
-            columns = [description[0] for description in db_cursor.description]
-            
-            return [dict(zip(columns, row)) for row in rows]
+    # 标注相关方法已移除
     
     def get_result_id_by_filename(self, filename: str) -> Optional[str]:
         """根据结果文件名获取result_id，支持多目录查找和路径修复"""
@@ -613,68 +518,7 @@ class EvaluationDatabase:
                 return dict(zip(columns, result))
             return None
     
-    def update_annotation_score(self, 
-                               result_id: str,
-                               question_index: int,
-                               model_name: str,
-                               score_type: str,
-                               new_score: int,
-                               reason: str = '',
-                               annotator: str = 'manual_edit') -> bool:
-        """更新标注评分"""
-        try:
-            with sqlite3.connect(self.db_path) as conn:
-                db_cursor = conn.cursor()
-                
-                # 首先检查是否已存在该记录
-                db_cursor.execute('''
-                    SELECT id FROM annotations 
-                    WHERE result_id = ? AND question_index = ? AND model_name = ?
-                ''', (result_id, question_index, model_name))
-                
-                existing = db_cursor.fetchone()
-                
-                if existing:
-                    # 更新现有记录
-                    update_field = f"{score_type}_score"
-                    db_cursor.execute(f'''
-                        UPDATE annotations 
-                        SET {update_field} = ?, 
-                            annotation_notes = COALESCE(annotation_notes, '') || ?, 
-                            annotation_time = CURRENT_TIMESTAMP,
-                            annotator = ?
-                        WHERE id = ?
-                    ''', (new_score, f'\n[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 手动修改{score_type}评分为{new_score}分: {reason}', annotator, existing[0]))
-                else:
-                    # 创建新记录
-                    annotation_id = str(uuid.uuid4())
-                    score_data = {
-                        'correctness_score': new_score if score_type == 'correctness' else None,
-                        'relevance_score': new_score if score_type == 'relevance' else None,
-                        'safety_score': new_score if score_type == 'safety' else None,
-                        'creativity_score': new_score if score_type == 'creativity' else None,
-                        'annotation_notes': f'[{datetime.now().strftime("%Y-%m-%d %H:%M:%S")}] 手动创建{score_type}评分: {new_score}分 - {reason}'
-                    }
-                    
-                    db_cursor.execute('''
-                        INSERT INTO annotations 
-                        (id, result_id, question_index, model_name, 
-                         correctness_score, relevance_score, safety_score, creativity_score,
-                         annotator, annotation_notes, confidence_level)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ''', (
-                        annotation_id, result_id, question_index, model_name,
-                        score_data['correctness_score'], score_data['relevance_score'], 
-                        score_data['safety_score'], score_data['creativity_score'],
-                        annotator, score_data['annotation_notes'], 3
-                    ))
-                
-                conn.commit()
-                return True
-                
-        except Exception as e:
-            print(f"更新评分失败: {e}")
-            return False
+    # update_annotation_score方法已移除
     
     def archive_old_results(self, days_threshold: int = 90) -> int:
         """归档旧的评测结果"""
@@ -716,9 +560,8 @@ class EvaluationDatabase:
             db_cursor.execute('SELECT COUNT(*) FROM evaluation_results')
             stats['total_evaluations'] = db_cursor.fetchone()[0]
             
-            # 总标注数
-            db_cursor.execute('SELECT COUNT(*) FROM annotations')
-            stats['total_annotations'] = db_cursor.fetchone()[0]
+            # 标注功能已移除
+            stats['total_annotations'] = 0
             
             # 活跃项目数
             db_cursor.execute('SELECT COUNT(*) FROM projects WHERE status = "active"')
@@ -1192,6 +1035,82 @@ class EvaluationDatabase:
             cursor.execute('DELETE FROM file_prompts WHERE filename = ?', (filename,))
             conn.commit()
             return cursor.rowcount > 0
+    
+    def update_default_objective_prompts(self, updated_by: str = 'system') -> int:
+        """批量更新客观题的默认提示词为新版本"""
+        new_objective_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行客观、公正的评测：
+
+1. **评分标准**
+
+   * 如果模型回答与参考答案一致，给 1 分；
+   * 如果模型回答与参考答案不一致，给 0 分。
+
+2. **评测要求**
+
+   * 必须明确给出分数（只能是 0 或 1）；
+   * 必须提供合理、简洁、逻辑自洽的理由；
+   * 理由必须基于答案是否与参考答案一致，而不是主观评价。
+
+3. **示例**
+
+* 示例 1：
+  题目：北京是中国的首都吗？
+  参考答案：是
+  模型回答：是
+  评测结果：评分 1，理由：模型回答与参考答案一致，正确指出北京是中国的首都。
+
+* 示例 2：
+  题目：2+2 等于几？
+  参考答案：4
+  模型回答：5
+  评测结果：评分 0，理由：模型回答与参考答案不符，参考答案是 4，但模型回答为 5，因此错误。
+
+* 示例 3：
+  题目：美国总统是谁？（截至2025年8月）
+  参考答案：乔·拜登
+  模型回答：特朗普
+  评测结果：评分 0，理由：参考答案是乔·拜登，但模型回答为特朗普，与事实不符。"""
+        
+        updated_count = 0
+        
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            
+            # 获取所有文件提示词记录
+            cursor.execute('SELECT filename, custom_prompt FROM file_prompts')
+            all_prompts = cursor.fetchall()
+            
+            for filename, current_prompt in all_prompts:
+                # 检查是否为客观题文件
+                is_objective = self._detect_objective_questions(filename)
+                
+                if is_objective and current_prompt:
+                    # 检查是否是需要更新的旧默认提示词
+                    old_prompts_indicators = [
+                        "你是一位专业的大模型测评工程师，请根据以下标准对模型回答进行客观、公正的评测",
+                        "答案对给1分 不对给0分",
+                        "请为此文件设置自定义的评测提示词"
+                    ]
+                    
+                    should_update = any(indicator in current_prompt for indicator in old_prompts_indicators)
+                    
+                    if should_update:
+                        print(f"🔄 [批量更新] 发现客观题文件 {filename} 使用旧默认提示词，正在更新...")
+                        
+                        # 更新为新的客观题提示词
+                        cursor.execute('''
+                            UPDATE file_prompts 
+                            SET custom_prompt = ?, updated_at = ?, updated_by = ?
+                            WHERE filename = ?
+                        ''', (new_objective_prompt, datetime.now().isoformat(), updated_by, filename))
+                        
+                        updated_count += 1
+                        print(f"✅ [批量更新] 已更新文件 {filename} 的提示词")
+            
+            conn.commit()
+        
+        print(f"🎉 [批量更新] 完成！共更新了 {updated_count} 个客观题文件的默认提示词")
+        return updated_count
     
     def list_all_file_prompts(self) -> List[Dict]:
         """获取所有文件提示词列表"""

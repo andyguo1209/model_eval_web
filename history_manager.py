@@ -120,7 +120,7 @@ class EvaluationHistoryManager:
                 result['file_size'] = self._get_file_size(result['result_file'])
                 result['download_url'] = f"/api/history/download/{result['id']}"
                 result['view_url'] = f"/view_history/{result['id']}"
-                result['annotation_url'] = f"/annotate/{result['id']}"
+                # 标注功能已移除
                 
                 # 添加创建者信息
                 if result.get('created_by'):
@@ -161,10 +161,9 @@ class EvaluationHistoryManager:
                 result['total_rows'] = len(df)
                 result['columns'] = df.columns.tolist()
             
-            # 获取标注信息
-            annotations = db.get_annotations(result_id)
-            result['annotations'] = annotations
-            result['annotation_count'] = len(annotations)
+            # 标注功能已移除
+            result['annotations'] = []
+            result['annotation_count'] = 0
             
             return {
                 'success': True,
