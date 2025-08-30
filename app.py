@@ -933,7 +933,14 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
                         row_data.append(current_answers[model_name])  # 模型答案
                         
                         if model_key in result_json:
-                            row_data.append(result_json[model_key].get("评分", ""))  # 评分
+                            # 处理评分，如果是"按提示词标准"则转换为3分
+                            raw_score = result_json[model_key].get("评分", "")
+                            processed_score = raw_score
+                            if raw_score == "按提示词标准":
+                                processed_score = "3"
+                                print(f"🔄 [评分处理] 将模型{j}的评分从'按提示词标准'转换为'3'")
+                            
+                            row_data.append(processed_score)  # 评分
                             row_data.append(result_json[model_key].get("理由", ""))  # 理由
                             if mode == 'objective':
                                 row_data.append(result_json[model_key].get("准确性", ""))  # 准确性
@@ -1951,22 +1958,63 @@ def start_evaluation():
                 # 同时更新数据库
                 db.update_task_status(task_id, "completed", result_file=output_file)
                 
-                # 保存到历史记录
-                if task_save_to_history:
-                    try:
-                        evaluation_data = {
-                            'dataset_file': filename,
-                            'models': selected_models,
-                            'evaluation_mode': mode,
-                            'start_time': task_status[task_id].start_time.isoformat(),
-                            'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
-                            'question_count': len(data_list),
-                            'custom_name': task_custom_name,  # 传递自定义名称
-                            'created_by': user_id  # 使用传递的用户ID
-                        }
+                # 保存到历史记录（始终保存基础记录，确保数据库一致性）
+                try:
+                    evaluation_data = {
+                        'dataset_file': filename,
+                        'models': selected_models,
+                        'evaluation_mode': mode,
+                        'start_time': task_status[task_id].start_time.isoformat(),
+                        'end_time': task_status[task_id].end_time.isoformat() if task_status[task_id].end_time else None,
+                        'question_count': len(data_list),
+                        'custom_name': task_custom_name if task_save_to_history else '',  # 只有选择保存时才使用自定义名称
+                        'created_by': user_id,  # 使用传递的用户ID
+                        'save_to_history': task_save_to_history  # 标记是否为用户主动保存
+                    }
+                    
+                    if task_save_to_history:
+                        # 用户选择保存到历史记录，完整保存
+                        print(f"💾 [评测完成] 用户选择保存到历史记录")
                         history_manager.save_evaluation_result(evaluation_data, output_file)
-                    except Exception as e:
-                        print(f"保存历史记录失败: {e}")
+                    else:
+                        # 用户未选择保存，但仍需创建基础数据库记录以支持查看功能
+                        print(f"📝 [评测完成] 创建基础数据库记录以支持查看功能")
+                        result_name = f"临时结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        db.save_evaluation_result(
+                            project_id='default',
+                            name=result_name,
+                            dataset_file=filename,
+                            models=selected_models,
+                            result_file=output_file,
+                            evaluation_mode=mode,
+                            created_by=user_id,
+                            metadata={
+                                'start_time': evaluation_data['start_time'],
+                                'end_time': evaluation_data['end_time'],
+                                'question_count': evaluation_data['question_count'],
+                                'is_temporary': True  # 标记为临时记录
+                            }
+                        )
+                        
+                except Exception as e:
+                    print(f"❌ 保存评测记录失败: {e}")
+                    # 即使保存失败，也要确保有基础记录
+                    try:
+                        print(f"🔄 [评测完成] 尝试创建最小化数据库记录")
+                        fallback_name = f"评测结果_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+                        db.save_evaluation_result(
+                            project_id='default',
+                            name=fallback_name,
+                            dataset_file=filename or '',
+                            models=selected_models,
+                            result_file=output_file,
+                            evaluation_mode=mode,
+                            created_by=user_id,
+                            metadata={'is_fallback': True}
+                        )
+                        print(f"✅ [评测完成] 已创建最小化记录: {fallback_name}")
+                    except Exception as fallback_error:
+                        print(f"❌ [评测完成] 连最小化记录都创建失败: {fallback_error}")
                 
             except Exception as e:
                 task_status[task_id].status = "失败"
@@ -2086,12 +2134,98 @@ def download_history_result(result_id):
         print(f"下载历史记录失败: {str(e)}")
         return jsonify({'error': f'下载失败: {str(e)}'}), 500
 
-@app.route('/view_results/<filename>')
+@app.route('/api/result_data/<path:filename>')
+@login_required
+def get_result_data(filename):
+    """安全获取结果数据API - 支持results和results_history目录"""
+    try:
+        # 尝试多个可能的文件路径
+        possible_paths = [
+            os.path.join(app.config['RESULTS_FOLDER'], filename),  # results/filename
+            filename,  # 直接路径（如果包含目录）
+            os.path.join('results_history', os.path.basename(filename)),  # results_history/basename
+        ]
+        
+        # 如果filename已经包含results_history，也尝试直接使用
+        if 'results_history/' in filename:
+            possible_paths.insert(0, filename)
+        
+        filepath = None
+        for path in possible_paths:
+            if os.path.exists(path):
+                filepath = path
+                print(f"✅ [API] 找到文件: {path}")
+                break
+        
+        if not filepath:
+            print(f"❌ [API] 文件不存在，尝试的路径: {possible_paths}")
+            return jsonify({
+                'success': False, 
+                'error': f'文件不存在: {filename}',
+                'tried_paths': possible_paths,
+                'suggestion': '请检查文件路径是否正确，或联系管理员'
+            }), 404
+        
+        df = pd.read_csv(filepath, encoding='utf-8-sig')
+        
+        # 安全地转换数据，处理特殊字符和NaN值
+        data = []
+        for _, row in df.iterrows():
+            row_dict = {}
+            for col in df.columns:
+                value = row[col]
+                if pd.isna(value):
+                    row_dict[col] = ''
+                elif isinstance(value, (int, float)):
+                    row_dict[col] = value
+                else:
+                    # 安全处理字符串，转义特殊字符
+                    row_dict[col] = str(value).replace('\n', '\\n').replace('\r', '\\r').replace('\t', '\\t')
+            data.append(row_dict)
+        
+        # 获取用户信息
+        current_user = db.get_user_by_id(session['user_id'])
+        
+        return jsonify({
+            'success': True,
+            'data': data,
+            'columns': df.columns.tolist(),
+            'total_count': len(data),
+            'current_user': {
+                'id': current_user['id'],
+                'username': current_user['username'],
+                'display_name': current_user['display_name'],
+                'role': current_user['role']
+            } if current_user else None
+        })
+        
+    except Exception as e:
+        return jsonify({'success': False, 'error': f'读取数据失败: {str(e)}'}), 500
+
+@app.route('/view_results/<path:filename>')
 @login_required
 def view_results(filename):
-    """查看评测结果"""
-    filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
-    if not os.path.exists(filepath):
+    """查看评测结果 - 支持results和results_history目录"""
+    # 尝试多个可能的文件路径
+    possible_paths = [
+        os.path.join(app.config['RESULTS_FOLDER'], filename),  # results/filename
+        filename,  # 直接路径（如果包含目录）
+        os.path.join('results_history', os.path.basename(filename)),  # results_history/basename
+    ]
+    
+    # 如果filename已经包含results_history，也尝试直接使用
+    if 'results_history/' in filename:
+        possible_paths.insert(0, filename)
+    
+    filepath = None
+    for path in possible_paths:
+        if os.path.exists(path):
+            filepath = path
+            print(f"✅ [view_results] 找到文件: {path}")
+            break
+    
+    if not filepath:
+        print(f"❌ [view_results] 文件不存在，尝试的路径: {possible_paths}")
         return jsonify({'error': '文件不存在'}), 404
     
     try:
@@ -2305,7 +2439,7 @@ def view_results(filename):
         return render_template('results.html', 
                              filename=filename,
                              columns=df.columns.tolist(),
-                             data=df.to_dict('records'),
+                             data=[],  # 空数据，让前端通过API获取
                              advanced_stats=advanced_stats,
                              current_user=current_user,
                              result_detail=result_detail)

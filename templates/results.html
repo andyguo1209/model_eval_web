@@ -1031,8 +1031,8 @@
 
     <script>
         // 全局变量
-        let originalData = {{ data | tojson }};
-        let filteredData = [...originalData];
+        let originalData = [];
+        let filteredData = [];
         let currentPage = 1;
         let pageSize = 25;
         let sortColumn = null;
@@ -1042,13 +1042,53 @@
         // 用户数据
         window.currentUserData = {{ current_user | tojson }};
         
+        // 异步加载结果数据
+        async function loadResultData() {
+            try {
+                console.log('🔄 [数据加载] 开始加载评测结果数据...');
+                const filename = '{{ filename }}';
+                const response = await fetch(`/api/result_data/${filename}`);
+                
+                if (!response.ok) {
+                    throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+                }
+                
+                const result = await response.json();
+                console.log('✅ [数据加载] 数据加载成功，记录数:', result.data.length);
+                
+                // 更新全局变量
+                originalData = result.data || [];
+                filteredData = [...originalData];
+                columns = result.columns || columns;
+                
+                // 初始化页面
+                initializeTable();
+                setupEventListeners();
+                generateStats();
+                populateTypeFilter();
+                populateScoreFilter();
+                
+            } catch (error) {
+                console.error('❌ [数据加载] 数据加载失败:', error);
+                // 显示错误信息
+                const statsContainer = document.getElementById('stats-container');
+                if (statsContainer) {
+                    statsContainer.innerHTML = `
+                        <div style="color: red; text-align: center; padding: 20px;">
+                            <h3>数据加载失败</h3>
+                            <p>错误信息: ${error.message}</p>
+                            <button onclick="location.reload()" style="margin-top: 10px; padding: 8px 16px; background: #007bff; color: white; border: none; border-radius: 4px; cursor: pointer;">
+                                重新加载
+                            </button>
+                        </div>
+                    `;
+                }
+            }
+        }
+        
         // 页面初始化
         document.addEventListener('DOMContentLoaded', function() {
-            initializeTable();
-            setupEventListeners();
-            generateStats();
-            populateTypeFilter();
-            populateScoreFilter();
+            loadResultData();
         });
         
         // 初始化表格

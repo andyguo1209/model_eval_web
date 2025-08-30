@@ -14,6 +14,65 @@ class AdvancedAnalytics:
     def __init__(self):
         self.score_dimensions = ['准确性', '相关性', '安全性', '创造性']
     
+    def _parse_datetime(self, time_input) -> Optional[datetime]:
+        """
+        安全地解析时间字符串或datetime对象
+        
+        Args:
+            time_input: 时间字符串或datetime对象
+            
+        Returns:
+            datetime对象，解析失败时返回None
+        """
+        if time_input is None:
+            return None
+            
+        # 如果已经是datetime对象，直接返回
+        if isinstance(time_input, datetime):
+            return time_input
+            
+        # 如果不是字符串，尝试转换为字符串
+        if not isinstance(time_input, str):
+            try:
+                time_input = str(time_input)
+            except:
+                return None
+        
+        # 处理各种时间字符串格式
+        try:
+            # 移除常见的时区标识符
+            time_clean = time_input.replace('Z', '').replace('+00:00', '').strip()
+            
+            # 处理微秒部分
+            if '.' in time_clean:
+                time_clean = time_clean.split('.')[0]
+            
+            # 尝试不同的时间格式
+            formats = [
+                '%Y-%m-%dT%H:%M:%S',  # ISO格式
+                '%Y-%m-%d %H:%M:%S',  # 标准格式
+                '%Y-%m-%d',           # 仅日期
+                '%Y/%m/%d %H:%M:%S',  # 斜杠分隔
+                '%Y/%m/%d',           # 仅日期斜杠
+            ]
+            
+            for fmt in formats:
+                try:
+                    return datetime.strptime(time_clean, fmt)
+                except ValueError:
+                    continue
+            
+            # 如果所有格式都失败，尝试fromisoformat
+            try:
+                return datetime.fromisoformat(time_clean)
+            except ValueError:
+                pass
+                
+        except Exception:
+            pass
+            
+        return None
+    
     def _convert_to_serializable(self, obj: Any) -> Any:
         """转换pandas/numpy数据类型为JSON可序列化的Python原生类型"""
         if isinstance(obj, (np.integer, np.int64, np.int32)):
@@ -181,21 +240,12 @@ class AdvancedAnalytics:
             if start_time and end_time:
                 try:
                     # 处理多种时间格式
-                    if isinstance(start_time, str):
-                        if 'T' in start_time:
-                            start_dt = datetime.fromisoformat(start_time.replace('Z', '+00:00'))
-                        else:
-                            start_dt = datetime.fromisoformat(start_time)
-                    else:
-                        start_dt = start_time
+                    start_dt = self._parse_datetime(start_time)
+                    end_dt = self._parse_datetime(end_time)
                     
-                    if isinstance(end_time, str):
-                        if 'T' in end_time:
-                            end_dt = datetime.fromisoformat(end_time.replace('Z', '+00:00'))
-                        else:
-                            end_dt = datetime.fromisoformat(end_time)
-                    else:
-                        end_dt = end_time
+                    # 确保解析成功
+                    if start_dt is None or end_dt is None:
+                        raise ValueError("时间解析失败")
                     
                     total_time = (end_dt - start_dt).total_seconds()
                     
@@ -378,24 +428,12 @@ class AdvancedAnalytics:
         if start_time and end_time:
             try:
                 # 处理ISO格式时间字符串
-                if isinstance(start_time, str):
-                    # 移除时区信息并解析
-                    start_time_clean = start_time.replace('Z', '').replace('+00:00', '')
-                    if '.' in start_time_clean:
-                        start_dt = datetime.fromisoformat(start_time_clean.split('.')[0])
-                    else:
-                        start_dt = datetime.fromisoformat(start_time_clean)
-                else:
-                    start_dt = start_time
+                start_dt = self._parse_datetime(start_time)
+                end_dt = self._parse_datetime(end_time)
                 
-                if isinstance(end_time, str):
-                    end_time_clean = end_time.replace('Z', '').replace('+00:00', '')
-                    if '.' in end_time_clean:
-                        end_dt = datetime.fromisoformat(end_time_clean.split('.')[0])
-                    else:
-                        end_dt = datetime.fromisoformat(end_time_clean)
-                else:
-                    end_dt = end_time
+                # 确保解析成功
+                if start_dt is None or end_dt is None:
+                    raise ValueError("时间解析失败")
                 
                 duration = end_dt - start_dt
                 total_seconds = duration.total_seconds()
