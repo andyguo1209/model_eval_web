@@ -1124,8 +1124,7 @@
                     if (data.success && data.result) {
                         const result = data.result;
                         document.getElementById('shareTitle').value = result.name || '';
-                        document.getElementById('shareDescription').value = 
-                            `评测结果包含 ${result.question_count || 0} 个测试题目，使用了 ${(result.models || []).length} 个模型进行评测。`;
+                        document.getElementById('shareDescription').value = '';
                     }
                 })
                 .catch(error => {

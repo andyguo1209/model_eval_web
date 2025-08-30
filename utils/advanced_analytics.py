@@ -56,7 +56,6 @@ class AdvancedAnalytics:
                 'basic_stats': self._calculate_basic_stats(df),
                 'score_analysis': self._analyze_scores(df),
                 'performance_metrics': self._calculate_performance_metrics(df, evaluation_data),
-                'quality_indicators': self._calculate_quality_indicators(df),
                 'model_comparison': self._compare_models(df),
                 'question_type_analysis': self._analyze_by_question_type(df),
                 'time_analysis': self._analyze_time_efficiency(evaluation_data),
@@ -246,74 +245,7 @@ class AdvancedAnalytics:
         
         return metrics
     
-    def _calculate_quality_indicators(self, df: pd.DataFrame) -> Dict:
-        """计算质量指标"""
-        indicators = {
-            'data_completeness': 0,
-            'score_validity': 0,
-            'distribution_health': {},
-            'quality_grade': 'C'
-        }
-        
-        # 数据完整性
-        total_cells = df.shape[0] * df.shape[1]
-        filled_cells = df.notna().sum().sum()
-        indicators['data_completeness'] = (filled_cells / total_cells) * 100
-        
-        # 评分有效性
-        score_columns = [col for col in df.columns if '评分' in col]
-        valid_scores = 0
-        total_scores = 0
-        
-        for col in score_columns:
-            scores = df[col].dropna()
-            # 移除硬编码的分数范围限制，所有数字都视为有效
-            valid_count = scores.notna().sum()  # 统计非空的分数
-            valid_scores += valid_count
-            total_scores += len(scores)
-        
-        if total_scores > 0:
-            indicators['score_validity'] = (valid_scores / total_scores) * 100
-        
-        # 分布健康度
-        for col in score_columns:
-            model_name = col.replace('_评分', '').replace('评分', '')
-            scores = df[col].dropna()
-            
-            if len(scores) > 0:
-                # 检查分布是否过于集中
-                distribution = scores.value_counts()
-                max_concentration = distribution.max() / len(scores)
-                
-                health_score = 100
-                if max_concentration > 0.8:
-                    health_score = 30  # 过于集中
-                elif max_concentration > 0.6:
-                    health_score = 60  # 较集中
-                elif max_concentration < 0.1:
-                    health_score = 70  # 过于分散
-                
-                indicators['distribution_health'][model_name] = health_score
-        
-        # 综合质量等级
-        overall_score = (
-            indicators['data_completeness'] * 0.3 +
-            indicators['score_validity'] * 0.4 +
-            np.mean(list(indicators['distribution_health'].values()) or [50]) * 0.3
-        )
-        
-        if overall_score >= 90:
-            indicators['quality_grade'] = 'A+'
-        elif overall_score >= 85:
-            indicators['quality_grade'] = 'A'
-        elif overall_score >= 75:
-            indicators['quality_grade'] = 'B'
-        elif overall_score >= 65:
-            indicators['quality_grade'] = 'C'
-        else:
-            indicators['quality_grade'] = 'D'
-        
-        return indicators
+
     
     def _compare_models(self, df: pd.DataFrame) -> Dict:
         """模型对比分析"""

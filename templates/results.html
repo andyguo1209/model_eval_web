@@ -1074,14 +1074,11 @@
                 // 使用高级分析结果
                 const basicStats = advancedStats.basic_stats || {};
                 const performanceMetrics = advancedStats.performance_metrics || {};
-                const qualityIndicators = advancedStats.quality_indicators || {};
-                
                 stats = {
                     '总题数': basicStats.total_questions || totalCount,
                     '评测模型': Object.keys(advancedStats.score_analysis?.model_performance || {}).length,
                     '平均耗时': performanceMetrics.estimated_time_per_question || '未知',
-                    '完成率': `${Math.round(basicStats.response_rate || 0)}%`,
-                    '质量等级': qualityIndicators.quality_grade || 'C'
+                    '完成率': `${Math.round(basicStats.response_rate || 0)}%`
                 };
                 
                 if (performanceMetrics.throughput > 0) {
@@ -2061,7 +2058,36 @@
             saveButton.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 保存中...';
             saveButton.disabled = true;
             
-            console.log(`📝 [保存评分] 开始保存: 文件=${currentEditData.filename || '{{ filename }}'}, 行=${currentEditData.rowIndex}, 评分=${newScore}`);
+            // 🔧 修复：计算CSV文件中的实际行索引
+            const filteredRowIndex = currentEditData.rowIndex;
+            const row = filteredData[filteredRowIndex];
+            
+            // 通过序号找到在originalData中的位置，然后转换为CSV行索引
+            let csvRowIndex = -1;
+            if (row && row['序号']) {
+                const sequenceNumber = parseInt(row['序号']);
+                // CSV文件行索引 = 序号 - 1 (因为序号从1开始，行索引从0开始)
+                csvRowIndex = sequenceNumber - 1;
+                console.log(`📝 [保存评分] 序号: ${sequenceNumber}, CSV行索引: ${csvRowIndex}`);
+            } else {
+                // 备用方案：通过originalData查找
+                for (let i = 0; i < originalData.length; i++) {
+                    if (JSON.stringify(originalData[i]) === JSON.stringify(row)) {
+                        csvRowIndex = i;
+                        break;
+                    }
+                }
+                console.log(`📝 [保存评分] 通过数据匹配找到CSV行索引: ${csvRowIndex}`);
+            }
+            
+            if (csvRowIndex < 0) {
+                alert('❌ 无法确定要修改的行，请刷新页面重试');
+                saveButton.innerHTML = originalText;
+                saveButton.disabled = false;
+                return;
+            }
+            
+            console.log(`📝 [保存评分] 开始保存: 文件=${currentEditData.filename || '{{ filename }}'}, filteredData索引=${filteredRowIndex}, CSV行索引=${csvRowIndex}, 评分=${newScore}`);
             
             // 发送到后端保存
             fetch('/api/update_score', {
@@ -2071,7 +2097,7 @@
                 },
                 body: JSON.stringify({
                     filename: '{{ filename }}',
-                    row_index: currentEditData.rowIndex,
+                    row_index: csvRowIndex,  // 🔧 使用正确的CSV行索引
                     score_column: currentEditData.scoreColumn,
                     new_score: newScore,
                     reason: reason,
@@ -2084,65 +2110,36 @@
                     console.log(`✅ [保存评分] 服务器确认更新成功:`, data);
                     
                     // 使用服务器返回的确切数据更新本地数据
-                    const rowIndex = data.row_index;
+                    const csvRowIndex = data.row_index;  // 这是CSV文件的行索引
                     const scoreColumn = data.score_column;
                     const reasonColumn = data.reason_column;
                     const updatedScore = data.updated_score;
                     const updatedReason = data.updated_reason;
                     
-                    console.log(`📝 [保存评分] 更新数据 - 行:${rowIndex}, 评分列:${scoreColumn}, 理由列:${reasonColumn}`);
+                    console.log(`📝 [保存评分] 更新数据 - CSV行索引:${csvRowIndex}, 评分列:${scoreColumn}, 理由列:${reasonColumn}`);
                     console.log(`📝 [保存评分] 新评分:${updatedScore}, 新理由:${updatedReason?.substring(0, 50)}...`);
                     
-                    // 更新originalData和filteredData中的对应行
-                    // 注意：这里需要找到filteredData中对应的行
-                    let actualRowIndex = -1;
-                    
-                    // 在filteredData中查找对应的行（通过序号或其他唯一标识）
-                    for (let i = 0; i < filteredData.length; i++) {
-                        if (filteredData[i]['序号'] && parseInt(filteredData[i]['序号']) === (rowIndex + 1)) {
-                            actualRowIndex = i;
-                            break;
-                        }
-                    }
-                    
-                    // 如果没找到，尝试直接使用rowIndex（假设数据没有被过滤）
-                    if (actualRowIndex === -1 && rowIndex < filteredData.length) {
-                        actualRowIndex = rowIndex;
-                    }
-                    
-                    // 同时更新originalData（通过序号查找）
-                    let originalRowIndex = -1;
-                    for (let i = 0; i < originalData.length; i++) {
-                        if (originalData[i]['序号'] && parseInt(originalData[i]['序号']) === (rowIndex + 1)) {
-                            originalRowIndex = i;
-                            break;
-                        }
-                    }
-                    
-                    if (originalRowIndex === -1 && rowIndex < originalData.length) {
-                        originalRowIndex = rowIndex;
-                    }
-                    
-                    // 强制更新数据 - 使用字符串和数字两种形式确保兼容
+                    // 🔧 修复：直接更新对应的数据行
                     const scoreValue = parseInt(updatedScore);
                     const reasonValue = updatedReason || '';
                     
-                    // 更新filteredData
-                    if (actualRowIndex >= 0 && actualRowIndex < filteredData.length) {
-                        filteredData[actualRowIndex][scoreColumn] = scoreValue;
-                        if (reasonColumn) {
-                            filteredData[actualRowIndex][reasonColumn] = reasonValue;
+                    // 1. 更新originalData（使用CSV行索引）
+                    if (csvRowIndex >= 0 && csvRowIndex < originalData.length) {
+                        originalData[csvRowIndex][scoreColumn] = scoreValue;
+                        if (reasonColumn && reasonValue) {
+                            originalData[csvRowIndex][reasonColumn] = reasonValue;
                         }
-                        console.log(`✅ [保存评分] filteredData已更新，行索引: ${actualRowIndex}, 评分: ${scoreValue}`);
+                        console.log(`✅ [保存评分] originalData已更新，CSV行索引: ${csvRowIndex}, 评分: ${scoreValue}`);
                     }
                     
-                    // 更新originalData
-                    if (originalRowIndex >= 0 && originalRowIndex < originalData.length) {
-                        originalData[originalRowIndex][scoreColumn] = scoreValue;
-                        if (reasonColumn) {
-                            originalData[originalRowIndex][reasonColumn] = reasonValue;
+                    // 2. 更新filteredData（找到对应的行）
+                    const filteredRowIndex = currentEditData.rowIndex;  // 这是我们之前保存的filteredData索引
+                    if (filteredRowIndex >= 0 && filteredRowIndex < filteredData.length) {
+                        filteredData[filteredRowIndex][scoreColumn] = scoreValue;
+                        if (reasonColumn && reasonValue) {
+                            filteredData[filteredRowIndex][reasonColumn] = reasonValue;
                         }
-                        console.log(`✅ [保存评分] originalData已更新，行索引: ${originalRowIndex}, 评分: ${scoreValue}`);
+                        console.log(`✅ [保存评分] filteredData已更新，filtered索引: ${filteredRowIndex}, 评分: ${scoreValue}`);
                     }
                     
                     // 强制刷新所有相关数据和显示

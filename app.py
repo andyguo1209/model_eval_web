@@ -2131,50 +2131,81 @@ def view_results(filename):
                 result_detail = db.get_result_by_id(result_id)
                 print(f"✅ [view_results] 找到结果详情: {result_id}")
             else:
-                print(f"⚠️ [view_results] 未找到文件 {filename} 对应的数据库记录，正在创建...")
-                # 为了支持分享功能，创建一个数据库记录
-                try:
-                    # 分析文件名获取模型信息
-                    models = []
-                    for col in df.columns:
-                        if col.endswith('_答案') or col.endswith('_评分') or col.endswith('_理由'):
-                            model_name = col.replace('_答案', '').replace('_评分', '').replace('_理由', '')
-                            if model_name not in models and model_name != '标准答案':
-                                models.append(model_name)
+                print(f"⚠️ [view_results] 未找到文件 {filename} 对应的数据库记录")
+                
+                # 检查是否为临时评测结果文件（避免为每个查看的文件都创建记录）
+                should_create_record = True
+                potential_duplicate = None
+                
+                # 如果是evaluation_result_格式的临时文件，检查是否已有相关历史记录
+                if filename.startswith('evaluation_result_'):
+                    timestamp_part = filename.replace('evaluation_result_', '').replace('.csv', '')
+                    print(f"🔍 [view_results] 检查时间戳 {timestamp_part} 是否有对应的历史记录...")
                     
-                    # 创建元数据
-                    metadata = {
-                        'start_time': None,
-                        'end_time': None,
-                        'question_count': len(df),
-                        'from_file_analysis': True
-                    }
-                    
-                    # 保存到数据库
-                    result_id = db.save_evaluation_result(
-                        project_id='default',
-                        name=f"结果文件_{filename}",
-                        dataset_file='',
-                        models=models,
-                        result_file=filepath,
-                        evaluation_mode='unknown',
-                        result_summary={'total_questions': len(df)},
-                        tags=[],
-                        created_by=session.get('user_id', 'system'),
-                        metadata=metadata
-                    )
-                    
-                    result_detail = db.get_result_by_id(result_id)
-                    print(f"✅ [view_results] 已创建数据库记录: {result_id}")
-                except Exception as create_error:
-                    print(f"⚠️ [view_results] 创建数据库记录失败: {create_error}")
-                    # 创建一个临时的 result_detail 以支持分享功能
-                    result_detail = {
-                        'id': f"temp_{filename}",
-                        'name': filename,
-                        'result_file': filepath,
-                        'created_by': session.get('user_id', 'system')
-                    }
+                    try:
+                        # 查找可能的相关历史记录
+                        history_results = db.get_evaluation_history(limit=50)
+                        for history_item in history_results:
+                            result_file_path = history_item.get('result_file', '')
+                            # 检查是否包含相同的时间戳
+                            if timestamp_part in result_file_path and 'results_history' in result_file_path:
+                                potential_duplicate = history_item
+                                should_create_record = False
+                                print(f"🔗 [view_results] 找到对应的历史记录: {history_item['name']}")
+                                break
+                    except Exception as e:
+                        print(f"⚠️ [view_results] 检查历史记录失败: {e}")
+                
+                if should_create_record:
+                    print(f"📝 [view_results] 创建临时数据库记录以支持查看功能...")
+                    try:
+                        # 分析文件名获取模型信息
+                        models = []
+                        for col in df.columns:
+                            if col.endswith('_答案') or col.endswith('_评分') or col.endswith('_理由'):
+                                model_name = col.replace('_答案', '').replace('_评分', '').replace('_理由', '')
+                                if model_name not in models and model_name != '标准答案':
+                                    models.append(model_name)
+                        
+                        # 创建元数据，标记为临时记录
+                        metadata = {
+                            'start_time': None,
+                            'end_time': None,
+                            'question_count': len(df),
+                            'from_file_analysis': True,
+                            'is_temporary': True,  # 标记为临时记录
+                            'data_source': 'file_view'
+                        }
+                        
+                        # 保存到数据库，使用更明确的命名
+                        result_id = db.save_evaluation_result(
+                            project_id='default',
+                            name=f"[查看] {filename.replace('.csv', '')}",  # 明确标记为查看产生的记录
+                            dataset_file='',
+                            models=models,
+                            result_file=filepath,
+                            evaluation_mode='unknown',
+                            result_summary={'total_questions': len(df)},
+                            tags=['临时查看'],  # 添加标签以便识别
+                            created_by=session.get('user_id', 'system'),
+                            metadata=metadata
+                        )
+                        
+                        result_detail = db.get_result_by_id(result_id)
+                        print(f"✅ [view_results] 已创建临时记录: {result_id}")
+                    except Exception as create_error:
+                        print(f"⚠️ [view_results] 创建数据库记录失败: {create_error}")
+                        # 创建一个临时的 result_detail 以支持分享功能
+                        result_detail = {
+                            'id': f"temp_{filename}",
+                            'name': filename,
+                            'result_file': filepath,
+                            'created_by': session.get('user_id', 'system')
+                        }
+                else:
+                    # 使用找到的相关历史记录
+                    result_detail = potential_duplicate
+                    print(f"🔗 [view_results] 使用相关历史记录: {result_detail['name']}")
         except Exception as e:
             print(f"⚠️ [view_results] 查找结果详情失败: {e}")
         
@@ -2373,6 +2404,44 @@ def get_history_list():
             include_all_users=include_all_users
         )
         
+        # 过滤重复和临时记录（在搜索过滤之前，避免显示混乱的记录）
+        if history['success']:
+            filtered_for_duplicates = []
+            seen_timestamps = set()
+            
+            for result in history['results']:
+                # 检查是否为临时记录（跳过带有特定标签或名称的记录）
+                is_temp_record = (
+                    '临时查看' in result.get('tags', []) or
+                    result['name'].startswith('[查看]') or
+                    result['name'].startswith('结果文件_') or
+                    result['name'].startswith('临时结果_')
+                )
+                
+                # 检查是否为重复记录（基于时间戳）
+                is_duplicate = False
+                result_file_path = result.get('result_file', '')
+                
+                # 从文件路径中提取时间戳
+                if 'evaluation_result_' in result_file_path or '_20' in result['name']:
+                    import re
+                    timestamp_match = re.search(r'(\d{8}_\d{6})', result_file_path + '_' + result['name'])
+                    if timestamp_match:
+                        timestamp = timestamp_match.group(1)
+                        if timestamp in seen_timestamps:
+                            is_duplicate = True
+                        else:
+                            seen_timestamps.add(timestamp)
+                
+                # 只保留非临时且非重复的记录
+                if not is_temp_record and not is_duplicate:
+                    filtered_for_duplicates.append(result)
+                else:
+                    print(f"🚫 [history] 过滤记录: {result['name']} (临时:{is_temp_record}, 重复:{is_duplicate})")
+            
+            history['results'] = filtered_for_duplicates
+            print(f"📊 [history] 过滤后剩余 {len(filtered_for_duplicates)} 条记录")
+        
         # 简单的搜索过滤（在返回的结果中过滤）
         if search and history['success']:
             filtered_results = []
@@ -2438,15 +2507,21 @@ def view_history(result_id):
         is_admin = current_user and current_user['role'] == 'admin'
         
         # 获取历史记录详情
-        result_detail = history_manager.get_result_detail(result_id)
-        if not result_detail:
+        result_detail_response = history_manager.get_result_detail(result_id)
+        if not result_detail_response or not result_detail_response.get('success'):
             return jsonify({'error': '结果不存在'}), 404
         
+        # 从响应中提取实际的result数据
+        result_detail = result_detail_response.get('result', {})
+        
+        # 确保result_detail包含id字段
+        if 'id' not in result_detail:
+            result_detail['id'] = result_id
+        
         # 权限检查：普通用户只能查看自己的结果
-        result = result_detail.get('result', {})
-        if not is_admin and result.get('created_by') != session['user_id']:
+        if not is_admin and result_detail.get('created_by') != session['user_id']:
             return jsonify({'error': '没有权限访问此结果'}), 403
-        result_file = result.get('result_file')
+        result_file = result_detail.get('result_file')
         
         if not result_file:
             return jsonify({'error': '结果文件路径为空'}), 404
@@ -2489,7 +2564,7 @@ def view_history(result_id):
                 
                 # 如果没有数据库数据，尝试从result_detail获取时间数据
                 if not evaluation_data:
-                    task_data = result_detail.get('result', {}) if result_detail else {}
+                    task_data = result_detail if result_detail else {}
                     evaluation_data = {
                         'start_time': task_data.get('start_time'),
                         'end_time': task_data.get('end_time'),
@@ -3140,18 +3215,7 @@ def generate_complete_report(filename, format_type='excel'):
                 summary_data.append(['评测时长', basic_stats.get('evaluation_duration', '未知')])
                 summary_data.append(['', ''])
                 
-                # 质量指标
-                quality_indicators = analysis_result.get('quality_indicators', {})
-                if quality_indicators:
-                    summary_data.append(['质量指标', ''])
-                    for key, value in quality_indicators.items():
-                        if key == 'data_completeness':
-                            summary_data.append(['数据完整性', f"{value:.1f}%"])
-                        elif key == 'score_validity':
-                            summary_data.append(['评分有效性', f"{value:.1f}%"])
-                        elif key == 'consistency_score':
-                            summary_data.append(['一致性评分', f"{value:.1f}%"])
-                    summary_data.append(['', ''])
+
                 
                 # 时间效率指标
                 if time_analysis:
@@ -3327,8 +3391,14 @@ def export_filtered_results():
         # 创建DataFrame
         df = pd.DataFrame(filtered_data)
         
-        # 获取原文件名（不含扩展名）
-        base_name = os.path.splitext(filename)[0]
+        # 从filename中提取纯文件名（去除路径和扩展名）
+        pure_filename = os.path.basename(filename)  # 去除路径
+        base_name = os.path.splitext(pure_filename)[0]  # 去除扩展名
+        
+        # 调试信息
+        print(f"📄 [导出筛选] 原始filename: {filename}")
+        print(f"📄 [导出筛选] 提取的纯文件名: {pure_filename}")
+        print(f"📄 [导出筛选] 基础名称: {base_name}")
         
         # 生成筛选条件描述
         filter_desc = []
@@ -3342,10 +3412,17 @@ def export_filtered_results():
         filter_suffix = "_".join(filter_desc) if filter_desc else "筛选结果"
         export_filename = f"{base_name}_{filter_suffix}.csv"
         
+        # 安全检查：确保export_filename不包含路径分隔符
+        export_filename = os.path.basename(export_filename)
+        
         # 创建临时文件
         import tempfile
         temp_dir = tempfile.gettempdir()
         temp_path = os.path.join(temp_dir, export_filename)
+        
+        print(f"📁 [导出筛选] 临时目录: {temp_dir}")
+        print(f"📁 [导出筛选] 导出文件名: {export_filename}")
+        print(f"📁 [导出筛选] 完整临时路径: {temp_path}")
         
         # 保存CSV文件
         df.to_csv(temp_path, index=False, encoding='utf-8-sig')
@@ -4328,19 +4405,77 @@ def create_share():
         current_user = db.get_user_by_id(current_user_id)
         
         if result_id.startswith('temp_'):
-            # 处理临时结果ID
+            # 处理临时结果ID - 从CSV文件中提取完整信息并创建数据库记录
             filename = result_id.replace('temp_', '')
             filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
             if not os.path.exists(filepath):
                 return jsonify({'error': '结果文件不存在'}), 404
             
-            # 创建临时的result_detail
-            result_detail = {
-                'id': result_id,
-                'name': title or filename,
-                'result_file': filepath,
-                'created_by': current_user_id
-            }
+            print(f"📝 [分享创建] 处理临时结果文件: {filename}")
+            
+            try:
+                # 读取CSV文件获取完整信息
+                import pandas as pd
+                df = pd.read_csv(filepath, encoding='utf-8-sig')
+                
+                # 从列名中提取模型信息
+                models = []
+                evaluation_mode = 'unknown'
+                
+                for col in df.columns:
+                    if col.endswith('_答案') or col.endswith('_评分') or col.endswith('_理由'):
+                        model_name = col.replace('_答案', '').replace('_评分', '').replace('_理由', '')
+                        if model_name not in models and model_name not in ['标准', 'query', '序号', '类型']:
+                            models.append(model_name)
+                
+                # 检测评测模式
+                if 'answer' in df.columns or '标准答案' in df.columns:
+                    evaluation_mode = 'objective'
+                elif any(col.endswith('_评分') for col in df.columns):
+                    evaluation_mode = 'subjective'
+                
+                print(f"📊 [分享创建] 提取信息: 模型={models}, 模式={evaluation_mode}, 题目数={len(df)}")
+                
+                # 创建完整的数据库记录
+                metadata = {
+                    'start_time': None,
+                    'end_time': None,
+                    'question_count': len(df),
+                    'from_temp_share': True,
+                    'original_temp_id': result_id,
+                    'data_source': 'temp_file_share'
+                }
+                
+                # 生成有意义的结果名称
+                result_name = title or f"分享结果_{filename.replace('.csv', '').replace('evaluation_result_', '')}"
+                
+                # 保存到数据库
+                new_result_id = db.save_evaluation_result(
+                    project_id='default',
+                    name=result_name,
+                    dataset_file='',
+                    models=models,
+                    result_file=filepath,
+                    evaluation_mode=evaluation_mode,
+                    result_summary={'total_questions': len(df)},
+                    tags=['从临时文件创建'],
+                    created_by=current_user_id,
+                    metadata=metadata
+                )
+                
+                # 获取新创建的记录详情
+                result_detail = db.get_result_by_id(new_result_id)
+                if not result_detail:
+                    raise Exception("创建数据库记录后无法获取详情")
+                
+                # 更新result_id为新创建的数据库记录ID
+                result_id = new_result_id
+                
+                print(f"✅ [分享创建] 成功创建数据库记录: {new_result_id}")
+                
+            except Exception as e:
+                print(f"❌ [分享创建] 处理临时文件失败: {e}")
+                return jsonify({'error': f'处理临时结果文件失败: {str(e)}'}), 500
         else:
             # 处理正常的数据库结果ID
             result_detail = db.get_result_by_id(result_id)
@@ -4554,6 +4689,26 @@ def view_shared_result(share_token):
                 else:
                     models_data = []
             
+            # 兜底机制：如果models_data为空，尝试从CSV文件中提取
+            if not models_data:
+                print(f"🔄 [分享页面] models信息缺失，尝试从CSV文件提取...")
+                try:
+                    extracted_models = []
+                    for col in df.columns:
+                        if col.endswith('_答案') or col.endswith('_评分') or col.endswith('_理由'):
+                            model_name = col.replace('_答案', '').replace('_评分', '').replace('_理由', '')
+                            if model_name not in extracted_models and model_name not in ['标准', 'query', '序号', '类型']:
+                                extracted_models.append(model_name)
+                    
+                    if extracted_models:
+                        models_data = extracted_models
+                        print(f"✅ [分享页面] 从CSV文件提取到models: {models_data}")
+                    else:
+                        print(f"⚠️ [分享页面] 未能从CSV文件中提取到models信息")
+                except Exception as extract_error:
+                    print(f"❌ [分享页面] 提取models信息失败: {extract_error}")
+                    models_data = []
+            
             # 清理DataFrame数据，确保所有值都是安全的类型
             cleaned_data = []
             raw_records = df.to_dict('records')
@@ -4573,6 +4728,18 @@ def view_shared_result(share_token):
             
             print(f"✅ [分享页面] 清理后的数据量: {len(cleaned_data)}")
             
+            # 检测和修复evaluation_mode
+            evaluation_mode = share_info.get('evaluation_mode', '')
+            if not evaluation_mode:
+                print(f"🔄 [分享页面] evaluation_mode信息缺失，尝试从CSV文件推断...")
+                if 'answer' in df.columns or '标准答案' in df.columns:
+                    evaluation_mode = 'objective'
+                elif any(col.endswith('_评分') for col in df.columns):
+                    evaluation_mode = 'subjective'
+                else:
+                    evaluation_mode = 'unknown'
+                print(f"✅ [分享页面] 推断evaluation_mode: {evaluation_mode}")
+            
             result_data = {
                 'filename': os.path.basename(result_file_path),
                 'columns': df.columns.tolist(),
@@ -4582,7 +4749,7 @@ def view_shared_result(share_token):
                     'description': share_info.get('description', ''),
                     'shared_by_name': share_info.get('shared_by_name', '未知用户'),
                     'created_at': share_info.get('created_at', ''),
-                    'evaluation_mode': share_info.get('evaluation_mode', ''),
+                    'evaluation_mode': evaluation_mode,  # 使用修复后的evaluation_mode
                     'models': models_data,  # 确保是列表类型
                     'allow_download': share_info.get('allow_download', False)
                 }
@@ -4645,13 +4812,49 @@ def view_shared_result(share_token):
                 except Exception as clean_error:
                     print(f"⚠️ [分享页面] 数据清理过程出错: {clean_error}")
                 
+                # 尝试获取或估算时间数据
                 evaluation_data = {
                     'evaluation_mode': share_info.get('evaluation_mode', ''),
                     'models': share_info.get('models', []),
-                    'question_count': len(df),
-                    'start_time': share_info.get('result_created_at', ''),
-                    'end_time': share_info.get('result_created_at', '')
+                    'question_count': len(df)
                 }
+                
+                # 尝试获取真实的时间数据
+                result_id = share_info.get('result_id')
+                if result_id:
+                    try:
+                        result_detail = db.get_result_by_id(result_id)
+                        if result_detail and result_detail.get('metadata'):
+                            metadata = json.loads(result_detail['metadata'])
+                            if metadata.get('start_time') and metadata.get('end_time'):
+                                evaluation_data.update({
+                                    'start_time': metadata['start_time'],
+                                    'end_time': metadata['end_time'],
+                                    'from_database': True
+                                })
+                                print(f"✅ [分享页面] 从数据库获取到时间数据")
+                    except Exception as e:
+                        print(f"⚠️ [分享页面] 获取数据库时间数据失败: {e}")
+                
+                # 如果没有找到真实时间数据，使用文件时间估算
+                if 'start_time' not in evaluation_data:
+                    try:
+                        file_stat = os.stat(result_file_path)
+                        # 估算：假设每题需要30秒处理时间
+                        estimated_duration = len(df) * 30
+                        file_mtime = datetime.fromtimestamp(file_stat.st_mtime)
+                        estimated_start = file_mtime - timedelta(seconds=estimated_duration)
+                        
+                        evaluation_data.update({
+                            'start_time': estimated_start.isoformat(),
+                            'end_time': file_mtime.isoformat(),
+                            'is_estimated': True
+                        })
+                        print(f"⏰ [分享页面] 使用估算时间数据: {estimated_duration}秒估算时长")
+                    except Exception as e:
+                        print(f"⚠️ [分享页面] 获取文件时间失败: {e}")
+                        # 如果连文件时间都获取不到，不提供时间数据
+                        pass
                 
                 print(f"🔄 [分享页面] 开始分析评测结果...")
                 analysis_result = analytics.analyze_evaluation_results(
