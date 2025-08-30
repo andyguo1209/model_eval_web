@@ -831,7 +831,78 @@
                     <i class="fas fa-table"></i>
                 </div>
                 详细评测结果
+                <span id="result-count" style="font-size: 0.6em; font-weight: normal; color: #666; margin-left: 10px;">
+                    共 {{ result_data.data|length }} 条记录
+                </span>
             </h2>
+            
+            <!-- 筛选控件 -->
+            <div style="background: white; padding: 20px; border-radius: 8px; margin-bottom: 20px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">
+                <div class="filter-group" style="display: flex; gap: 15px; align-items: center; flex-wrap: wrap;">
+                    <div class="filter-item" style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 14px; color: #666; font-weight: 500;">搜索</label>
+                        <input type="text" class="filter-input" id="search-input" placeholder="搜索问题或答案..." 
+                               style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 200px;">
+                    </div>
+                    
+                    {% set score_cols = [] %}
+                    {% for column in result_data.columns %}
+                        {% if '评分' in column %}
+                            {% set _ = score_cols.append(column) %}
+                        {% endif %}
+                    {% endfor %}
+                    
+                    {% if score_cols %}
+                    <div class="filter-item" style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 14px; color: #666; font-weight: 500;">分数筛选</label>
+                        <select class="filter-input" id="score-filter" 
+                                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 120px;">
+                            <option value="">全部分数</option>
+                            <option value="10">10分</option>
+                            <option value="9">9分</option>
+                            <option value="8">8分</option>
+                            <option value="7">7分</option>
+                            <option value="6">6分</option>
+                            <option value="5">5分</option>
+                            <option value="4">4分</option>
+                            <option value="3">3分</option>
+                            <option value="2">2分</option>
+                            <option value="1">1分</option>
+                            <option value="0">0分</option>
+                        </select>
+                    </div>
+                    {% endif %}
+                    
+                    {% if '类型' in result_data.columns %}
+                    <div class="filter-item" style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 14px; color: #666; font-weight: 500;">类型筛选</label>
+                        <select class="filter-input" id="type-filter" 
+                                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 120px;">
+                            <option value="">全部类型</option>
+                        </select>
+                    </div>
+                    {% endif %}
+                    
+                    <div class="filter-item" style="display: flex; flex-direction: column; gap: 5px;">
+                        <label style="font-size: 14px; color: #666; font-weight: 500;">每页显示</label>
+                        <select class="filter-input" id="page-size" 
+                                style="padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; width: 100px;">
+                            <option value="10">10条</option>
+                            <option value="25" selected>25条</option>
+                            <option value="50">50条</option>
+                            <option value="100">100条</option>
+                        </select>
+                    </div>
+                    
+                    <button onclick="resetFilters()" 
+                            style="padding: 10px 20px; background: #f8f9fa; border: 1px solid #ddd; border-radius: 6px; cursor: pointer; color: #666; margin-top: 20px;">
+                        <i class="fas fa-refresh"></i> 重置筛选
+                    </button>
+                </div>
+            </div>
+            
+            <!-- 分页控件 -->
+            <div id="pagination" style="display: flex; justify-content: center; gap: 10px; margin-bottom: 20px;"></div>
             
             <div class="results-table-container">
                 <table class="results-table" id="shared-results-table">
@@ -842,39 +913,8 @@
                             {% endfor %}
                         </tr>
                     </thead>
-                    <tbody id="shared-table-body">
-                        {% for row in result_data.data %}
-                        <tr class="clickable-row" onclick="showRowDetails({{ loop.index0 }})" title="点击查看详细信息">
-                            {% for column in result_data.columns %}
-                            <td>
-                                {% set value = row.get(column, '') %}
-                                {% if value %}
-                                    {% if column == 'query' or '答案' in column %}
-                                        {% if value is string and value|length > 50 %}
-                                        <div class="expandable-cell">
-                                            {{ value[:50] }}...
-                                            <span class="expand-hint">点击展开</span>
-                                        </div>
-                                        {% else %}
-                                        <div class="text-content">{{ value }}</div>
-                                        {% endif %}
-                                    {% elif '评分' in column %}
-                                        <span class="score-badge score-{{ value }}">{{ value }}分</span>
-                                    {% else %}
-                                        {% if value is string and value|length > 30 %}
-                                        <div class="expandable-cell">
-                                            {{ value[:30] }}...
-                                            <span class="expand-hint">点击展开</span>
-                                        </div>
-                                        {% else %}
-                                        {{ value }}
-                                        {% endif %}
-                                    {% endif %}
-                                {% endif %}
-                            </td>
-                            {% endfor %}
-                        </tr>
-                        {% endfor %}
+                    <tbody id="results-table-body">
+                        <!-- 表格内容将通过JavaScript动态渲染 -->
                     </tbody>
                 </table>
             </div>
@@ -1052,10 +1092,315 @@
             }
         }
 
+        // 筛选功能相关变量和函数
+        const originalData = {{ result_data.data | tojson }};
+        const columns = {{ result_data.columns | tojson }};
+        let filteredData = [...originalData];
+        let currentPage = 1;
+        let pageSize = 25;
+        
+        // 填充类型筛选器
+        function populateTypeFilter() {
+            const typeFilter = document.getElementById('type-filter');
+            if (typeFilter && columns.includes('类型')) {
+                const types = [...new Set(originalData.map(row => row['类型'] || '未分类'))];
+                types.forEach(type => {
+                    const option = document.createElement('option');
+                    option.value = type;
+                    option.textContent = type;
+                    typeFilter.appendChild(option);
+                });
+            }
+        }
+        
+        // 初始化事件监听器
+        function initializeEventListeners() {
+            // 搜索框 - 防抖处理
+            const searchInput = document.getElementById('search-input');
+            if (searchInput) {
+                searchInput.addEventListener('input', debounce(applyFilters, 300));
+            }
+            
+            // 筛选器
+            const scoreFilter = document.getElementById('score-filter');
+            const typeFilter = document.getElementById('type-filter');
+            const pageSizeSelect = document.getElementById('page-size');
+            
+            if (scoreFilter) scoreFilter.addEventListener('change', applyFilters);
+            if (typeFilter) typeFilter.addEventListener('change', applyFilters);
+            if (pageSizeSelect) pageSizeSelect.addEventListener('change', function() {
+                pageSize = parseInt(this.value);
+                currentPage = 1;
+                renderTable();
+            });
+        }
+        
+        // 应用筛选
+        function applyFilters() {
+            const searchInput = document.getElementById('search-input');
+            const scoreFilter = document.getElementById('score-filter');
+            const typeFilter = document.getElementById('type-filter');
+            
+            const searchTerm = searchInput ? searchInput.value.toLowerCase() : '';
+            const scoreValue = scoreFilter ? scoreFilter.value : '';
+            const typeValue = typeFilter ? typeFilter.value : '';
+            
+            filteredData = originalData.filter(row => {
+                // 搜索筛选
+                if (searchTerm) {
+                    const searchableText = Object.values(row).join(' ').toLowerCase();
+                    if (!searchableText.includes(searchTerm)) {
+                        return false;
+                    }
+                }
+                
+                // 类型筛选
+                if (typeValue && typeValue !== '') {
+                    if (row['类型'] !== typeValue) {
+                        return false;
+                    }
+                }
+                
+                // 分数筛选
+                if (scoreValue && scoreValue !== '') {
+                    const scoreColumns = columns.filter(col => col.includes('评分'));
+                    const hasMatchingScore = scoreColumns.some(col => {
+                        const value = row[col];
+                        if (typeof value === 'string') {
+                            return value.replace('分', '') === scoreValue;
+                        }
+                        return String(value) === scoreValue;
+                    });
+                    if (!hasMatchingScore) {
+                        return false;
+                    }
+                }
+                
+                return true;
+            });
+            
+            currentPage = 1;
+            renderTable();
+        }
+        
+        // 重置筛选
+        function resetFilters() {
+            const searchInput = document.getElementById('search-input');
+            const scoreFilter = document.getElementById('score-filter');
+            const typeFilter = document.getElementById('type-filter');
+            
+            if (searchInput) searchInput.value = '';
+            if (scoreFilter) scoreFilter.value = '';
+            if (typeFilter) typeFilter.value = '';
+            
+            filteredData = [...originalData];
+            currentPage = 1;
+            renderTable();
+        }
+        
+        // 渲染表格
+        function renderTable() {
+            const tableBody = document.getElementById('results-table-body');
+            const resultCount = document.getElementById('result-count');
+            
+            if (!tableBody) return;
+            
+            const startIndex = (currentPage - 1) * pageSize;
+            const endIndex = Math.min(startIndex + pageSize, filteredData.length);
+            const pageData = filteredData.slice(startIndex, endIndex);
+            
+            tableBody.innerHTML = pageData.map((row, index) => {
+                const globalIndex = startIndex + index;
+                return `
+                    <tr class="clickable-row" onclick="showRowDetails(${globalIndex})" title="点击查看详细信息">
+                        ${columns.map(column => {
+                            const value = row[column] || '';
+                            if (column === 'query' || column.includes('答案')) {
+                                if (typeof value === 'string' && value.length > 50) {
+                                    return `<td><div class="expandable-cell">${escapeHtml(value.substring(0, 50))}...<span class="expand-hint">点击展开</span></div></td>`;
+                                } else {
+                                    return `<td><div class="text-content">${escapeHtml(value)}</div></td>`;
+                                }
+                            } else if (column.includes('评分')) {
+                                const cleanScore = String(value).replace('分', '');
+                                return `<td><span class="score-badge score-${cleanScore}">${cleanScore}分</span></td>`;
+                            } else {
+                                if (typeof value === 'string' && value.length > 30) {
+                                    return `<td><div class="expandable-cell">${escapeHtml(value.substring(0, 30))}...<span class="expand-hint">点击展开</span></div></td>`;
+                                } else {
+                                    return `<td>${escapeHtml(value)}</td>`;
+                                }
+                            }
+                        }).join('')}
+                    </tr>
+                `;
+            }).join('');
+            
+            if (resultCount) {
+                resultCount.textContent = `共 ${filteredData.length} 条记录`;
+            }
+            
+            renderPagination();
+        }
+        
+        // 渲染分页
+        function renderPagination() {
+            const pagination = document.getElementById('pagination');
+            if (!pagination) return;
+            
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            
+            if (totalPages <= 1) {
+                pagination.innerHTML = '';
+                return;
+            }
+            
+            let paginationHtml = '';
+            
+            // 上一页
+            if (currentPage > 1) {
+                paginationHtml += `<button onclick="changePage(${currentPage - 1})" style="padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer;">上一页</button>`;
+            }
+            
+            // 页码
+            const startPage = Math.max(1, currentPage - 2);
+            const endPage = Math.min(totalPages, currentPage + 2);
+            
+            for (let i = startPage; i <= endPage; i++) {
+                const isActive = i === currentPage;
+                paginationHtml += `<button onclick="changePage(${i})" style="padding: 8px 12px; border: 1px solid #ddd; background: ${isActive ? '#007bff' : 'white'}; color: ${isActive ? 'white' : 'black'}; border-radius: 4px; cursor: pointer;">${i}</button>`;
+            }
+            
+            // 下一页
+            if (currentPage < totalPages) {
+                paginationHtml += `<button onclick="changePage(${currentPage + 1})" style="padding: 8px 12px; border: 1px solid #ddd; background: white; border-radius: 4px; cursor: pointer;">下一页</button>`;
+            }
+            
+            pagination.innerHTML = paginationHtml;
+        }
+        
+        // 切换页面
+        function changePage(page) {
+            const totalPages = Math.ceil(filteredData.length / pageSize);
+            if (page >= 1 && page <= totalPages) {
+                currentPage = page;
+                renderTable();
+            }
+        }
+        
+        // 防抖函数
+        function debounce(func, wait) {
+            let timeout;
+            return function executedFunction(...args) {
+                const later = () => {
+                    clearTimeout(timeout);
+                    func(...args);
+                };
+                clearTimeout(timeout);
+                timeout = setTimeout(later, wait);
+            };
+        }
+        
+        // HTML转义函数
+        function escapeHtml(unsafe) {
+            return String(unsafe)
+                .replace(/&/g, "&amp;")
+                .replace(/</g, "&lt;")
+                .replace(/>/g, "&gt;")
+                .replace(/"/g, "&quot;")
+                .replace(/'/g, "&#039;");
+        }
+
+        // 修改原有的showRowDetails函数，使其使用filteredData
+        function showRowDetails(index) {
+            const row = filteredData[index];
+            if (!row) return;
+            
+            const modal = document.getElementById('detailModal');
+            const bodyElement = document.getElementById('detailModalBody');
+            if (!modal || !bodyElement) return;
+            
+            // 构建详细内容
+            let detailHtml = `
+                <div class="detail-section">
+                    <h4><i class="fas fa-question-circle"></i> 问题内容</h4>
+                    <div class="content-container">
+                        ${escapeHtml(row.query || '无问题内容')}
+                    </div>
+                </div>
+            `;
+            
+            // 标准答案
+            const standardAnswer = row['标准答案'] || row['参考答案'] || '';
+            if (standardAnswer) {
+                detailHtml += `
+                    <div class="detail-section">
+                        <h4><i class="fas fa-star"></i> 标准答案</h4>
+                        <div class="content-container standard-answer">
+                            ${escapeHtml(standardAnswer)}
+                        </div>
+                    </div>
+                `;
+            }
+            
+            // 模型答案和评分
+            const answerColumns = columns.filter(col => col.includes('答案') && !col.includes('标准'));
+            answerColumns.forEach(col => {
+                const modelName = col.replace('_答案', '').replace('答案', '').trim();
+                const scoreCol = columns.find(c => c.includes(modelName) && c.includes('评分'));
+                const reasonCol = columns.find(c => c.includes(modelName) && (c.includes('原因') || c.includes('理由')));
+                
+                const answer = row[col] || '';
+                const score = row[scoreCol] || '';
+                const reason = row[reasonCol] || '';
+                
+                detailHtml += `
+                    <div class="detail-section">
+                        <h4><i class="fas fa-robot"></i> ${modelName} 回答</h4>
+                        <div class="model-answer">
+                            <div class="content-container">${escapeHtml(answer)}</div>
+                            <div class="score-info">
+                                <span class="score-badge score-${String(score).replace('分', '')}">
+                                    评分: ${String(score).replace('分', '')}分
+                                </span>
+                                ${reason ? `<div class="score-reason">评分理由: ${escapeHtml(reason)}</div>` : ''}
+                            </div>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            // 其他信息
+            const otherColumns = columns.filter(col => 
+                !col.includes('答案') && !col.includes('评分') && 
+                !col.includes('原因') && !col.includes('理由') && 
+                col !== 'query' && col !== '问题' && col !== '序号'
+            );
+            
+            if (otherColumns.length > 0) {
+                detailHtml += '<div class="detail-section"><h4><i class="fas fa-info-circle"></i> 其他信息</h4>';
+                otherColumns.forEach(col => {
+                    const value = row[col] || '';
+                    if (value) {
+                        detailHtml += `<div class="info-item"><strong>${col}:</strong> ${escapeHtml(value)}</div>`;
+                    }
+                });
+                detailHtml += '</div>';
+            }
+            
+            bodyElement.innerHTML = detailHtml;
+            modal.style.display = 'block';
+            document.body.style.overflow = 'hidden';
+        }
         
         // 加载完成后的初始化
         document.addEventListener('DOMContentLoaded', function() {
             console.log('分享页面加载完成');
+            
+            // 初始化筛选功能
+            populateTypeFilter();
+            initializeEventListeners();
+            renderTable();
             
 
             
