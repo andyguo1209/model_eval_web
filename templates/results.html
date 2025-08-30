@@ -1412,9 +1412,10 @@
         // 获取单元格样式类和处理评分显示
         function getCellClass(column, value) {
             if (column.includes('评分')) {
-                const score = parseFloat(value);
-                if (!isNaN(score)) {
-                    return `score-cell score-${Math.round(score)}`;
+                // 使用统一的分数格式化函数获取CSS类
+                const scoreFormat = formatScore(value);
+                if (scoreFormat) {
+                    return `score-cell ${scoreFormat.cssClass}`;
                 }
             }
             return '';
@@ -1422,12 +1423,13 @@
         
         // 格式化单元格值（统一评分显示）
         function formatCellValue(column, value) {
-            if (column.includes('评分') && value !== null && value !== undefined && value !== '') {
-                // 确保评分列显示统一的"分"单位
-                const numValue = parseFloat(value);
-                if (!isNaN(numValue)) {
-                    return `${numValue}分`;
+            if (column.includes('评分')) {
+                // 使用统一的分数格式化函数
+                const scoreFormat = formatScore(value);
+                if (scoreFormat) {
+                    return scoreFormat.displayText;
                 }
+                return value; // 如果格式化失败，返回原值
             }
             return value;
         }
@@ -1658,6 +1660,36 @@
                 .replace(/'/g, "&#039;");
         }
         
+        // 统一的分数格式化函数 - 避免"1分分"问题
+        function formatScore(score) {
+            // 处理空值、null、undefined
+            if (score === null || score === undefined || score === '') {
+                return null;
+            }
+            
+            // 特殊处理0分情况（数字0、字符串'0'、浮点数0.0）
+            if (score === 0 || score === '0' || parseFloat(score) === 0) {
+                return { cleanScore: 0, displayText: '0分', cssClass: 'score-0' };
+            }
+            
+            // 转换为字符串并清理"分"字
+            const scoreStr = String(score).trim();
+            const cleanScore = scoreStr.replace(/分+$/, ''); // 移除末尾的一个或多个"分"字
+            
+            // 尝试解析为数字
+            const numScore = parseFloat(cleanScore);
+            if (isNaN(numScore)) {
+                console.warn(`⚠️ 无效分数格式: ${score}`);
+                return null; // 无效分数
+            }
+            
+            return {
+                cleanScore: numScore,
+                displayText: `${numScore}分`,
+                cssClass: `score-${Math.round(numScore)}`
+            };
+        }
+        
         // 切换显示模式（原始文本/渲染后）
         function toggleMarkdownMode(element, originalText) {
             const isRendered = element.classList.contains('markdown-rendered');
@@ -1814,7 +1846,7 @@
                     ${(row[key.replace('答案', '评分')] !== null && row[key.replace('答案', '评分')] !== undefined && row[key.replace('答案', '评分')] !== '') || row[key.replace('答案', '评分')] === 0 ? `
                         <div class="score-edit-section">
                             <p><strong>评分：</strong>
-                                <span class="score-cell score-${row[key.replace('答案', '评分')]}">${row[key.replace('答案', '评分')]}分</span>
+                                <span class="score-cell score-${String(row[key.replace('答案', '评分')]).replace(/分+$/, '')}">${String(row[key.replace('答案', '评分')]).replace(/分+$/, '')}分</span>
                                 ${window.currentUserData && (window.currentUserData.role === 'admin' || window.currentUserData.role === 'reviewer') ? `
                                     <button class="edit-score-btn" onclick="editScore(${index}, '${key.replace('答案', '评分')}', ${row[key.replace('答案', '评分')]})">
                                         <i class="fas fa-edit"></i> 修改评分

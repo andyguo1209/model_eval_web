@@ -1037,10 +1037,13 @@
                         <div class="model-answer-section">
                             <div class="model-name">
                                 <i class="fas fa-brain"></i> ${escapeHtml(modelName)}
-                                ${score === 0 || score === '0' || parseFloat(score) === 0 ? 
-                                    `<span class="score-badge score-0">0分</span>` : 
-                                    (score !== null && score !== undefined && score !== '') ? 
-                                    `<span class="score-badge score-${String(score).replace('分', '')}">${score}分</span>` : ''}
+                                ${(() => {
+                                    const scoreFormat = formatScore(score);
+                                    if (scoreFormat) {
+                                        return `<span class="score-badge ${scoreFormat.cssClass}">${scoreFormat.displayText}</span>`;
+                                    }
+                                    return '';
+                                })()}
                             </div>
                             <div class="detail-content" style="margin-bottom: 10px;">${escapeHtml(answer)}</div>
                             ${reason ? `
@@ -1279,18 +1282,10 @@
                                     return `<td><div class="text-content">${escapeHtml(value)}</div></td>`;
                                 }
                             } else if (column.includes('评分')) {
-                                // 调试信息：确认0分被正确处理
-                                if (value === 0 || value === '0' || parseFloat(value) === 0) {
-                                    console.log(`✅ 0分已正确识别: ${value} (${typeof value})`);
-                                }
-                                
-                                // 正确处理评分值，包括0分的情况
-                                if (value === 0 || value === '0' || parseFloat(value) === 0) {
-                                    // 优先处理0分的情况（包括数字0和字符串'0'）
-                                    return `<td><span class="score-badge score-0">0分</span></td>`;
-                                } else if (value !== null && value !== undefined && value !== '') {
-                                    const cleanScore = String(value).replace('分', '');
-                                    return `<td><span class="score-badge score-${cleanScore}">${cleanScore}分</span></td>`;
+                                // 使用统一的分数格式化函数
+                                const scoreFormat = formatScore(value);
+                                if (scoreFormat) {
+                                    return `<td><span class="score-badge ${scoreFormat.cssClass}">${scoreFormat.displayText}</span></td>`;
                                 } else {
                                     return `<td>-</td>`;
                                 }
@@ -1379,6 +1374,36 @@
                 .replace(/>/g, "&gt;")
                 .replace(/"/g, "&quot;")
                 .replace(/'/g, "&#039;");
+        }
+        
+        // 统一的分数格式化函数 - 避免"1分分"问题
+        function formatScore(score) {
+            // 处理空值、null、undefined
+            if (score === null || score === undefined || score === '') {
+                return null;
+            }
+            
+            // 特殊处理0分情况（数字0、字符串'0'、浮点数0.0）
+            if (score === 0 || score === '0' || parseFloat(score) === 0) {
+                return { cleanScore: 0, displayText: '0分', cssClass: 'score-0' };
+            }
+            
+            // 转换为字符串并清理"分"字
+            const scoreStr = String(score).trim();
+            const cleanScore = scoreStr.replace(/分+$/, ''); // 移除末尾的一个或多个"分"字
+            
+            // 尝试解析为数字
+            const numScore = parseFloat(cleanScore);
+            if (isNaN(numScore)) {
+                console.warn(`⚠️ 无效分数格式: ${score}`);
+                return null; // 无效分数
+            }
+            
+            return {
+                cleanScore: numScore,
+                displayText: `${numScore}分`,
+                cssClass: `score-${Math.round(numScore)}`
+            };
         }
 
 

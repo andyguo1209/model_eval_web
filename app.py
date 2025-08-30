@@ -123,6 +123,32 @@ if GOOGLE_API_KEY:
 else:
     print("⚠️ 未配置GOOGLE_API_KEY")
 
+# 日志开关配置 - 支持环境变量和数据库配置
+def get_verbose_logging_status():
+    """获取详细日志开关状态，优先读取数据库配置，然后是环境变量"""
+    try:
+        if db:
+            db_config = db.get_system_config('enable_verbose_logging')
+            if db_config is not None:
+                return db_config.lower() in ["true", "1", "yes", "on"]
+    except Exception:
+        pass
+    # 如果数据库配置不存在或读取失败，使用环境变量
+    return os.getenv("ENABLE_VERBOSE_LOGGING", "true").lower() in ["true", "1", "yes", "on"]
+
+ENABLE_VERBOSE_LOGGING = get_verbose_logging_status()
+if ENABLE_VERBOSE_LOGGING:
+    print("🔍 详细日志已启用")
+else:
+    print("🔕 详细日志已禁用")
+
+def log_verbose(*args, **kwargs):
+    """详细日志输出函数，受开关控制，每次调用时动态检查配置"""
+    # 每次调用时重新检查配置状态
+    current_status = get_verbose_logging_status()
+    if current_status:
+        print(*args, **kwargs)
+
 # 全局任务状态管理
 task_status = {}
 
@@ -396,6 +422,18 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
         }
     }
     
+    # 🔍 [Google API日志] 输出发送给Google的最终prompt
+    log_verbose("=" * 80)
+    log_verbose(f"📤 [Google Gemini API] 发送Prompt到: {url}")
+    log_verbose(f"🔑 [API密钥] {actual_api_key[:10]}...{actual_api_key[-4:] if len(actual_api_key) > 14 else '****'}")
+    log_verbose(f"🎯 [模型名称] {model_name}")
+    log_verbose("📋 [最终Prompt内容]:")
+    log_verbose("-" * 40)
+    log_verbose(prompt)
+    log_verbose("-" * 40)
+    log_verbose(f"⚙️ [生成配置] 温度: {data['generationConfig']['temperature']}, 最大令牌: {data['generationConfig']['maxOutputTokens']}")
+    log_verbose("=" * 80)
+    
     # 尝试重试机制
     last_error = None
     for attempt in range(retry_count):
@@ -484,6 +522,16 @@ async def query_gemini_model(prompt: str, api_key: str = None, retry_count: int 
                                             continue
                                     
                                     print(f"✅ Gemini评测成功，返回长度: {len(text_result)}")
+                                    
+                                    # 🔍 [Google API响应日志] 输出Google的响应内容
+                                    log_verbose("=" * 80)
+                                    log_verbose("📨 [Google Gemini API] 响应内容:")
+                                    log_verbose("-" * 40)
+                                    log_verbose(text_result[:500] + ("..." if len(text_result) > 500 else ""))  # 显示前500字符
+                                    log_verbose("-" * 40)
+                                    log_verbose(f"📏 [响应长度] {len(text_result)} 字符")
+                                    log_verbose("=" * 80)
+                                    
                                     return text_result
                         
                         # 如果到这里，说明响应格式异常
@@ -598,13 +646,29 @@ def build_subjective_eval_prompt(query: str, answers: Dict[str, str], question_t
                 score_instruction = "请严格按照上述自定义提示词中定义的评分标准进行评分"
                 score_validation = "评分必须符合自定义提示词中定义的评分标准和范围"
             else:
-                print(f"❌ [评测引擎] 文件 {filename} 未设置自定义提示词！")
-                raise ValueError(f"文件 {filename} 必须设置自定义评测提示词才能进行主观题评测。请在管理后台为该文件配置评测提示词。")
+                print(f"⚠️ [评测引擎] 文件 {filename} 未设置自定义提示词，尝试使用默认提示词...")
+                # 尝试使用默认主观题提示词
+                default_prompt = db.get_default_prompt('subjective')
+                if default_prompt:
+                    print(f"✅ [评测引擎] 使用默认主观题提示词，长度: {len(default_prompt)} 字符")
+                    custom_prompt = default_prompt
+                else:
+                    print(f"❌ [评测引擎] 未找到默认主观题提示词！")
+                    raise ValueError(f"文件 {filename} 未设置自定义提示词，且系统默认主观题提示词不存在。请在管理后台配置评分标准或为该文件设置自定义提示词。")
         except Exception as e:
-            if "必须设置自定义评测提示词" in str(e):
+            if "未设置自定义提示词，且系统默认" in str(e):
                 raise e
-            print(f"⚠️ [评测引擎] 获取文件 {filename} 的自定义提示词失败: {e}")
-            raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
+            print(f"⚠️ [评测引擎] 获取文件 {filename} 的评测提示词失败: {e}")
+            # 最后尝试默认提示词
+            try:
+                default_prompt = db.get_default_prompt('subjective')
+                if default_prompt:
+                    print(f"✅ [评测引擎] 异常情况下使用默认主观题提示词作为备选")
+                    custom_prompt = default_prompt
+                else:
+                    raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
+            except:
+                raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
     else:
         print(f"❌ [评测引擎] 主观题评测必须提供文件名以获取自定义提示词！")
         raise ValueError("主观题评测必须设置自定义评测提示词。请确保上传的文件已配置相应的评测标准。")
@@ -679,13 +743,29 @@ def build_objective_eval_prompt(query: str, standard_answer: str, answers: Dict[
                 score_instruction = "请严格按照上述自定义提示词中定义的评分标准进行评分"
                 score_validation = "评分必须符合自定义提示词中定义的评分标准和范围"
             else:
-                print(f"❌ [客观题评测引擎] 文件 {filename} 未设置自定义提示词！")
-                raise ValueError(f"文件 {filename} 必须设置自定义评测提示词才能进行客观题评测。请在管理后台为该文件配置评测提示词。")
+                print(f"⚠️ [客观题评测引擎] 文件 {filename} 未设置自定义提示词，尝试使用默认提示词...")
+                # 尝试使用默认客观题提示词
+                default_prompt = db.get_default_prompt('objective')
+                if default_prompt:
+                    print(f"✅ [客观题评测引擎] 使用默认客观题提示词，长度: {len(default_prompt)} 字符")
+                    custom_prompt = default_prompt
+                else:
+                    print(f"❌ [客观题评测引擎] 未找到默认客观题提示词！")
+                    raise ValueError(f"文件 {filename} 未设置自定义提示词，且系统默认客观题提示词不存在。请在管理后台配置评分标准或为该文件设置自定义提示词。")
         except Exception as e:
-            if "必须设置自定义评测提示词" in str(e):
+            if "未设置自定义提示词，且系统默认" in str(e):
                 raise e
-            print(f"⚠️ [客观题评测引擎] 获取文件 {filename} 的自定义提示词失败: {e}")
-            raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
+            print(f"⚠️ [客观题评测引擎] 获取文件 {filename} 的评测提示词失败: {e}")
+            # 最后尝试默认提示词
+            try:
+                default_prompt = db.get_default_prompt('objective')
+                if default_prompt:
+                    print(f"✅ [客观题评测引擎] 异常情况下使用默认客观题提示词作为备选")
+                    custom_prompt = default_prompt
+                else:
+                    raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
+            except:
+                raise ValueError(f"无法获取文件 {filename} 的评测提示词，请检查文件设置或联系管理员。")
     else:
         print(f"❌ [客观题评测引擎] 客观题评测必须提供文件名以获取自定义提示词！")
         raise ValueError("客观题评测必须设置自定义评测提示词。请确保上传的文件已配置相应的评测标准。")
@@ -823,6 +903,18 @@ async def evaluate_models(data: List[Dict], mode: str, model_results: Dict[str, 
                     
                     try:
                         print(f"🔄 开始评测第{i+1}题...")
+                        
+                        # 🔍 [评测上下文日志] 显示即将评测的问题信息
+                        log_verbose("=" * 60)
+                        log_verbose(f"📋 [评测上下文] 第{i+1}题 ({mode}模式)")
+                        log_verbose(f"❓ 问题: {query[:100]}{'...' if len(query) > 100 else ''}")
+                        if mode == 'objective' and standard_answer:
+                            log_verbose(f"✅ 标准答案: {standard_answer[:50]}{'...' if len(standard_answer) > 50 else ''}")
+                        log_verbose(f"🤖 模型数量: {len(current_answers)}")
+                        for model_name, answer in current_answers.items():
+                            log_verbose(f"   - {model_name}: {answer[:50]}{'...' if len(answer) > 50 else ''}")
+                        log_verbose("=" * 60)
+                        
                         gem_raw = await query_gemini_model(prompt, google_api_key)
                         result_json = parse_json_str(gem_raw)
                         print(f"✅ 完成评测第{i+1}题")
@@ -5152,14 +5244,35 @@ def start_background_tasks():
     cleanup_thread.start()
     print("🔄 后台清理任务已启动")
 
-# 初始化默认管理员账户
+def initialize_system_configs():
+    """初始化系统配置项"""
+    if not db:
+        return
+    
+    # 初始化日志开关配置
+    existing_log_config = db.get_system_config('enable_verbose_logging')
+    if existing_log_config is None:
+        db.set_system_config(
+            'enable_verbose_logging', 
+            'true', 
+            'logging', 
+            '是否启用详细日志输出（包括Google API请求/响应详情）', 
+            'system'
+        )
+        print("✅ 初始化日志开关配置：启用")
+
+# 初始化默认管理员账户和默认提示词
 try:
     if db:
         db.init_default_admin()
+        # 初始化默认评测提示词
+        db.initialize_default_prompts()
+        # 初始化系统配置
+        initialize_system_configs()
         # 启动后台任务
         start_background_tasks()
 except Exception as e:
-    print(f"⚠️ 初始化默认管理员失败: {e}")
+    print(f"⚠️ 初始化系统数据失败: {e}")
 
 
 if __name__ == '__main__':

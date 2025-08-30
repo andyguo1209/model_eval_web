@@ -831,8 +831,158 @@ class EvaluationDatabase:
             conn.commit()
             return cursor.rowcount > 0
     
-    # ========== 评分标准管理方法 (已废弃) ==========
-    # 注意: 以下方法已废弃，系统已简化为只使用文件提示词功能
+    # ========== 默认提示词管理方法 ==========
+    
+    def get_default_prompt(self, prompt_type: str) -> Optional[str]:
+        """获取默认提示词
+        Args:
+            prompt_type: 提示词类型 ('objective', 'subjective', 'mixed')
+        Returns:
+            提示词内容，如果不存在返回None
+        """
+        config_key = f'default_prompt_{prompt_type}'
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute('SELECT config_value FROM system_configs WHERE config_key = ?', (config_key,))
+            result = cursor.fetchone()
+            return result[0] if result else None
+    
+    def set_default_prompt(self, prompt_type: str, prompt_content: str, updated_by: str = 'admin') -> bool:
+        """设置默认提示词
+        Args:
+            prompt_type: 提示词类型 ('objective', 'subjective', 'mixed')
+            prompt_content: 提示词内容
+            updated_by: 更新者
+        Returns:
+            是否设置成功
+        """
+        config_key = f'default_prompt_{prompt_type}'
+        description = f'{prompt_type.title()}题型默认评测提示词'
+        
+        return self.set_system_config(
+            config_key=config_key,
+            config_value=prompt_content,
+            config_type='string',
+            description=description,
+            category='evaluation',
+            is_sensitive=False,
+            updated_by=updated_by
+        )
+    
+    def initialize_default_prompts(self) -> bool:
+        """初始化默认提示词（如果不存在）"""
+        try:
+            # 客观题默认提示词
+            objective_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行客观、公正的评测：
+
+**评分标准**
+如果模型回答完整覆盖参考答案核心信息（含参考答案为单一结论，模型在该结论基础上补充合理相关细节），且无错误信息，给 1 分；
+如果模型回答未包含参考答案核心信息，或包含与参考答案核心信息相悖的错误内容，给 0 分。
+
+**评测要求**
+必须明确给出分数（只能是 0 或 1）；
+必须提供合理、简洁、逻辑自洽的理由；
+理由需先判断模型是否覆盖参考答案核心信息，再说明是否存在补充细节及细节合理性（若有），或说明未覆盖核心信息 / 存在错误的具体情况。
+
+**示例**
+示例 1：
+题目：北京是中国的首都吗？
+参考答案：是
+模型回答：是
+评测结果：评分 1，理由：模型回答完整覆盖参考答案 "是" 的核心信息，无错误信息，与参考答案一致。
+
+示例 2：
+题目：2+2 等于几？
+参考答案：4
+模型回答：2+2=4
+评测结果：评分 1，理由：模型回答完整覆盖参考答案 "4" 的核心信息，无错误信息，与参考答案核心内容相符。
+
+示例 3：
+题目：美国总统是谁？（截至 2025 年 8 月）
+参考答案：乔・拜登
+模型回答：特朗普
+评测结果：评分 0，理由：参考答案核心信息为 "乔・拜登"，模型回答 "特朗普" 未覆盖该核心信息，且与核心信息相悖，存在错误。
+
+示例 4：
+题目：一年有多少天？
+参考答案：365
+模型回答：一年通常有 365 天，闰年则有 366 天。闰年是为了弥补因人为历法规定的年度天数与地球实际公转周期的时间差而设立的。闰年的规则是：能被 4 整除但不能被 100 整除，或者能被 400 整除的年份是闰年。例如，2000 年是闰年，而 1900 年不是闰年。
+评测结果：评分 1，理由：模型回答完整覆盖参考答案 "365" 的核心信息，补充的闰年相关内容合理且无错误，未偏离核心问题，符合要求。"""
+            
+            # 主观题默认提示词
+            subjective_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行主观评测：
+
+**评分标准**
+采用 0-5 分制评分，分数含义如下：
+- 5分：回答优秀，内容全面、准确、有深度，逻辑清晰，表达流畅
+- 4分：回答良好，内容较为全面准确，逻辑基本清晰，表达较好
+- 3分：回答一般，内容基本正确但不够深入，逻辑一般，表达尚可
+- 2分：回答较差，内容不够准确或不完整，逻辑混乱，表达不清
+- 1分：回答很差，内容错误较多，逻辑不通，表达糟糕
+- 0分：未回答、完全错误或完全不相关
+
+**评测要求**
+必须明确给出分数（0-5分的整数）；
+必须提供详细、客观的评分理由；
+评分理由应从内容准确性、完整性、逻辑性、表达质量等维度进行分析；
+保持评分标准的一致性和公正性。
+
+**评测维度**
+1. 内容准确性：信息是否正确，是否有事实错误
+2. 内容完整性：回答是否全面，是否遗漏重要信息
+3. 逻辑清晰度：论述是否有条理，逻辑是否自洽
+4. 表达质量：语言是否流畅，表述是否清晰易懂"""
+            
+            # 混合题默认提示词
+            mixed_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行混合评测：
+
+**评分标准**
+根据题目类型采用相应的评分标准：
+- 对于有标准答案的客观题：采用0-1分制，完全正确得1分，否则得0分
+- 对于开放性主观题：采用0-5分制，根据回答质量给分
+- 对于半开放题：结合准确性和表达质量综合评分
+
+**评测要求**
+必须明确给出分数；
+必须提供详细的评分理由；
+需要明确说明采用的评分标准（0-1分制或0-5分制）；
+保持评分的客观性和一致性。
+
+**评测流程**
+1. 首先判断题目类型（客观题/主观题/半开放题）
+2. 根据题目类型选择相应的评分标准
+3. 进行详细的评分分析
+4. 给出最终分数和理由"""
+            
+            # 检查并初始化每种提示词
+            if not self.get_default_prompt('objective'):
+                self.set_default_prompt('objective', objective_prompt, 'system')
+                print("✅ 初始化客观题默认提示词")
+            
+            if not self.get_default_prompt('subjective'):
+                self.set_default_prompt('subjective', subjective_prompt, 'system')
+                print("✅ 初始化主观题默认提示词")
+            
+            if not self.get_default_prompt('mixed'):
+                self.set_default_prompt('mixed', mixed_prompt, 'system')
+                print("✅ 初始化混合题默认提示词")
+            
+            return True
+        except Exception as e:
+            print(f"❌ 初始化默认提示词失败: {e}")
+            return False
+    
+    def _count_prompt_usage(self, prompt_type: str) -> int:
+        """统计默认提示词的使用次数（估算）"""
+        try:
+            # 这里可以统计使用该类型默认提示词的文件数量
+            # 暂时返回一个合理的估算值
+            return 0
+        except:
+            return 0
+    
+    # ========== 评分标准管理方法 ==========
+    # 基于系统配置表的默认提示词管理
     
     def create_scoring_criteria(self, name: str = None, description: str = None, criteria_type: str = None,
                               criteria_config: Dict = None, dataset_pattern: str = None,
@@ -842,24 +992,121 @@ class EvaluationDatabase:
         return None
     
     def get_scoring_criteria(self, criteria_id: str) -> Optional[Dict]:
-        """获取指定评分标准 - 已废弃，请使用文件提示词功能"""
-        print("⚠️ [废弃警告] get_scoring_criteria方法已废弃，请使用文件提示词功能")
-        return None
+        """获取指定评分标准（基于默认提示词）"""
+        try:
+            # 解析criteria_id，格式：default_objective, default_subjective, default_mixed
+            if not criteria_id.startswith('default_'):
+                return None
+                
+            prompt_type = criteria_id.replace('default_', '')
+            if prompt_type not in ['objective', 'subjective', 'mixed']:
+                return None
+                
+            prompt_content = self.get_default_prompt(prompt_type)
+            if not prompt_content:
+                return None
+                
+            return {
+                'id': criteria_id,
+                'name': f'{prompt_type.title()}题型默认评分标准',
+                'description': f'{prompt_type.title()}题型的系统默认评测提示词',
+                'criteria_type': prompt_type,
+                'criteria_config': {
+                    'prompt': prompt_content,
+                    'type': prompt_type,
+                    'score_range': '0-1' if prompt_type == 'objective' else '0-5' if prompt_type == 'subjective' else 'mixed'
+                },
+                'is_default': True,
+                'is_active': True,
+                'created_at': '系统内置',
+                'updated_at': '系统管理',
+                'created_by': 'system',
+                'usage_count': self._count_prompt_usage(prompt_type)
+            }
+        except Exception as e:
+            print(f"❌ 获取评分标准详情失败: {e}")
+            return None
     
     def get_all_scoring_criteria(self, criteria_type: str = None, active_only: bool = True) -> List[Dict]:
-        """获取所有评分标准 - 已废弃，请使用文件提示词功能"""
-        print("⚠️ [废弃警告] get_all_scoring_criteria方法已废弃，请使用文件提示词功能")
-        return []
+        """获取所有评分标准（基于默认提示词）"""
+        try:
+            criteria = []
+            prompt_types = ['objective', 'subjective', 'mixed']
+            
+            if criteria_type:
+                prompt_types = [criteria_type] if criteria_type in prompt_types else []
+            
+            for ptype in prompt_types:
+                prompt_content = self.get_default_prompt(ptype)
+                if prompt_content:
+                    # 转换为评分标准格式
+                    criteria.append({
+                        'id': f'default_{ptype}',
+                        'name': f'{ptype.title()}题型默认评分标准',
+                        'description': f'{ptype.title()}题型的系统默认评测提示词',
+                        'criteria_type': ptype,
+                        'criteria_config': {
+                            'prompt': prompt_content,
+                            'type': ptype,
+                            'score_range': '0-1' if ptype == 'objective' else '0-5' if ptype == 'subjective' else 'mixed'
+                        },
+                        'is_default': True,
+                        'is_active': True,
+                        'created_at': '系统内置',
+                        'updated_at': '系统管理',
+                        'created_by': 'system',
+                        'usage_count': self._count_prompt_usage(ptype)
+                    })
+            
+            return criteria
+        except Exception as e:
+            print(f"❌ 获取评分标准失败: {e}")
+            return []
     
     def update_scoring_criteria(self, criteria_id: str, **kwargs) -> bool:
-        """更新评分标准 - 已废弃，请使用文件提示词功能"""
-        print("⚠️ [废弃警告] update_scoring_criteria方法已废弃，请使用文件提示词功能")
-        return False
+        """更新评分标准（基于默认提示词）"""
+        try:
+            # 解析criteria_id
+            if not criteria_id.startswith('default_'):
+                print(f"❌ 不支持更新非默认评分标准: {criteria_id}")
+                return False
+                
+            prompt_type = criteria_id.replace('default_', '')
+            if prompt_type not in ['objective', 'subjective', 'mixed']:
+                print(f"❌ 无效的提示词类型: {prompt_type}")
+                return False
+            
+            # 检查更新字段
+            criteria_config = kwargs.get('criteria_config')
+            if criteria_config and 'prompt' in criteria_config:
+                new_prompt = criteria_config['prompt']
+                updated_by = kwargs.get('updated_by', 'admin')
+                
+                # 更新默认提示词
+                success = self.set_default_prompt(prompt_type, new_prompt, updated_by)
+                if success:
+                    print(f"✅ 更新{prompt_type}题型默认提示词成功")
+                    return True
+                else:
+                    print(f"❌ 更新{prompt_type}题型默认提示词失败")
+                    return False
+            
+            # 其他字段更新（暂时忽略，因为默认提示词只关心内容）
+            print(f"⚠️ 仅支持更新提示词内容，忽略其他字段更新")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 更新评分标准失败: {e}")
+            return False
     
     def delete_scoring_criteria(self, criteria_id: str) -> bool:
-        """删除评分标准 - 已废弃，请使用文件提示词功能"""
-        print("⚠️ [废弃警告] delete_scoring_criteria方法已废弃，请使用文件提示词功能")
-        return False
+        """删除评分标准（默认提示词不可删除）"""
+        if criteria_id.startswith('default_'):
+            print(f"⚠️ 默认评分标准不可删除: {criteria_id}")
+            return False
+        else:
+            print(f"⚠️ 仅支持默认评分标准管理")
+            return False
     
     def get_default_scoring_criteria(self, criteria_type: str) -> Optional[Dict]:
         """获取默认评分标准 - 已废弃，请使用文件提示词功能"""
@@ -918,45 +1165,14 @@ class EvaluationDatabase:
                 is_objective = self._detect_objective_questions(filename)
                 
                 if is_objective:
-                    # 客观题默认提示词
-                    default_prompt = """你是一位专业的大模型测评工程师，请根据以下要求对模型的回答进行客观、公正的评测：
-
-**评分标准**
-如果模型回答完整覆盖参考答案核心信息（含参考答案为单一结论，模型在该结论基础上补充合理相关细节），且无错误信息，给 1 分；
-如果模型回答未包含参考答案核心信息，或包含与参考答案核心信息相悖的错误内容，给 0 分。
-
-**评测要求**
-必须明确给出分数（只能是 0 或 1）；
-必须提供合理、简洁、逻辑自洽的理由；
-理由需先判断模型是否覆盖参考答案核心信息，再说明是否存在补充细节及细节合理性（若有），或说明未覆盖核心信息 / 存在错误的具体情况。
-
-**示例**
-示例 1：
-题目：北京是中国的首都吗？
-参考答案：是
-模型回答：是
-评测结果：评分 1，理由：模型回答完整覆盖参考答案 "是" 的核心信息，无错误信息，与参考答案一致。
-
-示例 2：
-题目：2+2 等于几？
-参考答案：4
-模型回答：2+2=4
-评测结果：评分 1，理由：模型回答完整覆盖参考答案 "4" 的核心信息，无错误信息，与参考答案核心内容相符。
-
-示例 3：
-题目：美国总统是谁？（截至 2025 年 8 月）
-参考答案：乔・拜登
-模型回答：特朗普
-评测结果：评分 0，理由：参考答案核心信息为 "乔・拜登"，模型回答 "特朗普" 未覆盖该核心信息，且与核心信息相悖，存在错误。
-
-示例 4：
-题目：一年有多少天？
-参考答案：365
-模型回答：一年通常有 365 天，闰年则有 366 天。闰年是为了弥补因人为历法规定的年度天数与地球实际公转周期的时间差而设立的。闰年的规则是：能被 4 整除但不能被 100 整除，或者能被 400 整除的年份是闰年。例如，2000 年是闰年，而 1900 年不是闰年。
-评测结果：评分 1，理由：模型回答完整覆盖参考答案 "365" 的核心信息，补充的闰年相关内容合理且无错误，未偏离核心问题，符合要求。"""
+                    # 从数据库获取客观题默认提示词
+                    default_prompt = self.get_default_prompt('objective')
                 else:
-                    # 主观题或其他类型的通用指导提示词
-                    default_prompt = """请为此文件设置自定义的评测提示词。
+                    # 从数据库获取主观题默认提示词
+                    default_prompt = self.get_default_prompt('subjective')
+                    if not default_prompt:
+                        # 如果数据库中没有，使用备用提示词
+                        default_prompt = """请为此文件设置自定义的评测提示词。
 
 ⚠️ 重要提示：
 - 系统不再提供默认的评分标准

@@ -240,6 +240,106 @@
             animation: modalSlideIn 0.3s ease-out;
         }
         
+        /* 编辑模态框特殊样式 - 更大更宽 */
+        #criteriaModal .modal-content {
+            width: 98%;
+            max-width: 1400px;
+            max-height: 95vh;
+            margin: 1% auto;
+        }
+        
+        #criteriaModal .modal-body {
+            padding: 20px 30px 30px;
+            max-height: 85vh;
+            overflow-y: auto;
+        }
+        
+        /* 编辑表单布局优化 */
+        #criteriaModal .form-group {
+            margin-bottom: 20px;
+        }
+        
+        #criteriaModal .form-row {
+            display: flex;
+            gap: 20px;
+            align-items: flex-start;
+        }
+        
+        #criteriaModal .form-row .form-group {
+            flex: 1;
+            margin-bottom: 15px;
+        }
+        
+        /* 基本信息区域更紧凑 */
+        #criteriaModal .compact-info {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 25px;
+        }
+        
+        #criteriaModal .compact-info .form-row {
+            margin-bottom: 10px;
+        }
+        
+        #criteriaModal .compact-info .form-row:last-child {
+            margin-bottom: 0;
+        }
+        
+        /* 提示词编辑区域 */
+        #criteriaModal .prompt-section {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        #criteriaModal #criteriaPrompt {
+            min-height: 55vh;
+            resize: vertical;
+            flex: 1;
+        }
+        
+        #criteriaModal .form-help {
+            margin-top: 10px;
+        }
+        
+        /* 按钮区域样式 */
+        #criteriaModal .btn-group {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid #e9ecef;
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            flex-shrink: 0;
+        }
+        
+        #criteriaModal .btn {
+            min-width: 100px;
+        }
+        
+        /* 响应式调整 */
+        @media (max-width: 1200px) {
+            #criteriaModal .modal-content {
+                max-width: 95%;
+            }
+            
+            #criteriaModal #criteriaPrompt {
+                min-height: 50vh;
+            }
+        }
+        
+        @media (max-width: 768px) {
+            #criteriaModal .form-row {
+                flex-direction: column;
+                gap: 0;
+            }
+            
+            #criteriaModal #criteriaPrompt {
+                min-height: 40vh;
+            }
+        }
+        
         .modal-header {
             display: flex;
             justify-content: space-between;
@@ -370,51 +470,51 @@
             </div>
             
             <div class="modal-body">
-                <form id="criteriaForm">
+                <form id="criteriaForm" style="display: flex; flex-direction: column; height: 100%;">
                     <input type="hidden" id="criteriaId" value="">
                     <input type="hidden" id="isEdit" value="false">
                     
-                    <div class="form-row">
-                        <div class="form-group">
-                            <label for="criteriaName">标准名称 *</label>
-                            <input type="text" id="criteriaName" name="name" required 
-                                   placeholder="例: 主观题标准评分标准">
+                    <!-- 基本信息区域 -->
+                    <div class="compact-info">
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="criteriaName">标准名称 *</label>
+                                <input type="text" id="criteriaName" name="name" required 
+                                       placeholder="例: 主观题标准评分标准">
+                            </div>
+                            <div class="form-group">
+                                <label for="criteriaType">评测类型</label>
+                                <select id="criteriaType" name="criteria_type">
+                                    <option value="subjective">主观题</option>
+                                    <option value="objective">客观题</option>
+                                    <option value="mixed">混合题</option>
+                                </select>
+                            </div>
                         </div>
-                        <div class="form-group">
-                            <label for="criteriaType">评测类型</label>
-                            <select id="criteriaType" name="criteria_type">
-                                <option value="subjective">主观题</option>
-                                <option value="objective">客观题</option>
-                                <option value="mixed">混合题</option>
-                            </select>
+                        
+                        <div class="form-row">
+                            <div class="form-group" style="flex: 1;">
+                                <label for="criteriaDescription">描述</label>
+                                <textarea id="criteriaDescription" name="description" rows="2" 
+                                          placeholder="评分标准的说明和适用场景"
+                                          style="resize: none;"></textarea>
+                            </div>
                         </div>
                     </div>
                     
-                    <div class="form-group">
-                        <label for="criteriaDescription">描述</label>
-                        <textarea id="criteriaDescription" name="description" rows="3" 
-                                  placeholder="评分标准的说明和适用场景"></textarea>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label for="datasetPattern">数据集匹配模式（可选）</label>
-                        <input type="text" id="datasetPattern" name="dataset_pattern" 
-                               placeholder="例: *subjective* 或留空表示通用">
-                    </div>
-                    
-                    <div class="checkbox-group">
-                        <input type="checkbox" id="isDefault" name="is_default">
-                        <label for="isDefault">设为默认标准</label>
-                    </div>
-                    
-                    <div class="form-group">
-                        <label>评分维度配置</label>
-                        <div id="dimensionsContainer">
-                            <!-- 维度配置将通过JavaScript动态生成 -->
+                    <!-- 提示词编辑区域 -->
+                    <div class="prompt-section">
+                        <label for="criteriaPrompt" style="font-weight: 600; margin-bottom: 10px; display: block;">
+                            评测提示词内容 * <small style="font-weight: normal; color: #6c757d;">(支持拖拽右下角调整高度)</small>
+                        </label>
+                        <textarea id="criteriaPrompt" name="criteria_prompt" required
+                                  placeholder="请输入详细的评测提示词，包含评分标准、评测要求、示例等..." 
+                                  style="font-family: 'Courier New', monospace; font-size: 14px; line-height: 1.5; border: 2px solid #e9ecef; border-radius: 8px; padding: 15px;"
+                                  oninput="updateCharCount()"></textarea>
+                        <div class="form-help" style="display: flex; justify-content: space-between; align-items: center;">
+                            <small>此提示词将用于所有使用该类型默认标准的评测任务。请确保内容详细、准确。</small>
+                            <small id="charCount" style="color: #6c757d; font-weight: 500;">0 字符</small>
                         </div>
-                        <button type="button" class="btn btn-secondary" onclick="addDimension()">
-                            <i class="fas fa-plus"></i> 添加维度
-                        </button>
                     </div>
                     
                     <div class="btn-group">
@@ -438,6 +538,9 @@
         // 页面加载时获取评分标准列表
         document.addEventListener('DOMContentLoaded', function() {
             loadCriteria();
+            
+            // 添加表单提交处理
+            document.getElementById('criteriaForm').addEventListener('submit', handleFormSubmit);
         });
         
         // 加载评分标准列表
@@ -475,14 +578,11 @@
                 const criteriaItem = document.createElement('div');
                 criteriaItem.className = 'criteria-item';
                 
-                // 构建维度列表
-                const dimensions = criteria.criteria_config.dimensions || [];
-                const dimensionsList = dimensions.map(dim => `
-                    <div class="dimension-item">
-                        <span class="dimension-name">${dim.display_name || dim.name}</span>
-                        <span class="dimension-weight">权重: ${dim.weight || 1.0}</span>
-                    </div>
-                `).join('');
+                // 构建提示词摘要
+                const promptContent = criteria.criteria_config.prompt || '';
+                const promptSummary = promptContent.length > 100 
+                    ? promptContent.substring(0, 100) + '...' 
+                    : promptContent;
                 
                 criteriaItem.innerHTML = `
                     ${criteria.is_default ? '<div class="default-badge">默认</div>' : ''}
@@ -497,9 +597,12 @@
                     
                     <div class="criteria-description">${criteria.description || '无描述'}</div>
                     
-                    <div class="criteria-dimensions">
-                        <strong>评分维度 (${dimensions.length}个):</strong>
-                        ${dimensionsList || '<div style="color: #6c757d; font-style: italic;">无配置维度</div>'}
+                    <div class="criteria-prompt-preview">
+                        <strong>评测提示词:</strong>
+                        <div style="color: #6c757d; font-size: 13px; font-family: 'Courier New', monospace; background: #f8f9fa; padding: 8px; border-radius: 4px; margin-top: 5px; max-height: 60px; overflow: hidden;">
+                            ${promptSummary || '<i>无提示词内容</i>'}
+                        </div>
+                        <small style="color: #6c757d;">${promptContent.length} 字符</small>
                     </div>
                     
                     <div class="criteria-meta">
@@ -551,18 +654,8 @@
                     
                     document.getElementById('viewModalTitle').textContent = criteria.name;
                     
-                    // 构建详情内容
-                    const dimensions = criteria.criteria_config.dimensions || [];
-                    const dimensionsHtml = dimensions.map(dim => `
-                        <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; margin-bottom: 10px;">
-                            <h4>${dim.display_name || dim.name}</h4>
-                            <p><strong>类型:</strong> ${dim.type}</p>
-                            <p><strong>描述:</strong> ${dim.description}</p>
-                            <p><strong>权重:</strong> ${dim.weight || 1.0}</p>
-                            ${dim.scale ? `<p><strong>评分范围:</strong> ${dim.scale.join(' - ')}</p>` : ''}
-                            ${dim.scale_labels ? `<p><strong>标签:</strong> ${dim.scale_labels.join(', ')}</p>` : ''}
-                        </div>
-                    `).join('');
+                    // 获取提示词内容
+                    const promptContent = criteria.criteria_config.prompt || '无提示词内容';
                     
                     document.getElementById('viewModalBody').innerHTML = `
                         <div style="margin-bottom: 20px;">
@@ -570,20 +663,18 @@
                             <p><strong>名称:</strong> ${criteria.name}</p>
                             <p><strong>类型:</strong> ${criteria.criteria_type}</p>
                             <p><strong>描述:</strong> ${criteria.description || '无'}</p>
-                            <p><strong>数据集模式:</strong> ${criteria.dataset_pattern || '通用'}</p>
-                            <p><strong>状态:</strong> ${criteria.is_active ? '启用' : '禁用'} ${criteria.is_default ? '(默认)' : ''}</p>
+                            <p><strong>评分范围:</strong> ${criteria.criteria_config.score_range || '根据类型'}</p>
+                            <p><strong>状态:</strong> ${criteria.is_active ? '启用' : '禁用'} ${criteria.is_default ? '(系统默认)' : ''}</p>
                             <p><strong>创建者:</strong> ${criteria.created_by}</p>
-                            <p><strong>创建时间:</strong> ${formatDateTime(criteria.created_at)}</p>
+                            <p><strong>创建时间:</strong> ${criteria.created_at}</p>
                         </div>
                         
                         <div>
-                            <h3>评分维度配置</h3>
-                            ${dimensionsHtml || '<p>无配置维度</p>'}
-                        </div>
-                        
-                        <div style="margin-top: 20px;">
-                            <h3>计算方式</h3>
-                            <p>${criteria.criteria_config.overall_calculation || '未指定'}</p>
+                            <h3>评测提示词内容</h3>
+                            <div style="background: #f8f9fa; padding: 15px; border-radius: 8px; font-family: 'Courier New', monospace; font-size: 13px; line-height: 1.5; max-height: 400px; overflow-y: auto; white-space: pre-wrap; border: 1px solid #e9ecef;">
+                                ${promptContent}
+                            </div>
+                            <small style="color: #6c757d; margin-top: 10px; display: block;">总长度: ${promptContent.length} 字符</small>
                         </div>
                     `;
                     
@@ -602,17 +693,111 @@
             document.getElementById('viewModal').style.display = 'none';
         }
         
-        // 其他函数（简化实现）
+        // 评分标准编辑功能
         function openAddCriteriaModal() {
-            showAlert('评分标准编辑功能正在开发中，敬请期待！', 'info');
+            showAlert('系统预设三种默认评分标准，无需添加新标准。请使用编辑功能修改现有标准。', 'info');
         }
         
         function editCriteria(criteriaId) {
-            showAlert('评分标准编辑功能正在开发中，敬请期待！', 'info');
+            const criteria = currentCriteria.find(c => c.id === criteriaId);
+            if (!criteria) {
+                showAlert('找不到该评分标准', 'danger');
+                return;
+            }
+            
+            // 填充编辑表单
+            document.getElementById('modalTitle').textContent = '编辑评分标准';
+            document.getElementById('criteriaId').value = criteria.id;
+            document.getElementById('isEdit').value = 'true';
+            document.getElementById('criteriaName').value = criteria.name;
+            document.getElementById('criteriaName').disabled = true; // 默认标准不可修改名称
+            document.getElementById('criteriaType').value = criteria.criteria_type;
+            document.getElementById('criteriaType').disabled = true; // 默认标准不可修改类型
+            document.getElementById('criteriaDescription').value = criteria.description;
+            document.getElementById('criteriaDescription').disabled = true; // 默认标准不可修改描述
+            
+            // 设置提示词内容
+            const promptTextarea = document.getElementById('criteriaPrompt');
+            if (promptTextarea && criteria.criteria_config && criteria.criteria_config.prompt) {
+                promptTextarea.value = criteria.criteria_config.prompt;
+                // 更新字符计数
+                updateCharCount();
+            }
+            
+            // 显示模态框
+            document.getElementById('criteriaModal').style.display = 'block';
         }
         
         function closeCriteriaModal() {
             document.getElementById('criteriaModal').style.display = 'none';
+        }
+        
+        // 更新字符计数
+        function updateCharCount() {
+            const promptTextarea = document.getElementById('criteriaPrompt');
+            const charCountElement = document.getElementById('charCount');
+            
+            if (promptTextarea && charCountElement) {
+                const charCount = promptTextarea.value.length;
+                charCountElement.textContent = `${charCount.toLocaleString()} 字符`;
+                
+                // 根据字符数设置颜色提示
+                if (charCount < 100) {
+                    charCountElement.style.color = '#dc3545'; // 红色 - 太短
+                } else if (charCount < 500) {
+                    charCountElement.style.color = '#ffc107'; // 黄色 - 偏短
+                } else {
+                    charCountElement.style.color = '#28a745'; // 绿色 - 合适
+                }
+            }
+        }
+        
+        // 处理表单提交
+        async function handleFormSubmit(event) {
+            event.preventDefault();
+            
+            const isEdit = document.getElementById('isEdit').value === 'true';
+            const criteriaId = document.getElementById('criteriaId').value;
+            const promptContent = document.getElementById('criteriaPrompt').value.trim();
+            
+            if (!promptContent) {
+                showAlert('提示词内容不能为空', 'danger');
+                return;
+            }
+            
+            if (!isEdit) {
+                showAlert('仅支持编辑现有的默认评分标准', 'info');
+                return;
+            }
+            
+            try {
+                const updateData = {
+                    criteria_config: {
+                        prompt: promptContent
+                    }
+                };
+                
+                const response = await fetch(`/admin/scoring-criteria/${criteriaId}`, {
+                    method: 'PUT',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(updateData)
+                });
+                
+                const result = await response.json();
+                
+                if (response.ok && result.success) {
+                    showAlert('评分标准更新成功', 'success');
+                    closeCriteriaModal();
+                    loadCriteria(); // 重新加载列表
+                } else {
+                    showAlert(result.message || '更新失败', 'danger');
+                }
+            } catch (error) {
+                console.error('更新评分标准错误:', error);
+                showAlert('更新过程中发生错误', 'danger');
+            }
         }
         
         // 切换评分标准状态
