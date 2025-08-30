@@ -2131,7 +2131,50 @@ def view_results(filename):
                 result_detail = db.get_result_by_id(result_id)
                 print(f"✅ [view_results] 找到结果详情: {result_id}")
             else:
-                print(f"⚠️ [view_results] 未找到文件 {filename} 对应的数据库记录")
+                print(f"⚠️ [view_results] 未找到文件 {filename} 对应的数据库记录，正在创建...")
+                # 为了支持分享功能，创建一个数据库记录
+                try:
+                    # 分析文件名获取模型信息
+                    models = []
+                    for col in df.columns:
+                        if col.endswith('_答案') or col.endswith('_评分') or col.endswith('_理由'):
+                            model_name = col.replace('_答案', '').replace('_评分', '').replace('_理由', '')
+                            if model_name not in models and model_name != '标准答案':
+                                models.append(model_name)
+                    
+                    # 创建元数据
+                    metadata = {
+                        'start_time': None,
+                        'end_time': None,
+                        'question_count': len(df),
+                        'from_file_analysis': True
+                    }
+                    
+                    # 保存到数据库
+                    result_id = db.save_evaluation_result(
+                        project_id='default',
+                        name=f"结果文件_{filename}",
+                        dataset_file='',
+                        models=models,
+                        result_file=filepath,
+                        evaluation_mode='unknown',
+                        result_summary={'total_questions': len(df)},
+                        tags=[],
+                        created_by=session.get('user_id', 'system'),
+                        metadata=metadata
+                    )
+                    
+                    result_detail = db.get_result_by_id(result_id)
+                    print(f"✅ [view_results] 已创建数据库记录: {result_id}")
+                except Exception as create_error:
+                    print(f"⚠️ [view_results] 创建数据库记录失败: {create_error}")
+                    # 创建一个临时的 result_detail 以支持分享功能
+                    result_detail = {
+                        'id': f"temp_{filename}",
+                        'name': filename,
+                        'result_file': filepath,
+                        'created_by': session.get('user_id', 'system')
+                    }
         except Exception as e:
             print(f"⚠️ [view_results] 查找结果详情失败: {e}")
         
@@ -2647,8 +2690,14 @@ def debug_score_update():
             })
         
         # 检查数据库状态
+        result_id = None  # 初始化result_id变量
         if db:
-            result_id = db.get_result_id_by_filename(filename)
+            try:
+                result_id = db.get_result_id_by_filename(filename)
+            except Exception as db_error:
+                print(f"⚠️ [调试] 查找result_id失败: {db_error}")
+                result_id = None
+            
             debug_info.update({
                 'database_connected': True,
                 'database_result_id': result_id
@@ -2656,7 +2705,7 @@ def debug_score_update():
         else:
             debug_info.update({
                 'database_connected': False,
-                'database_result_id': None
+                'database_result_id': result_id
             })
         
         print(f"🔍 [调试] 调试信息: {debug_info}")
@@ -2699,6 +2748,9 @@ def update_score():
         
         # 计算理由列名（确保在所有执行路径中都定义）
         reason_column = score_column.replace('评分', '理由')
+        
+        # 初始化result_id变量（用于后续的数据库检查和调试信息）
+        result_id = None
         
         # 标注功能已移除，仅更新CSV文件
         print(f"📝 [编辑评分] 准备更新CSV文件: {filename} 第{row_index+1}行 {model_name} -> {new_score}分")
@@ -2746,6 +2798,18 @@ def update_score():
             # 如果找到文件，使用该路径
             if found_filepath:
                 filepath = found_filepath
+        
+        # 获取数据库中对应的result_id（用于后续的数据库操作和调试）
+        if db:
+            try:
+                result_id = db.get_result_id_by_filename(clean_filename)
+                print(f"🔗 [数据库] 找到对应的result_id: {result_id}")
+            except Exception as db_error:
+                print(f"⚠️ [数据库] 查找result_id失败: {db_error}")
+                result_id = None
+        else:
+            # 如果没有数据库连接，result_id保持为None
+            result_id = None
         
         if os.path.exists(filepath):
             print(f"📖 [CSV文件] 开始读取文件...")
@@ -4259,17 +4323,34 @@ def create_share():
             return jsonify({'error': '缺少结果ID'}), 400
         
         # 验证result_id存在且用户有权限分享
-        result_detail = db.get_result_by_id(result_id)
-        if not result_detail:
-            return jsonify({'error': '评测结果不存在'}), 404
-        
+        result_detail = None
         current_user_id = session['user_id']
         current_user = db.get_user_by_id(current_user_id)
         
-        # 检查权限：只有结果创建者或管理员可以分享
-        if (result_detail['created_by'] != current_user_id and 
-            current_user['role'] != 'admin'):
-            return jsonify({'error': '您没有权限分享此结果'}), 403
+        if result_id.startswith('temp_'):
+            # 处理临时结果ID
+            filename = result_id.replace('temp_', '')
+            filepath = os.path.join(app.config['RESULTS_FOLDER'], filename)
+            if not os.path.exists(filepath):
+                return jsonify({'error': '结果文件不存在'}), 404
+            
+            # 创建临时的result_detail
+            result_detail = {
+                'id': result_id,
+                'name': title or filename,
+                'result_file': filepath,
+                'created_by': current_user_id
+            }
+        else:
+            # 处理正常的数据库结果ID
+            result_detail = db.get_result_by_id(result_id)
+            if not result_detail:
+                return jsonify({'error': '评测结果不存在'}), 404
+            
+            # 检查权限：只有结果创建者或管理员可以分享
+            if (result_detail['created_by'] != current_user_id and 
+                current_user['role'] != 'admin'):
+                return jsonify({'error': '您没有权限分享此结果'}), 403
         
         # 创建分享链接
         share_info = db.create_share_link(
@@ -4475,7 +4556,10 @@ def view_shared_result(share_token):
             
             # 清理DataFrame数据，确保所有值都是安全的类型
             cleaned_data = []
-            for record in df.to_dict('records'):
+            raw_records = df.to_dict('records')
+            print(f"🔍 [分享页面] 原始记录数量: {len(raw_records)}")
+            
+            for record in raw_records:
                 cleaned_record = {}
                 for key, value in record.items():
                     # 将所有值转换为安全的字符串或数字
@@ -4486,6 +4570,8 @@ def view_shared_result(share_token):
                     else:
                         cleaned_record[key] = str(value)
                 cleaned_data.append(cleaned_record)
+            
+            print(f"✅ [分享页面] 清理后的数据量: {len(cleaned_data)}")
             
             result_data = {
                 'filename': os.path.basename(result_file_path),
@@ -4506,7 +4592,9 @@ def view_shared_result(share_token):
             print(f"📝 [分享页面] 数据准备完成:")
             print(f"  - 列数: {len(df.columns)}")
             print(f"  - 行数: {len(df)}")
+            print(f"  - result_data.data长度: {len(result_data['data'])}")
             print(f"  - models类型: {type(result_data['share_info']['models'])}")
+            print(f"  - models数量: {len(result_data['share_info']['models']) if isinstance(result_data['share_info']['models'], list) else 'Not a list'}")
             print(f"  - models内容: {result_data['share_info']['models']}")
             print(f"  - columns类型: {type(result_data['columns'])}")
             print(f"  - data类型: {type(result_data['data'])}")
