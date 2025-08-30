@@ -100,8 +100,13 @@ class AdvancedAnalytics:
         if len(score_columns) > 1:
             score_data = df[score_columns].dropna()
             if len(score_data) > 0:
-                consistency = 1 - (score_data.std(axis=1).mean() / 5)  # 归一化到0-1
-                quality_factors.append(max(0, consistency))
+                # 动态计算评分范围，不使用固定的5分制
+                score_range = score_data.max().max() - score_data.min().min()
+                if score_range > 0:
+                    consistency = 1 - (score_data.std(axis=1).mean() / score_range)
+                    quality_factors.append(max(0, min(1, consistency)))
+                else:
+                    quality_factors.append(1)  # 所有分数相同，完全一致
         
         stats['data_quality_score'] = np.mean(quality_factors) * 100
         
@@ -262,7 +267,8 @@ class AdvancedAnalytics:
         
         for col in score_columns:
             scores = df[col].dropna()
-            valid_count = ((scores >= 0) & (scores <= 10)).sum()
+            # 移除硬编码的分数范围限制，所有数字都视为有效
+            valid_count = scores.notna().sum()  # 统计非空的分数
             valid_scores += valid_count
             total_scores += len(scores)
         

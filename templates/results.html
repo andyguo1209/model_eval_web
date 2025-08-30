@@ -925,12 +925,7 @@
                     <label>分数范围</label>
                     <select class="filter-input" id="score-filter">
                         <option value="">全部分数</option>
-                        <option value="5">5分</option>
-                        <option value="4">4分</option>
-                        <option value="3">3分</option>
-                        <option value="2">2分</option>
-                        <option value="1">1分</option>
-                        <option value="0">0分</option>
+                        <!-- 分数选项将通过JavaScript动态生成 -->
                     </select>
                 </div>
                 <div class="filter-item">
@@ -1014,7 +1009,7 @@
             <p id="edit-model-name">模型名称</p>
             <div style="text-align: center; margin: 20px 0;">
                 <label for="new-score">新评分:</label>
-                <input type="number" id="new-score" class="score-input" min="0" max="10" step="1">
+                <input type="number" id="new-score" class="score-input" step="0.1">
             </div>
             <div>
                 <label for="edit-reason">评分理由 (可基于原有理由编辑):</label>
@@ -1053,6 +1048,7 @@
             setupEventListeners();
             generateStats();
             populateTypeFilter();
+            populateScoreFilter();
         });
         
         // 初始化表格
@@ -1222,7 +1218,7 @@
             
             scoreColumns.forEach(col => {
                 const modelName = col.replace('_评分', '').replace('评分', '');
-                distribution[modelName] = {0: 0, 1: 0, 2: 0, 3: 0, 4: 0, 5: 0}; // 确保包含0分
+                distribution[modelName] = {}; // 动态分布，不预设分数范围
                 
                 let validScoreCount = 0;
                 let invalidScoreCount = 0;
@@ -1236,7 +1232,11 @@
                         score = parseInt(rawScore.trim());
                     }
                     
-                    if (!isNaN(score) && score >= 0 && score <= 10) {
+                    if (!isNaN(score)) {
+                        // 支持任意范围的评分，不做限制
+                        if (!distribution[modelName][score]) {
+                            distribution[modelName][score] = 0;
+                        }
                         distribution[modelName][score]++;
                         validScoreCount++;
                     } else {
@@ -1327,6 +1327,41 @@
                 typeFilter.style.display = 'none';
                 typeFilter.previousElementSibling.style.display = 'none';
             }
+        }
+        
+        // 填充分数筛选器 - 动态生成分数选项
+        function populateScoreFilter() {
+            const scoreFilter = document.getElementById('score-filter');
+            if (!scoreFilter) return;
+            
+            // 获取所有评分列中的唯一分数值
+            const scoreColumns = columns.filter(col => col.includes('评分'));
+            const allScores = new Set();
+            
+            originalData.forEach(row => {
+                scoreColumns.forEach(col => {
+                    const score = row[col];
+                    if (score !== null && score !== undefined && score !== '') {
+                        // 清理分数值（移除"分"字符）
+                        let cleanScore = String(score).replace('分', '').trim();
+                        if (!isNaN(cleanScore) && cleanScore !== '') {
+                            // 转换为数字进行排序
+                            const numScore = parseFloat(cleanScore);
+                            allScores.add(numScore);
+                        }
+                    }
+                });
+            });
+            
+            // 将分数排序并添加到选择器中
+            const sortedScores = Array.from(allScores).sort((a, b) => b - a); // 降序排列
+            
+            sortedScores.forEach(score => {
+                const option = document.createElement('option');
+                option.value = score;
+                option.textContent = `${score}分`;
+                scoreFilter.appendChild(option);
+            });
         }
         
         // 渲染表头
@@ -1989,8 +2024,8 @@
             const newScore = parseInt(document.getElementById('new-score').value);
             const reason = document.getElementById('edit-reason').value;
             
-            if (isNaN(newScore) || newScore < 0 || newScore > 10) {
-                alert('⚠️ 评分必须在0-10分之间的整数');
+            if (isNaN(newScore)) {
+                alert('⚠️ 评分必须为有效数字');
                 return;
             }
             

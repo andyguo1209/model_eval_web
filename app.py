@@ -2621,9 +2621,9 @@ def update_score():
         if not filename or row_index is None or not score_column or new_score is None:
             return jsonify({'success': False, 'error': '缺少必要参数'}), 400
         
-        # 验证评分范围（放宽限制以支持自定义评分标准）
-        if not isinstance(new_score, int) or new_score < 0 or new_score > 10:
-            return jsonify({'success': False, 'error': '评分必须在0-10分之间的整数'}), 400
+        # 验证评分必须为数字（不限制范围，完全由用户提示词决定）
+        if not isinstance(new_score, (int, float)):
+            return jsonify({'success': False, 'error': '评分必须为数字'}), 400
         
         # 计算理由列名（确保在所有执行路径中都定义）
         reason_column = score_column.replace('评分', '理由')
@@ -4657,9 +4657,15 @@ def view_shared_result(share_token):
                         
                         if all_scores and len(all_scores) > 0:
                             from collections import Counter
-                            # 过滤有效分数（0-10分）
-                            valid_scores = [int(score) for score in all_scores 
-                                          if isinstance(score, (int, float)) and 0 <= score <= 10]
+                            # 处理所有数字类型的评分（不限制范围，完全由用户定义）
+                            valid_scores = []
+                            for score in all_scores:
+                                if isinstance(score, (int, float)) and not pd.isna(score):
+                                    # 将分数转换为适当的数据类型
+                                    if isinstance(score, float) and score.is_integer():
+                                        valid_scores.append(int(score))
+                                    else:
+                                        valid_scores.append(float(score))
                             score_counts = Counter(valid_scores)
                             basic_stats['score_analysis']['score_distribution'] = dict(score_counts)
                             basic_stats['total_responses'] = len(all_scores)
