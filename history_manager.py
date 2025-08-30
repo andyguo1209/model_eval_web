@@ -62,6 +62,19 @@ class EvaluationHistoryManager:
             # 自动生成标签
             tags = self._generate_auto_tags(evaluation_data, result_summary)
             
+            # 保存完整的评测元数据，包括时间信息用于持久化分析
+            metadata = {
+                'start_time': evaluation_data.get('start_time'),
+                'end_time': evaluation_data.get('end_time'),
+                'question_count': evaluation_data.get('question_count', 0),
+                'evaluation_settings': {
+                    'mode': evaluation_data.get('evaluation_mode', 'unknown'),
+                    'models': evaluation_data.get('models', []),
+                    'dataset_name': os.path.splitext(os.path.basename(evaluation_data.get('dataset_file', '')))[0]
+                },
+                'analysis_generated': False  # 标记是否已生成分析数据
+            }
+            
             # 保存到数据库
             result_id = db.save_evaluation_result(
                 project_id=project_id or self._get_default_project_id(),
@@ -72,7 +85,8 @@ class EvaluationHistoryManager:
                 evaluation_mode=evaluation_data.get('evaluation_mode', 'unknown'),
                 result_summary=result_summary,
                 tags=tags,
-                created_by=evaluation_data.get('created_by', 'system')
+                created_by=evaluation_data.get('created_by', 'system'),
+                metadata=metadata
             )
             
             print(f"✅ 评测结果已保存: {result_id}")

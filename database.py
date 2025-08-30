@@ -379,7 +379,8 @@ class EvaluationDatabase:
                              evaluation_mode: str,
                              result_summary: Dict = None,
                              tags: List[str] = None,
-                             created_by: str = 'system') -> str:
+                             created_by: str = 'system',
+                             metadata: Dict = None) -> str:
         """保存评测结果"""
         result_id = str(uuid.uuid4())
         
@@ -391,8 +392,8 @@ class EvaluationDatabase:
             db_cursor.execute('''
                 INSERT INTO evaluation_results 
                 (id, project_id, name, dataset_file, dataset_hash, models, result_file, 
-                 result_summary, evaluation_mode, tags, created_by, completed_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 result_summary, evaluation_mode, tags, created_by, completed_at, metadata)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 result_id, project_id, name, dataset_file, dataset_hash,
                 json.dumps(models), result_file, 
@@ -400,7 +401,8 @@ class EvaluationDatabase:
                 evaluation_mode,
                 json.dumps(tags or []),
                 created_by,
-                datetime.now().isoformat()
+                datetime.now().isoformat(),
+                json.dumps(metadata or {})
             ))
             conn.commit()
         return result_id
@@ -550,71 +552,49 @@ class EvaluationDatabase:
                 if result:
                     result_id, stored_path = result
                     print(f"🔍 [数据库] 找到匹配记录: {result_id}, 存储路径: {stored_path}")
-                    # 检查存储的路径是否真实存在
-                    if os.path.exists(stored_path):
-                        return result_id
-                    else:
-                        print(f"🔍 [数据库] 存储路径不存在: {stored_path}，开始查找实际位置...")
-                        break  # 找到记录但路径无效，跳出循环继续修复
+                    return result_id  # 找到记录就直接返回，不再检查文件是否存在
             
-            # 如果直接匹配失败或文件不存在，尝试在多个目录中查找
-            results_folder = 'results'  # 与app.py中的配置保持一致
-            search_dirs = [
-                results_folder,
-                'results_history'  # 与results目录同级
-            ]
+            # 如果直接匹配失败，尝试通过文件名模糊匹配查找可能的记录
+            # 处理从 results/ 目录访问但数据库记录在 results_history/ 的情况
+            base_filename = clean_filename.replace('.csv', '')
             
-            actual_filepath = None
-            for search_dir in search_dirs:
-                if os.path.exists(search_dir):
-                    potential_path = os.path.join(search_dir, clean_filename)
-                    if os.path.exists(potential_path):
-                        actual_filepath = potential_path
-                        print(f"✅ [数据库] 在 {search_dir} 中找到文件: {clean_filename}")
-                        break
+            # 尝试通过时间戳匹配 - evaluation_result_YYYYMMDD_HHMMSS.csv 格式
+            if base_filename.startswith('evaluation_result_'):
+                timestamp_part = base_filename.replace('evaluation_result_', '')
+                print(f"🔍 [数据库] 尝试通过时间戳匹配: {timestamp_part}")
+                
+                db_cursor.execute('''
+                    SELECT id, result_file FROM evaluation_results 
+                    WHERE result_file LIKE ? OR result_file LIKE ?
+                    ORDER BY created_at DESC
+                ''', (f'%{timestamp_part}%', f'%{clean_filename}%'))
+                
+                results = db_cursor.fetchall()
+                if results:
+                    # 优先选择最近的记录
+                    result_id, stored_path = results[0]
+                    print(f"✅ [数据库] 通过时间戳匹配找到记录: {result_id}, 路径: {stored_path}")
+                    return result_id
             
-            if actual_filepath:
-                # 如果找到了实际文件，更新数据库记录
-                if result:  # 如果数据库中有记录但路径不对
-                    result_id = result[0] if isinstance(result, tuple) else result
-                    try:
-                        db_cursor.execute('''
-                            UPDATE evaluation_results 
-                            SET result_file = ? 
-                            WHERE id = ?
-                        ''', (actual_filepath, result_id))
-                        conn.commit()
-                        print(f"✅ [数据库] 已更新result_file路径: {result_id} -> {actual_filepath}")
-                        return result_id
-                    except Exception as e:
-                        print(f"⚠️ [数据库] 更新路径失败: {e}")
-                        return result_id
-                else:
-                    # 尝试通过文件名模糊匹配查找可能的记录
-                    # 去掉扩展名和时间戳，尝试匹配dataset_file
-                    base_filename = clean_filename.replace('.csv', '')
-                    db_cursor.execute('''
-                        SELECT id FROM evaluation_results 
-                        WHERE dataset_file LIKE ? OR result_file LIKE ?
-                    ''', (f'%{base_filename}%', f'%{base_filename}%'))
-                    
-                    fuzzy_result = db_cursor.fetchone()
-                    if fuzzy_result:
-                        result_id = fuzzy_result[0]
-                        print(f"🔍 [数据库] 通过模糊匹配找到记录: {result_id}")
-                        # 更新该记录的result_file路径
-                        try:
-                            db_cursor.execute('''
-                                UPDATE evaluation_results 
-                                SET result_file = ? 
-                                WHERE id = ?
-                            ''', (actual_filepath, result_id))
-                            conn.commit()
-                            print(f"✅ [数据库] 已修复result_file路径: {result_id} -> {actual_filepath}")
-                            return result_id
-                        except Exception as e:
-                            print(f"⚠️ [数据库] 修复路径失败: {e}")
-                            return result_id
+            # 如果还是找不到，尝试通过数据集名称匹配
+            print(f"🔍 [数据库] 尝试通过数据集名称模糊匹配...")
+            db_cursor.execute('''
+                SELECT id, result_file, dataset_file FROM evaluation_results 
+                WHERE dataset_file LIKE ? 
+                ORDER BY created_at DESC
+                LIMIT 10
+            ''', (f'%{base_filename.split("_")[0]}%',))
+            
+            fuzzy_results = db_cursor.fetchall()
+            if fuzzy_results:
+                print(f"🔍 [数据库] 找到 {len(fuzzy_results)} 个可能的匹配记录")
+                for result_id, stored_path, dataset_file in fuzzy_results:
+                    print(f"   - {result_id}: {dataset_file} -> {stored_path}")
+                
+                # 返回最近的一个
+                result_id = fuzzy_results[0][0]
+                print(f"✅ [数据库] 选择最近的记录: {result_id}")
+                return result_id
             
             print(f"❌ [数据库] 未找到文件 {clean_filename} (原始: {filename}) 对应的数据库记录")
             return None

@@ -2014,21 +2014,41 @@ def view_results(filename):
         
         if analytics:
             try:
-                # 尝试从task_status获取时间数据
+                # 优先从数据库获取持久化的时间数据
                 evaluation_data = None
-                for task_id, task in task_status.items():
-                    if (hasattr(task, 'result_file') and 
-                        task.result_file == filename and
-                        hasattr(task, 'start_time') and hasattr(task, 'end_time')):
-                        evaluation_data = {
-                            'start_time': task.start_time.isoformat() if task.start_time else None,
-                            'end_time': task.end_time.isoformat() if task.end_time else None,
-                            'question_count': len(df)
-                        }
-                        print(f"✅ [view_results] 从任务状态获取到时间数据")
-                        break
+                result_id = db.get_result_id_by_filename(filename)
+                if result_id:
+                    result_detail = db.get_result_by_id(result_id)
+                    if result_detail and result_detail.get('metadata'):
+                        try:
+                            metadata = json.loads(result_detail['metadata'])
+                            if metadata.get('start_time') and metadata.get('end_time'):
+                                evaluation_data = {
+                                    'start_time': metadata['start_time'],
+                                    'end_time': metadata['end_time'],
+                                    'question_count': metadata.get('question_count', len(df)),
+                                    'from_database': True
+                                }
+                                print(f"✅ [view_results] 从数据库获取到持久化时间数据")
+                        except Exception as e:
+                            print(f"⚠️ [view_results] 解析数据库元数据失败: {e}")
                 
-                # 如果没有找到时间数据，使用文件的创建和修改时间作为估算
+                # 如果没有数据库数据，尝试从task_status获取时间数据
+                if not evaluation_data:
+                    for task_id, task in task_status.items():
+                        if (hasattr(task, 'result_file') and 
+                            task.result_file == filename and
+                            hasattr(task, 'start_time') and hasattr(task, 'end_time')):
+                            evaluation_data = {
+                                'start_time': task.start_time.isoformat() if task.start_time else None,
+                                'end_time': task.end_time.isoformat() if task.end_time else None,
+                                'question_count': len(df),
+                                'from_task_status': True
+                            }
+                            print(f"✅ [view_results] 从任务状态获取到时间数据")
+                            break
+                
+                # 如果还是没有找到时间数据，使用文件的创建和修改时间作为估算
                 if not evaluation_data or not evaluation_data.get('start_time') or not evaluation_data.get('end_time'):
                     try:
                         file_stat = os.stat(filepath)
